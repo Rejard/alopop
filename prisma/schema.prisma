@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  inviteCode    String?  @unique // Phase 12: 6자리 영문대문자+숫자 초대 코드
+  loginId       String?  @unique // Phase 11: 정식 계정 아이디 (선택)
+  password      String? // Phase 11: 정식 계정 비밀번호 (선택)
+  username      String
+  avatar_url    String?
+  statusMessage String? // 유저의 한 줄 상태 메시지 (Phase 9 추가)
+  walletBalance Int      @default(10000) // 가입 축하금
+  isAi          Boolean  @default(false) // Phase 13: AI 유저 여부
+  aiOwnerId     String?  // Phase 13: AI를 창조한 주인의 ID
+  aiPrompt      String?  // Phase 13: 이 AI의 성격/페르소나 시스템 프롬프트
+  createdAt     DateTime @default(now())
+
+  sentTransactions     Transaction[] @relation("SentTransactions")
+  receivedTransactions Transaction[] @relation("ReceivedTransactions")
+  roomMembers          RoomMember[]
+
+  // 친구 관계 (내가 추가한 사람, 나를 추가한 사람)
+  friendsAdded Friendship[] @relation("UserAdded")
+  addedBy      Friendship[] @relation("UserAddedBy")
+
+  // 기기별 푸시 구독 정보
+  pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  amount    Int
+  reason    String?
+  createdAt DateTime @default(now())
+
+  senderId String
+  sender   User   @relation("SentTransactions", fields: [senderId], references: [id])
+
+  receiverId String
+  receiver   User   @relation("ReceivedTransactions", fields: [receiverId], references: [id])
+}
+
+model Room {
+  id        String   @id @default(uuid())
+  name      String? // 그룹명 (없으면 1:1)
+  isGroup   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  members RoomMember[]
+}
+
+model RoomMember {
+  id         String   @id @default(uuid())
+  joinedAt   DateTime @default(now())
+  isHost     Boolean  @default(false) // 최초 생성자(방장) 여부
+  lastReadAt DateTime @default(now()) // 마지막으로 해당 방에서 메시지를 읽은(방 접속/메시지 수신) 시각
+  isHidden   Boolean  @default(false) // 1:1 방 나가기 시 삭제 대신 숨김 처리용
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId]) // 한 방에 같은 유저가 중복 참석 방지
+}
+
+// 친구 관계 모델
+model Friendship {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // 친구의 상태 (ACTIVE: 기본 친구, HIDDEN: 숨김, BLOCKED: 차단)
+  status String @default("ACTIVE")
+
+  // 주체 (친구를 추가/숨김/차단한 사람)
+  userId String
+  user   User   @relation("UserAdded", fields: [userId], references: [id], onDelete: Cascade)
+
+  // 대상 (추가/숨김/차단 당한 사람)
+  friendId String
+  friend   User   @relation("UserAddedBy", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId]) // 한 방향의 관계는 유일해야 함
+}
+
+// 웹 푸시 알림 구독 정보 모델
+model PushSubscription {
+  id        String   @id @default(uuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation("UserPushSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+}

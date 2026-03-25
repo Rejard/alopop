@@ -1,0 +1,30 @@
+import Dexie, { type EntityTable } from 'dexie';
+
+export interface ChatMessage {
+  id?: number; // IndexedDB 자동 생성 기본키 (숫자)
+  messageId: string; // 고유 메시지 ID (UUID)
+  senderId: string;
+  senderName: string;
+  receiverId: string; // 그룹/방 ID 또는 1:1 상대방 ID ("global" 등)
+  content: string;
+  aiAnalysis?: any;
+  messageType?: 'TEXT' | 'IMAGE' | 'FILE' | 'SYSTEM' | 'VIDEO';
+  fileUrl?: string;
+  fileName?: string;
+  createdAt: number; // 타임스탬프
+}
+
+const db = new Dexie('AloPopDatabase') as Dexie & {
+  messages: EntityTable<
+    ChatMessage,
+    'id' // pk
+  >;
+};
+
+// 스키마 버전 1
+db.version(1).stores({
+  // 인덱스로 사용할 필드들 지정 (조회를 빠르게 하기 위함)
+  messages: '++id, messageId, receiverId, createdAt'
+});
+
+export { db };

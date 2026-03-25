@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>단톡방 혈압 유발자 대처법 - Alopop</title>
+    <!-- 폰트: 프리텐다드 -->
+    <link rel="stylesheet" as="style" crossorigin
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>
+        :root {
+            --bg-color: #09090b;
+            --card-bg: #18181b;
+            --text-main: #f4f4f5;
+            --text-sub: #a1a1aa;
+            --accent-primary: #ef4444;
+            --border-color: #27272a;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Pretendard', sans-serif;
+            line-height: 1.6;
+            overflow-x: hidden;
+            word-break: keep-all;
+        }
+
+        h1, h2, h3 {
+            letter-spacing: -0.05em;
+            line-height: 1.3;
+        }
+
+        /* Animations */
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(40px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.9) translateY(20px); }
+            70% { opacity: 1; transform: scale(1.02) translateY(0); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); }
+            100% { transform: scale(1); box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+        }
+
+        /* Hero */
+        .hero {
+            position: relative;
+            padding: 100px 20px 60px;
+            text-align: center;
+            background: radial-gradient(circle at center, #450a0a 0%, var(--bg-color) 70%);
+            border-bottom: 2px solid #ef4444;
+            animation: fadeInCard 0.8s ease-out;
+            overflow: hidden;
+        }
+
+        /* 무시무시한 사이렌 효과 애니메이션 */
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: conic-gradient(from 0deg, transparent 0%, rgba(239, 68, 68, 0.4) 20%, transparent 40%);
+            animation: rotateGlow 3s linear infinite;
+            opacity: 0.6;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        @keyframes rotateGlow {
+            100% { transform: rotate(360deg); }
+        }
+
+        .hero > * {
+            position: relative;
+            z-index: 2;
+        }
+
+        @keyframes fadeInCard {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .alert-badge {
+            display: inline-block;
+            background: #ef4444;
+            color: white;
+            font-weight: 800;
+            padding: 8px 20px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+            animation: pulse 2s infinite;
+        }
+
+        .hero h1 {
+            font-size: 2.8rem;
+            font-weight: 900;
+            margin: 0 0 20px 0;
+            color: #fecaca;
+            text-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.8s ease-out 0.2s both;
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            color: #fca5a5;
+            font-weight: 600;
+            animation: slideUp 0.8s ease-out 0.4s both;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 40px 20px 100px;
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+        }
+
+        /* Story Chat UI */
+        .story-section {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            opacity: 0;
+            animation: popIn 0.8s ease-out 0.4s forwards;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .story-section:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
+        }
+
+        .story-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 30px;
+            color: #d4d4d8;
+            text-align: center;
+            border-bottom: 1px solid #3f3f46;
+            padding-bottom: 15px;
+        }
+
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .chat-bubble {
+            max-width: 85%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            font-size: 1.05rem;
+            position: relative;
+            opacity: 0;
+            animation: slideUp 0.5s ease-out forwards;
+        }
+        
+        /* Staggered chat bubbles */
+        .chat-bubble:nth-child(1) { animation-delay: 0.6s; }
+        .chat-bubble:nth-child(2) { animation-delay: 1.2s; }
+        .chat-bubble:nth-child(3) { animation-delay: 1.8s; }
+        .chat-bubble:nth-child(4) { animation-delay: 2.4s; }
+        .chat-bubble:nth-child(5) { animation-delay: 3.0s; }
+
+        .chat-other {
+            align-self: flex-start;
+            background: #27272a;
+            color: #e4e4e7;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-me {
+            align-self: flex-end;
+            background: #3b82f6;
+            color: #ffffff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-ai {
+            align-self: flex-start;
+            background: #2e1065;
+            color: #ddd6fe;
+            border-bottom-left-radius: 4px;
+            border: 1px solid #8b5cf6;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.2);
+        }
+
+        .chat-name {
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: #a1a1aa;
+        }
+
+        .ai-name { color: #c4b5fd; font-weight: 900; }
+
+        .factcheck-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 10px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 800;
+            background: #7f1d1d;
+            color: #fca5a5;
+            border: 2px solid #ef4444;
+            width: fit-content;
+            opacity: 0;
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards 2.0s;
+        }
+
+        /* Feature Cards */
+        .feature-card {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 30px;
+            background: linear-gradient(145deg, #18181b 0%, #09090b 100%);
+            border: 1px solid #3f3f46;
+            border-left: 5px solid #ef4444;
+            border-radius: 16px;
+            opacity: 0;
+            animation: slideUp 0.8s ease-out forwards;
+            transition: transform 0.2s;
+        }
+        
+        .feature-card:nth-of-type(1) { animation-delay: 0.5s; }
+        .feature-card:nth-of-type(2) { animation-delay: 0.7s; }
+        .feature-card:nth-of-type(3) { animation-delay: 0.9s; }
+        .feature-card:nth-of-type(4) { animation-delay: 1.1s; }
+
+        .feature-card:hover {
+            transform: scale(1.02);
+            border-color: #52525b;
+        }
+
+        .feature-card.blue { border-left-color: #3b82f6; }
+        .feature-card.purple { border-left-color: #8b5cf6; }
+        .feature-card.yellow { border-left-color: #eab308; }
+
+        .feature-card h3 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin: 0;
+            color: #f4f4f5;
+        }
+
+        .feature-card p {
+            color: #a1a1aa;
+            font-size: 1.1rem;
+            margin: 0;
+            line-height: 1.7;
+        }
+
+        .feature-card strong {
+            color: #ffffff;
+            background: rgba(255,255,255,0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* CTA Button Container */
+        .cta-section {
+            background: linear-gradient(135deg, #18181b, #0f172a);
+            border-color: #3b82f6;
+            text-align: center;
+            opacity: 0;
+            animation: slideUp 1s ease-out 1.3s forwards;
+        }
+
+        .btn-cta {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            padding: 22px;
+            font-size: 1.4rem;
+            font-weight: 900;
+            color: #fff;
+            background: linear-gradient(135deg, #ff0000, #990000);
+            border-radius: 16px;
+            text-decoration: none;
+            box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            margin-top: 25px;
+            /* To protect from overflow explicitly */
+            max-width: 100%;
+        }
+
+        .btn-cta:hover {
+            transform: scale(1.05) translateY(-5px);
+            box-shadow: 0 15px 40px rgba(239, 68, 68, 0.6);
+        }
+
+        .btn-cta:active {
+            transform: scale(0.98);
+        }
+
+        @media (max-width: 600px) {
+            .hero h1 { font-size: 2.2rem; }
+            .hero p { font-size: 1.1rem; }
+            .feature-card h3 { font-size: 1.4rem; }
+            .btn-cta { font-size: 1.2rem; padding: 18px; }
+            .story-section { padding: 20px; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header class="hero">
+        <div class="alert-badge">혈압 상승 주의 💢</div>
+        <h1>"이거 진짜 특종이야!"<br>단톡방 가짜뉴스 빌런들...</h1>
+        <p>매일 올라오는 가짜 찌라시와 딥페이크 사진.<br>반박하자니 분위기 싸해지고, 무시하자니 속 터지시죠?</p>
+    </header>
+
+    <div class="container">
+
+        <!-- 도입부 상황극 -->
+        <div class="story-section">
+            <div class="story-title">🤯 흔한 카톡방의 대참사</div>
+            <div class="chat-container">
+                <div class="chat-bubble chat-other">
+                    <div class="chat-name">눈치없는 친구 (오후 1:20)</div>
+                    와 대박! 에이브러햄 링컨이 1862년에 와이파이(Wi-Fi)를 발명했대!! 🎩📶 이거 기사 떴음!!
+                </div>
+                <div class="chat-bubble chat-me">
+                    <div class="chat-name">나 (오후 1:22)</div>
+                    아니;; 그거 누가 봐도 가짜뉴스잖아... 와이파이는 1997년이야 🤦‍♂️
+                </div>
+                <div class="chat-bubble chat-other">
+                    <div class="chat-name">눈치없는 친구 (오후 1:24)</div>
+                    에이~ 니가 뭘 안다고 그래! 진짜 맞다니까? 나 기사 원문 봤음!
+                </div>
+                <p style="text-align:center; color:#71717a; font-size: 0.95rem; margin-top:20px; font-weight: bold; animation: float 3s infinite;">
+                    (아... 검색해서 보여주기도 귀찮다... 걍 읽씹할까...)
+                </p>
+            </div>
+        </div>
+
+        <!-- 해결책 제시 -->
+        <h2 style="text-align: center; font-size: 1.8rem; color: #fecaca; margin: 20px 0; opacity: 0; animation: slideUp 0.8s ease-out 3.5s forwards;">
+            "만약 당신 대신 팩트를 꽂아버리는<br>똑똑한 친구가 있다면 어떨까요?"
+        </h2>
+
+        <!-- Alopop 상황극 -->
+        <div class="story-section" style="border-color: #ef4444; box-shadow: 0 0 50px rgba(239, 68, 68, 0.15); animation-delay: 3.8s;">
+            <div class="story-title" style="color:#fca5a5;">✨ Alopop이 도입된 단톡방에서는...</div>
+            <div class="chat-container">
+                <div class="chat-bubble chat-other" style="animation-delay: 4.2s;">
+                    <div class="chat-name">눈치없는 친구 (오후 1:20)</div>
+                    와 대박! 나 아까 길가다가 공룡 봤다 🦕 진짜임!!
+                </div>
+                
+                <div class="factcheck-badge" style="animation-delay: 4.8s;">
+                    🚨 [허위 정보 경고] AI 확신도: 100%
+                </div>
+
+                <div class="chat-bubble chat-ai" style="animation-delay: 5.6s;">
+                    <div class="chat-name ai-name">🤖 팩트폭격 비서 (MBTI: INTJ)</div>
+                    Reason: 지구상의 공룡은 6천6백만 년 전에 멸종했습니다. 혹시 길고양이를 잘못 보신 게 아닐까요? 아니면 시력이 많이 나빠지셨군요. 안경점 방문을 추천합니다. 🛑
+                </div>
+                
+                <div class="chat-bubble chat-me" style="animation-delay: 6.4s;">
+                    <div class="chat-name">나 (오후 1:22)</div>
+                    ㅋㅋㅋㅋㅋㅋㅋㅋㅋㅋㅋㅋ 비서 입씨름 폼 미쳤다
+                </div>
+            </div>
+        </div>
+
+        <p style="font-size: 1.3rem; text-align: center; color: #d4d4d8; font-weight: 800; opacity: 0; animation: slideUp 0.8s ease-out 7s forwards;">
+            오로지 Alopop에서만 가능한 4가지 미친 기능을 소개합니다.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <!-- 기능 1: 팩트체크 코어 -->
+            <div class="feature-card">
+                <h3>🛡️ 1. 숨 돌릴 틈 없는 "실시간 팩트체크"</h3>
+                <p>
+                    단톡방에 올라온 텍스트, 이미지 조작 여부를 <strong>백그라운드에서 실시간 검색 및 AI 처리</strong>하여 말풍선 하단에 진위 여부 뱃지(Badge)를 즉시 띄웁니다. 거짓말이 통하지 않는 청정 구역을 만드세요.
+                </p>
+            </div>
+
+            <!-- 기능 2: 커스텀 AI -->
+            <div class="feature-card purple">
+                <h3>🤖 2. MBTI 원툴? "초개인화 AI 친구"</h3>
+                <p>
+                    단순히 팩트만 전달하면 서운하죠. AI의 <strong>16가지 MBTI, 연령대, 성별, 직업, 특유의 말투</strong>까지 프롬프트로 주입하세요. 당신의 채팅방에 상주하며 인간보다 더 찰진 리액션을 보여줍니다.
+                </p>
+            </div>
+
+            <!-- 기능 3: 코인 풀링 -->
+            <div class="feature-card yellow">
+                <h3>🪙 3. 돈 걱정 끝! "AI 토큰 N빵 경제망"</h3>
+                <p>
+                    "저런 똑똑한 AI 쓰면 API 비용 털리는 거 아님?"<br>
+                    걱정 마세요! <strong>P2P 코인 풀링(Coin Pooling)</strong>을 통해 방 참여자들이 다 같이 코인을 모아(더치페이) AI를 소환할 수 있습니다!
+                </p>
+            </div>
+
+            <!-- 기능 4: 압도적 속도와 보안 -->
+            <div class="feature-card blue">
+                <h3>⚡ 4. 0ms 광속 캐싱 & 노-로그 프라이버시</h3>
+                <p>
+                    중앙 서버에 일체 기록이 남지 않는 <strong>No-Log 소켓 릴레이</strong>와, 내 데이터를 기기에 쟁여두는 <strong>Local-First(IndexedDB)</strong> 엔진의 만남! 오프라인에서도 네이티브 알림(Push)이 날아옵니다.
+                </p>
+            </div>
+        </div>
+
+        <!-- CTA 영역 -->
+        <div class="story-section cta-section">
+            <h2 style="color: #f8fafc; margin-top:0;">가입 안 해도 됨. 진짜로.</h2>
+            <p style="color: #cbd5e1; font-size: 1.15rem; margin-bottom: 20px; word-break: keep-all;">
+                이메일 입력조차가 귀찮으신가요? <strong>하이브리드 계정 연동(Soft Onboarding)</strong> 덕분에 아무 인증 없이 완전 "게스트(익명)" 상태로 모든 기능을 찔러보고, 나중에 마음에 들면 정식 계정으로 로그인해 덮어쓸 수 있습니다.
+            </p>
+            <p style="color: #ef4444; font-weight: 800; font-size: 1.25rem; margin-bottom: 0;">
+                지금 당장 AI 친구가 기다리고 있는 방으로 들어가보세요!
+            </p>
+            <!-- box-sizing이 전체에 적용되어 있으므로 padding과 width가 충돌하지 않음 -->
+            <a href="/login" class="btn-cta">🚀 알로팝(Alopop) 1초 만에 시작하기</a>
+        </div>
+
+    </div>
+
+</body>
+</html>

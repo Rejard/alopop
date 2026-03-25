@@ -1,0 +1,17 @@
+{
+  "name": "Alopop",
+  "short_name": "Alopop",
+  "description": "당신만의 프라이빗한 대화 공간",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
