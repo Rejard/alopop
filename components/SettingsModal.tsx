@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 
 export function SettingsModal() {
   const { isOpen, setIsOpen, selectedProvider, apiKeys, setSelectedProvider, setApiKey, loadSettings } = useSettingsStore();
-  const [activeLayerTab, setActiveLayerTab] = useState<'ai' | 'friends' | 'account'>('account'); // 모달 최상단 탭 (AI / 친구관리 / 계정 통합)
+  const [activeLayerTab, setActiveLayerTab] = useState<'ai' | 'friends' | 'account'>('ai'); // 모달 최상단 탭 (AI / 친구관리 / 계정 통합)
   
   // AI 설정 탭
   const [activeTab, setActiveTab] = useState<AIProvider>('openai');
@@ -99,6 +99,8 @@ export function SettingsModal() {
   useEffect(() => {
     if (isOpen) {
       loadSettings();
+      // 설정 창이 열릴 때 항상 기본으로 'AI 모델 & 방 설정' 탭이 표시되도록 초기화
+      setActiveLayerTab('ai');
       // 열릴 때 현재 스토어의 selectedProvider를 탭 기본값으로
       setActiveTab(selectedProvider || 'openai');
       // 로컬 스토리지에서 방 정책 동기화

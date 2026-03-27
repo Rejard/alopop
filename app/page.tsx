@@ -241,21 +241,21 @@ export default function Home() {
 
     const playNotificationSound = () => {
       try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-        oscillator.frequency.exponentialRampToValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
-        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 0.05);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.3);
+        const audio = new Audio('/alert.wav?v=3'); // 캐시 무효화를 위해 버전 쿼리 파라미터 부여
+        audio.volume = 1.0; // 100% 볼륨 설정
+        audio.play().catch(e => console.warn('오디오 자동재생 권한 제한:', e));
       } catch (e) {
-        // Ignore errors like autoplay restriction
+        console.error('Failed to play notification audio', e);
+      }
+    };
+
+    const playChatSound = () => {
+      try {
+        const audio = new Audio('/chat_pop.wav?v=2');
+        audio.volume = 0.5; // 채팅 중 전송음은 거슬리지 않게 50% 볼륨으로 설정
+        audio.play().catch(e => console.warn('오디오 자동재생 권한 제한:', e));
+      } catch (e) {
+        console.error('Failed to play chat audio', e);
       }
     };
 
@@ -283,24 +283,34 @@ export default function Home() {
         return prevRooms;
       });
 
-      // 상대방이 보낸 메시지일 때만 알림음 재생
-      if (msg.senderId !== parsedUser.id) {
-        playNotificationSound();
-      }
-
       setLatestMessageTimes(prev => ({
         ...prev,
         [msg.receiverId]: msg.createdAt
       }));
 
-      // 현재 열려있는 방이 아니라면 안읽은 메시지 수 증가
+      // 현재 보고있는 화면(방) 상태에 따른 알림음 및 읽음 처리 분기
       setCurrentRoom((curr) => {
-        if (curr?.id !== msg.receiverId && msg.senderId !== parsedUser.id) {
+        const isMyMsg = msg.senderId === parsedUser.id;
+        const isCurrentRoom = curr?.id === msg.receiverId;
+
+        // 상대방이 내가 지금 안 보고 있는 화면(다른 방/로비)으로 메시지를 보냈을 때만 알림/진동 쾅!
+        if (!isMyMsg && !isCurrentRoom) {
+          playNotificationSound();
+          if (typeof window !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate([200]);
+          }
+          
           setUnreadCounts(prev => ({
             ...prev,
             [msg.receiverId]: (prev[msg.receiverId] || 0) + 1
           }));
-        } else if (curr?.id === msg.receiverId) {
+        } 
+        // 내가 보고 있는 방에 메시지가 도착했거나(조용히 즉시 읽음 처리), 
+        // 혹은 내가 그 방에 직접 메시지를 보냈을 때
+        else if (isCurrentRoom) {
+          // 채팅 중 서로 전송/수신 할 때 '도미솔 타격 화음' 을 작게 재생 (유저 요청)
+          playChatSound();
+
           const now = Date.now();
           setRoomMemberReadTimes(prev => ({
             ...prev,
@@ -1684,15 +1694,15 @@ export default function Home() {
                             <span className="font-medium text-[15px] text-zinc-200">{friend.username}</span>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 shrink-0">
                             <button
                               onClick={() => handleCreateRoom(friend.id)}
-                              className="text-xs font-semibold bg-purple-600/90 hover:bg-purple-500 text-white px-3 py-1.5 rounded-xl transition-colors shadow-sm active:scale-95 flex items-center gap-1.5"
+                              className="text-xs font-semibold bg-purple-600/90 hover:bg-purple-500 text-white px-3 py-1.5 rounded-xl transition-colors shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
                             >
-                              <MessageSquare size={14} /> 대화
+                              <MessageSquare size={14} className="shrink-0" /> 대화
                             </button>
 
-                            <div className="relative">
+                            <div className="relative shrink-0">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2017,6 +2027,10 @@ export default function Home() {
                     }}
                     disabled={isAiProcessing}
                     placeholder={isAiProcessing ? "AI 분석 중..." : "메시지 입력..."}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoCapitalize="off"
                     className="w-full bg-transparent text-zinc-100 px-4 py-3 outline-none resize-none max-h-24 placeholder-zinc-500 text-[15px] disabled:opacity-50"
                   />
                 </div>
@@ -2055,13 +2069,13 @@ export default function Home() {
                           <button onClick={() => setIsEditingRoomName(false)} className="text-zinc-400 hover:text-zinc-300 p-1"><X size={16} /></button>
                         </div>
                       ) : (
-                        <h3 className="font-semibold text-zinc-100 flex items-center justify-between group">
-                          <span className="truncate pr-2 text-[15px]">{getRoomName(currentRoom, user?.id)}</span>
+                        <h3 className="font-semibold text-zinc-100 flex items-center justify-between group min-w-0">
+                          <span className="truncate pr-2 text-[15px] min-w-0 flex-1">{getRoomName(currentRoom, user?.id)}</span>
                           <button
                             onClick={() => { setEditRoomNameValue(currentRoom.name || ''); setIsEditingRoomName(true); }}
-                            className="text-zinc-500 hover:text-zinc-300 transition-colors opacity-80 sm:opacity-0 sm:group-hover:opacity-100 p-1"
+                            className="text-zinc-500 hover:text-zinc-300 transition-colors opacity-80 sm:opacity-0 sm:group-hover:opacity-100 p-1 shrink-0"
                           >
-                            <Edit2 size={14} />
+                            <Edit2 size={14} className="shrink-0" />
                           </button>
                         </h3>
                       )}
@@ -2205,12 +2219,12 @@ export default function Home() {
                 </div>
 
                 <h3 className="text-xl font-bold text-zinc-100 mb-1">{myProfile?.username || user?.username}</h3>
-                <div className="flex items-center gap-2 mb-6">
-                  <button className="text-xs font-mono text-zinc-500 bg-zinc-950 px-3 py-1.5 rounded-full border border-zinc-800 flex items-center gap-2 hover:bg-zinc-800 transition-colors" onClick={handleCopyMyId}>
-                    초대 코드: <span className="text-zinc-300 font-bold tracking-widest">{myProfile?.inviteCode || user?.inviteCode || user?.id.substring(0, 8)}</span> <Copy size={12} />
+                <div className="flex flex-wrap justify-center items-center gap-2 mb-6 w-full px-2">
+                  <button className="text-xs font-mono text-zinc-500 bg-zinc-950 px-3 py-1.5 rounded-full border border-zinc-800 flex items-center justify-center gap-2 hover:bg-zinc-800 transition-colors shrink-0" onClick={handleCopyMyId}>
+                    초대 코드: <span className="text-zinc-300 font-bold tracking-widest">{myProfile?.inviteCode || user?.inviteCode || user?.id.substring(0, 8)}</span> <Copy size={12} className="shrink-0" />
                   </button>
-                  <button className="text-xs font-mono text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 flex items-center gap-2 hover:bg-indigo-500/20 transition-colors" onClick={handleCopyMyLink} title="초대 링크 복사">
-                    <LinkIcon size={12} /> 링크 복사
+                  <button className="text-xs font-mono text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 flex items-center justify-center gap-2 hover:bg-indigo-500/20 transition-colors shrink-0" onClick={handleCopyMyLink} title="초대 링크 복사">
+                    <LinkIcon size={12} className="shrink-0" /> 링크 복사
                   </button>
                 </div>
               </div>

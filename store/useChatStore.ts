@@ -81,6 +81,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
         await db.messages.add(msgToSave);
         console.log('[DEBUG] 🟢 IndexedDB message stored successfully');
+        
         window.dispatchEvent(new CustomEvent('new_chat_message', { detail: msgToSave }));
       } catch (err) {
         console.error('[DEBUG] 🔴 IndexedDB save error:', err);
@@ -116,6 +117,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
         if (msgsToSave.length > 0) {
           await db.messages.bulkAdd(msgsToSave);
+          
           window.dispatchEvent(new CustomEvent('new_chat_message', { detail: msgsToSave[msgsToSave.length - 1] }));
         }
       }
