@@ -8,6 +8,7 @@ export interface ChatMessage {
   receiverId: string; // 그룹/방 ID 또는 1:1 상대방 ID ("global" 등)
   content: string;
   aiAnalysis?: any;
+  aiRequested?: boolean; // 사용자가 팩트체크를 켜놓고(AI 🟢) 전송했는지를 표시하는 플래그
   messageType?: 'TEXT' | 'IMAGE' | 'FILE' | 'SYSTEM' | 'VIDEO';
   fileUrl?: string;
   fileName?: string;

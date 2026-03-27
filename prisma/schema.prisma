@@ -19,6 +19,9 @@ model User {
   isAi          Boolean  @default(false) // Phase 13: AI 유저 여부
   aiOwnerId     String?  // Phase 13: AI를 창조한 주인의 ID
   aiPrompt      String?  // Phase 13: 이 AI의 성격/페르소나 시스템 프롬프트
+  sponsorMode   Boolean  @default(false) // 방장 스폰서 연산 기능 활성화 여부
+  sponsorModel  String?  // 방장이 스폰서용으로 선택한 AI 모델명
+  sponsorPrice  Int      @default(0)     // [신규] 방장이 지정한 1회 팩트체크당 과금 금액 (코인 단위)
   createdAt     DateTime @default(now())
 
   sentTransactions     Transaction[] @relation("SentTransactions")

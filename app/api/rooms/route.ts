@@ -27,7 +27,7 @@ export async function POST(request: Request) {
         include: {
           members: {
             include: {
-              user: { select: { username: true, isAi: true, aiOwnerId: true, aiPrompt: true } }
+              user: { select: { username: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true } }
             }
           }
         }
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
         members: {
           include: {
             user: {
-              select: { username: true, isAi: true, aiOwnerId: true, aiPrompt: true }
+              select: { username: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true }
             }
           }
         }

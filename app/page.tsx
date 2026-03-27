@@ -38,6 +38,8 @@ export default function Home() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [friends, setFriends] = useState<any[]>([]); // 개별 친구 목록 (상태: ACTIVE 대상)
   const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[] } | null>(null);
+  const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[] } | null>(null);
+  useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [latestMessageTimes, setLatestMessageTimes] = useState<Record<string, number>>({});
   const [roomMemberReadTimes, setRoomMemberReadTimes] = useState<Record<string, Record<string, number>>>({});
@@ -139,6 +141,11 @@ export default function Home() {
   const [isAiModelDropdownOpen, setIsAiModelDropdownOpen] = useState(false);
   const [isAiEnabled, setIsAiEnabled] = useState(false);
 
+  // AI 켜짐/꺼짐 상태 로컬스토리지 동기화 (방장 팩트체크용)
+  useEffect(() => {
+    localStorage.setItem('alo_ai_enabled', isAiEnabled.toString());
+  }, [isAiEnabled]);
+
   // AI 친구 생성 폼 상태
   const [addFriendTab, setAddFriendTab] = useState<'NORMAL' | 'AI'>('NORMAL');
   const [aiNameValue, setAiNameValue] = useState('');
@@ -189,6 +196,13 @@ export default function Home() {
       setSelectedAiModel(savedModel);
     } else {
       setSelectedAiModel(AI_MODELS[providerValue]?.[0]?.id || 'gpt-5.4');
+    }
+
+    const savedAiEnabled = localStorage.getItem('alo_ai_enabled');
+    if (savedAiEnabled !== null) {
+      setIsAiEnabled(savedAiEnabled === 'true');
+    } else {
+      setIsAiEnabled(true); // 기본적으로 켜둠
     }
 
     // 컴포넌트 마운트 시 소켓 연결
@@ -282,6 +296,123 @@ export default function Home() {
         }
         return prevRooms;
       });
+
+      // [신규] 방장 스폰서 대리 팩트체크 (내가 방장이고 스폰서 모드이며 내 AI기능이 켜져있을 때)
+      // 타인이 보낸 텍스트 메시지의 팩트체크가 비어있다면 백그라운드 연산(내 키 소모) 후 소켓 브로드캐스트
+      const roomPolicy = localStorage.getItem('alo_room_policy') || 'personal';
+      const aiEnabledStr = localStorage.getItem('alo_ai_enabled');
+      const isMyAiEnabled = aiEnabledStr !== null ? aiEnabledStr === 'true' : true; 
+      
+      // [DEBUG LOG] 방장 스폰서 대리연산 8가지 조건 실시간 평가 현황 출력
+      console.log(`\n[SPONSOR CHECK] msg received from ${msg.senderName}`);
+      console.log(`1. currentRoom ID match: ${currentRoomRef.current?.id === msg.receiverId} (${currentRoomRef.current?.id} === ${msg.receiverId})`);
+      console.log(`2. isHost: ${currentRoomRef.current?.isHost}`);
+      console.log(`3. roomPolicy: ${roomPolicy === 'sponsor'} (${roomPolicy})`);
+      console.log(`4. isMyAiEnabled: ${isMyAiEnabled}`);
+      console.log(`5. isText: ${msg.messageType === 'TEXT'}`);
+      console.log(`6. no aiAnalysis: ${!msg.aiAnalysis}`);
+      console.log(`7. not my msg: ${msg.senderId !== parsedUser.id}`);
+      console.log(`8. not AI: ${!msg.senderName.includes('AI')}`);
+
+      if (
+        currentRoomRef.current?.id === msg.receiverId && 
+        currentRoomRef.current?.isHost &&
+        roomPolicy === 'sponsor' && 
+        msg.aiRequested && 
+        msg.messageType === 'TEXT' && 
+        !msg.aiAnalysis && 
+        msg.senderId !== parsedUser.id && 
+        !msg.senderName.includes('AI')
+      ) {
+         console.log('✅ ALL CONDITIONS PASSED! Triggering Sponsor FactCheck...');
+         (async () => {
+             try {
+                // [신규] 종량제 결제 검증 (sponsorPrice가 0보다 크면 게스트 지갑에서 선 차감 후 방장 지갑으로 이체)
+                const hostMemberFromRef = currentRoomRef.current?.members?.find((m: any) => m.isHost);
+                const hostSponsorPrice = hostMemberFromRef?.user?.sponsorPrice || 0;
+                
+                if (hostSponsorPrice > 0) {
+                  const paymentRes = await fetch('/api/wallet/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      senderId: msg.senderId,   // 코인을 낼 사람 (게스트)
+                      receiverId: parsedUser.id,// 코인을 받을 사람 (방장)
+                      amount: hostSponsorPrice,
+                      reason: `[AI 팩트체크 요금] 방장 스폰서 연산`
+                    })
+                  });
+
+                  if (!paymentRes.ok) {
+                    const errData = await paymentRes.json();
+                    console.log('[DEBUG] ❌ Payment Failed:', errData);
+                    
+                    // 결제 실패 시 (잔액 부족 등) 에러 메시지를 팩트체크 마커로 포장해서 던져줌
+                    const failResult = {
+                      category: 'NORMAL',
+                      confidence: 0,
+                      reason: `[결제 취소] ${errData.error || '잔액 부족으로 AI 연산이 거절되었습니다.'}`,
+                      isSponsored: true,
+                      sponsorModel: '결제 취소'
+                    };
+                    
+                    // 방장 화면 데이터베이스 업데이트
+                    await db.messages.where('messageId').equals(msg.messageId).modify({ aiAnalysis: failResult });
+                    
+                    // 게스트에게 캔슬 배지 발송
+                    useChatStore.getState().socket?.emit('update_message', { 
+                       roomId: msg.receiverId, 
+                       messageId: msg.messageId, 
+                       aiAnalysis: failResult 
+                    });
+                    
+                    // 팩트체크 연산 스킵!
+                    return;
+                  }
+                }
+
+                const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
+                const keysStr = localStorage.getItem('alo_api_keys');
+                const apiKeys = keysStr ? JSON.parse(keysStr) : {};
+                const byokKey = apiKeys[selectedProvider];
+                const aiModelStr = localStorage.getItem('alo_ai_model');
+
+                if (!byokKey) return; 
+
+                console.log('[DEBUG] 👑 Host Sponsor Fact-Check Triggered for msg:', msg.messageId);
+
+                const aiRes = await fetch('/api/chat', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    content: msg.content,
+                    provider: selectedProvider,
+                    byokKey,
+                    aiModel: aiModelStr 
+                  })
+                });
+
+                if (aiRes.ok) {
+                  const checkResult = await aiRes.json();
+                  
+                  // 방장이 연산한 것임을 모든 유저가 알 수 있도록 명시적 표식 삽입
+                  checkResult.isSponsored = true;
+                  checkResult.sponsorModel = aiModelStr || selectedProvider;
+
+                  // [중대 버그 수정] Dexie update()는 PK(++id)를 인자로 받으므로 messageId(UUID)를 넣으면 실패함! where.modify()를 써야함!
+                  await db.messages.where('messageId').equals(msg.messageId).modify({ aiAnalysis: checkResult });
+                  
+                  useChatStore.getState().socket?.emit('update_message', { 
+                     roomId: msg.receiverId, 
+                     messageId: msg.messageId, 
+                     aiAnalysis: checkResult 
+                  });
+                }
+             } catch (err) {
+                console.warn('[DEBUG] Sponsor Fact-check failed:', err);
+             }
+         })();
+      }
 
       setLatestMessageTimes(prev => ({
         ...prev,
@@ -450,10 +581,12 @@ export default function Home() {
 
     if (!hasScrolledToUnreadRef.current) {
       hasScrolledToUnreadRef.current = true;
-      if (unreadDividerRef.current) {
-        unreadDividerRef.current.scrollIntoView({ behavior: 'auto', block: 'center' });
-      } else {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      if (unreadDividerRef.current && messagesContainerRef.current) {
+        const container = messagesContainerRef.current;
+        const dividerTop = unreadDividerRef.current.offsetTop;
+        container.scrollTo({ top: dividerTop - (container.clientHeight / 2), behavior: 'auto' });
+      } else if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
       }
     } else {
       if (messagesContainerRef.current) {
@@ -464,7 +597,7 @@ export default function Home() {
         const isMyMsg = lastMsg?.senderId === user?.id;
 
         if (isNearBottom || isMyMsg) {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          messagesContainerRef.current.scrollTo({ top: scrollHeight, behavior: 'smooth' });
         }
       }
     }
@@ -477,9 +610,11 @@ export default function Home() {
   const aiAbortControllersRef = useRef<Record<string, AbortController>>({});
   const inputTextRef = useRef(inputText);
   const humanTypingRef = useRef(humanTyping);
+  const typingAIsRef = useRef(typingAIs);
 
   useEffect(() => { inputTextRef.current = inputText; }, [inputText]);
   useEffect(() => { humanTypingRef.current = humanTyping; }, [humanTyping]);
+  useEffect(() => { typingAIsRef.current = typingAIs; }, [typingAIs]);
 
   const abortAiReplies = useCallback(() => {
     // 진행 중인 타이머 해제
@@ -504,16 +639,8 @@ export default function Home() {
     pendingAiReplyRef.current = {};
   }, [currentRoom?.id]);
 
-  // 사용자가 타이핑 치기 시작하면 진행 중인 AI 대답을 모두 취소 (즉, 눈치채고 말 안 함)
-  useEffect(() => {
-    if (!currentRoom) return;
-    const hasLocalText = inputText.trim().length > 0;
-    const otherTypers = humanTyping[currentRoom.id] || [];
-    
-    if (hasLocalText || otherTypers.length > 0) {
-       abortAiReplies();
-    }
-  }, [inputText, humanTyping, currentRoom, abortAiReplies]);
+  // 사용자가 타이핑 치기 시작하면 진행 중인 AI 대답을 모두 취소하는 기존 '눈치보기' 훅(useEffect)을 완전히 삭제했습니다.
+  // 이제 AI는 사용자가 치든 말든 자기가 할 말은 끝까지 하고 던집니다.
 
   useEffect(() => {
     if (!currentRoom || !messages || messages.length === 0 || !user) return;
@@ -534,31 +661,60 @@ export default function Home() {
     const byokKey = apiKeys[selectedProvider];
     
     if (!byokKey) return; 
+
+    // [신규] 방장 스폰서 옵션 체크
+    const roomPolicy = localStorage.getItem('alo_room_policy') || 'personal';
+    const isSponsorMode = currentRoom.isHost && roomPolicy === 'sponsor';
     
-    // 현재 방 멤버 중, "내가 창조한(aiOwnerId === user.id) AI" 발라내기
-    const myAIs = currentRoom.members.filter((m: any) => m.user?.isAi === true && m.user?.aiOwnerId === user.id);
-    if (myAIs.length === 0) return;
+    // 현재 방 멤버 중, 내 클라이언트(이 브라우저)가 연산을 책임질 AI 발라내기
+    const activeAIs = currentRoom.members.filter((m: any) => {
+      if (!m.user?.isAi) return false; // 사람이면 제외
+      // 스폰서 모드일 경우: 내가 방장이므로, 내 소유 여부와 무관하게 모든 AI를 내가 연산해 줌!
+      if (isSponsorMode) return true;
+      // 일반 모드일 경우: 내가 직접 창조한(내 로컬 기기에 본적이 있는) AI만 연산
+      return m.user?.aiOwnerId === user.id;
+    });
 
-    // 강력한 무한루프(혼잣말) 방지 락: 
-    // 마지막 메시지가 "내가 창조한 AI" 중 한 명의 ID나 이름과 일치하면 무조건 스킵
-    const lastMsgIsFromMyAI = myAIs.some((ai: any) => 
-       ai.userId === lastMsg.senderId || 
-       ai.user?.id === lastMsg.senderId || 
-       ai.user?.username === lastMsg.senderName
-    );
+    if (activeAIs.length === 0) return;
 
-    if (lastMsgIsFromMyAI) {
-       console.log(`[DEBUG] AI 핑퐁(혼잣말) 원천 차단됨! sender: ${lastMsg.senderName}`);
-       return;
+    // [신규] 유저의 가장 마지막 메시지가 언제였는지 인덱스 찾기
+    let lastHumanMsgIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      const isSenderAi = activeAIs.some((ai: any) => ai.userId === m.senderId || ai.user?.id === m.senderId || ai.user?.username === m.senderName) || m.senderName.includes('(AI)');
+      if (!isSenderAi) {
+        lastHumanMsgIndex = i;
+        break;
+      }
     }
 
     // 최근 메시지 5개 추출하여 문맥 조합 (누가 무슨 말을 했는지)
     const recentContext = messages.slice(-5).map(m => `[${m.senderName}]: ${m.content}`).join('\n');
 
-    // 내가 가진 각각의 AI들에 대해 개입 여부 평가
-    myAIs.forEach((aiMember: any) => {
+    // 내가 책임지는 각각의 AI들에 대해 개입 여부 평가
+    activeAIs.forEach((aiMember: any) => {
       const aiUser = aiMember.user;
       
+      // 사람 발언 이후 이 특정 AI가 몇 번 말했는지(Quota) 검사
+      let mySpeakCountSinceLastHuman = 0;
+      for (let i = lastHumanMsgIndex + Math.max(0, 1); i < messages.length; i++) {
+         const m = messages[i];
+         if (m.senderId === aiUser.id || m.senderName === aiUser.username) {
+            mySpeakCountSinceLastHuman++;
+         }
+      }
+
+      // 각 AI들은 사람의 한마디 이후 최대 연속 2번(티키타카 1회분)까지만 끼어들 수 있음
+      if (mySpeakCountSinceLastHuman >= 2) {
+         console.log(`[DEBUG] ${aiUser.username}는 이미 2번 발언했습니다. 다른 AI의 턴을 위해 침묵합니다.`);
+         return; 
+      }
+      
+      // 연속으로 "자기 자신"이 두 번 말하는 진정한 의미의 혼잣말은 차단 (다른 AI가 받아쳐야 대답함)
+      if (lastMsg.senderId === aiUser.id || lastMsg.senderName === aiUser.username) {
+         return;
+      }
+
       // 1:1 채팅방 여부 판별
       const isOneOnOne = currentRoom.members.length === 2 && !currentRoom.isGroup;
 
@@ -577,40 +733,37 @@ export default function Home() {
 
       // AI 응답 실행 함수 (독립 분리)
       const executeAiReply = (startDelayMs: number) => {
-        // 직전에 누군가 타이핑을 시작했다면 중단
-        const hasLocalText = inputTextRef.current.trim().length > 0;
-        const otherTypers = humanTypingRef.current[currentRoom.id] || [];
-        if (hasLocalText || otherTypers.length > 0) return;
-
-        // 이미 답변을 준비 중(타이핑 중)이라면 중복 예약 방지
+        // 이미 답변 대기열에 들어갔다면 스킵
         if (pendingAiReplyRef.current[aiUser.id]) return;
-        pendingAiReplyRef.current[aiUser.id] = true;
 
-        // 채팅방에 타이핑 인디케이터 표시 켜기 (로컬 및 원격)
-        setTypingAIs(prev => {
-          const roomAIs = prev[currentRoom.id] || [];
-          if (!roomAIs.find(a => a.aiId === aiUser.id)) {
-             return { ...prev, [currentRoom.id]: [...roomAIs, { aiId: aiUser.id, aiName: aiUser.username }] };
-          }
-          return prev;
-        });
-        const { socket } = useChatStore.getState();
-        if (socket) socket.emit('typing_start', { roomId: currentRoom.id, userId: aiUser.id, userName: aiUser.username });
-
-        // AbortController 생성
-        const controller = new AbortController();
-        aiAbortControllersRef.current[aiUser.id] = controller;
-
+        // 짧은 망설임(Delay) 시간이 지난 후 턴을 확인하고 타이핑 시작
         const timeoutId = setTimeout(async () => {
           try {
-            // 시간이 지난 후 막상 fetch를 쏠 때, 또 누군가 타이핑 중이라면 멈춤
-            if (inputTextRef.current.trim().length > 0 || (humanTypingRef.current[currentRoom.id]?.length > 0)) {
-               pendingAiReplyRef.current[aiUser.id] = false;
-               if (socket) socket.emit('typing_end', { roomId: currentRoom.id, userId: aiUser.id });
-               
-               setTypingAIs(prev => ({ ...prev, [currentRoom.id]: (prev[currentRoom.id] || []).filter(a => a.aiId !== aiUser.id) }));
-               return;
+            // [신규] 턴 양보 (Turn-Yielding) 로직: 내가 실제로 타자를 치기 직전에 다른 AI가 이미 치고 있다면 턴 양보(취소)
+            const roomTyping = typingAIsRef.current[currentRoom.id] || [];
+            const isOtherAiTypingState = roomTyping.some((a: any) => a.aiId !== aiUser.id);
+            const isOtherAiPendingLocal = Object.entries(pendingAiReplyRef.current).some(([id, isPending]) => id !== aiUser.id && isPending);
+            
+            if (isOtherAiTypingState || isOtherAiPendingLocal) {
+               console.log(`[DEBUG] ${aiUser.username}는 다른 AI의 턴을 존중하여 이번 대답을 미룹니다(턴 양보).`);
+               return; // 아무 일도 하지 않고 스킵! (다음 메시지 렌더링 사이클에서 다시 기회 획득)
             }
+
+            // 내 턴이 통과되었으므로 타이핑 시작 선언!
+            pendingAiReplyRef.current[aiUser.id] = true;
+            
+            setTypingAIs(prev => {
+              const roomAIs = prev[currentRoom.id] || [];
+              if (!roomAIs.find(a => a.aiId === aiUser.id)) {
+                 return { ...prev, [currentRoom.id]: [...roomAIs, { aiId: aiUser.id, aiName: aiUser.username }] };
+              }
+              return prev;
+            });
+            const { socket } = useChatStore.getState();
+            if (socket) socket.emit('typing_start', { roomId: currentRoom.id, userId: aiUser.id, userName: aiUser.username });
+
+            const controller = new AbortController();
+            aiAbortControllersRef.current[aiUser.id] = controller;
 
             // 최신 문맥을 다시 추출 (딜레이 동안 쌓인 메시지 반영)
             let currentContext = "";
@@ -830,7 +983,12 @@ export default function Home() {
     let aiAnalysisResult = undefined;
 
     // 비동기로 AI 백엔드에 팩트체크 요청
-    if (isAiEnabled) {
+    // 스폰서 락(isSponsorLocked) 상태라면 내 설정을 무시하고 방장의 대리연산으로 전적으로 위임해야 함!
+    const hostMember = currentRoom?.members?.find((m: any) => m.isHost);
+    const amIHost = currentRoom ? hostMember?.userId === user?.id : false;
+    const isSponsorLocked = currentRoom && !amIHost && hostMember?.user?.sponsorMode;
+
+    if (isAiEnabled && !isSponsorLocked) {
       setIsAiProcessing(true);
       try {
         const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
@@ -870,6 +1028,7 @@ export default function Home() {
       content: messageContent,
       messageType: 'TEXT',
       aiAnalysis: aiAnalysisResult,
+      aiRequested: isAiEnabled, // 내 기기의 AI 토글 상태를 담아서 보냄 (방장이 보고 대리연산할지 결정하도록)
       createdAt: Date.now(),
     };
 
@@ -1369,6 +1528,19 @@ export default function Home() {
     }
   };
 
+  // --- [스폰서 UI Lock 상태 계산] ---
+  const hostMember = currentRoom?.members?.find((m: any) => m.isHost);
+  const amIHost = currentRoom ? hostMember?.userId === user?.id : false;
+  const isSponsorLocked = currentRoom && !amIHost && hostMember?.user?.sponsorMode;
+  const sponsorPrice = hostMember?.user?.sponsorPrice || 0;
+  const lockedProvider = hostMember?.user?.sponsorModel || 'openai';
+  const lockedModelDisplayNames: Record<string, string> = {
+    'openai': 'OpenAI (스폰서)',
+    'gemini': 'Gemini (스폰서)',
+    'anthropic': 'Anthropic (스폰서)'
+  };
+  const lockedModelName = `🔒 ${lockedModelDisplayNames[lockedProvider] || '스폰서 제공'}`;
+
   return (
     <div
       className="fixed top-0 left-0 w-full bg-zinc-950 flex justify-center items-center text-zinc-100 p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
@@ -1429,14 +1601,28 @@ export default function Home() {
                 {currentRoom && (
                   <div className="relative z-50 flex items-center gap-1.5 block md:hidden lg:block">
                     <button
-                      onClick={(e) => { e.stopPropagation(); setIsAiModelDropdownOpen(!isAiModelDropdownOpen); }}
-                      className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px] font-medium text-zinc-300 transition-colors border border-zinc-700/50 shrink-0 shadow-sm"
+                      onClick={(e) => { 
+                         e.stopPropagation(); 
+                         if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen); 
+                      }}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border shrink-0 shadow-sm ${
+                         isSponsorLocked 
+                         ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed' 
+                         : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                      }`}
                     >
-                      <span className="truncate max-w-[90px]">{AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI'}</span>
-                      <ChevronDown size={10} className="opacity-70" />
+                      <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                      {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setIsAiEnabled(!isAiEnabled); }}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        const nextState = !isAiEnabled;
+                        if (nextState && isSponsorLocked && sponsorPrice > 0) {
+                          if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, 팩트체크 1회당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
+                        }
+                        setIsAiEnabled(nextState); 
+                      }}
                       className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
                         ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
                         : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-medium'
@@ -1474,14 +1660,28 @@ export default function Home() {
               <>
                 <div className="relative z-50 hidden md:block lg:hidden mr-1 flex items-center gap-1.5">
                   <button
-                    onClick={(e) => { e.stopPropagation(); setIsAiModelDropdownOpen(!isAiModelDropdownOpen); }}
-                    className="flex items-center gap-1 px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-semibold text-zinc-300 transition-colors border border-zinc-700/50 shrink-0 shadow-sm"
+                    onClick={(e) => { 
+                       e.stopPropagation(); 
+                       if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen); 
+                    }}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors border shrink-0 shadow-sm ${
+                       isSponsorLocked 
+                       ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed' 
+                       : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                    }`}
                   >
-                    <span className="truncate max-w-[100px]">{AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI'}</span>
-                    <ChevronDown size={12} className="opacity-70" />
+                    <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                    {!isSponsorLocked && <ChevronDown size={12} className="opacity-70" />}
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setIsAiEnabled(!isAiEnabled); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      const nextState = !isAiEnabled;
+                      if (nextState && isSponsorLocked && sponsorPrice > 0) {
+                        if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, 팩트체크 1회당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
+                      }
+                      setIsAiEnabled(nextState); 
+                    }}
                     className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
                       ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
                       : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-semibold'
@@ -1744,7 +1944,7 @@ export default function Home() {
           // 선택된 채팅방 뷰
           <>
             <div
-              className="flex-1 overflow-y-auto p-4 space-y-5 flex flex-col relative"
+              className="flex-1 overflow-y-auto overscroll-none p-4 space-y-5 flex flex-col relative"
               ref={messagesContainerRef}
               onScroll={(e) => {
                 const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -1801,17 +2001,19 @@ export default function Home() {
                     const cat = msg.aiAnalysis.category;
                     const isFakeOld = msg.aiAnalysis.is_fake; // 구버전 호환용
 
-                    // 일반 텍스트의 NORMAL은 배지를 숨기지만, 이미지 첨부의 NORMAL은 안전하다는 뜻으로 표시!
-                    if (cat === 'NORMAL' && msg.messageType !== 'IMAGE') {
-                      // 아무것도 표시하지 않음
-                    } else if (cat || isFakeOld !== undefined) {
+                    // 일반 텍스트의 NORMAL도 숨기지 않고 회색 마크로 표시하여 AI 연산이 이뤄졌음을 알림!
+                    if (cat || isFakeOld !== undefined) {
                       let config = { icon: '🤖', color: 'text-zinc-400', bg: 'bg-zinc-800' };
                       if (cat === 'FAKE' || isFakeOld === true) config = { icon: '🚨', color: 'text-rose-400', bg: 'bg-rose-500/20' };
                       else if (cat === 'AI_GENERATED') config = { icon: '🤖', color: 'text-purple-400', bg: 'bg-purple-500/20' };
                       else if (cat === 'SUSPICIOUS') config = { icon: '⚠️', color: 'text-amber-400', bg: 'bg-amber-500/20' };
-                      else if (cat === 'VERIFIED' || isFakeOld === false || cat === 'NORMAL') config = { icon: '✅', color: 'text-emerald-400', bg: 'bg-emerald-500/20' };
+                      else if (cat === 'VERIFIED' || isFakeOld === false) config = { icon: '✅', color: 'text-emerald-400', bg: 'bg-emerald-500/20' };
+                      else if (cat === 'NORMAL') config = { icon: '💬', color: 'text-zinc-400', bg: 'bg-zinc-800' }; // NORMAL 가시화
 
-                      const reasonText = msg.aiAnalysis.reason || (cat === 'NORMAL' && msg.messageType === 'IMAGE' ? '안전한 이미지 (조작 흔적/위험요소 없음)' : '특이사항 없음');
+                      const reasonText = msg.aiAnalysis.reason || (cat === 'NORMAL' && msg.messageType === 'IMAGE' ? '안전한 이미지 (조작 흔적/위험요소 없음)' : (cat === 'NORMAL' ? '일상적인 대화 (검증 불필요)' : '특이사항 없음'));
+                      
+                      // 스폰서 제공 정보 꼬리표
+                      const sponsorInfo = msg.aiAnalysis.isSponsored ? `\n\n🎁 [방장 스폰서 AI가 대신 분석함]\n제공 모델: ${msg.aiAnalysis.sponsorModel}` : '';
 
                       aiTag = (
                         <div
@@ -1819,7 +2021,7 @@ export default function Home() {
                           title={`${reasonText} (${Math.round(msg.aiAnalysis.confidence * 100)}%)`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            alert(`[AI 팩트체크 실시간 분석]\n\n판정 이유: ${reasonText}\nAI 확신도: ${Math.round(msg.aiAnalysis.confidence * 100)}%`);
+                            alert(`[AI 팩트체크 실시간 분석]\n\n판정 이유: ${reasonText}\nAI 확신도: ${Math.round(msg.aiAnalysis.confidence * 100)}%` + sponsorInfo);
                           }}
                         >
                           <span className="-ml-0.5 drop-shadow-md">{config.icon}</span>
@@ -1957,7 +2159,9 @@ export default function Home() {
               <div className="absolute bottom-24 right-4 z-20">
                 <button
                   onClick={() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    if (messagesContainerRef.current) {
+                      messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' });
+                    }
                     hasScrolledToUnreadRef.current = true;
                   }}
                   className="w-11 h-11 bg-zinc-800/95 hover:bg-zinc-700 border border-zinc-700/50 rounded-full flex items-center justify-center text-zinc-300 shadow-xl backdrop-blur transition-all active:scale-95"

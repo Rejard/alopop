@@ -5,7 +5,7 @@ import { X, Key, Bot, LogOut, Users, EyeOff, UserX, Trash2, RefreshCw, Check } f
 import { useSettingsStore, AIProvider } from '@/store/useSettingsStore';
 import { useRouter } from 'next/navigation';
 
-export function SettingsModal() {
+export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
   const { isOpen, setIsOpen, selectedProvider, apiKeys, setSelectedProvider, setApiKey, loadSettings } = useSettingsStore();
   const [activeLayerTab, setActiveLayerTab] = useState<'ai' | 'friends' | 'account'>('ai'); // 모달 최상단 탭 (AI / 친구관리 / 계정 통합)
   
@@ -96,23 +96,47 @@ export function SettingsModal() {
   // 방 자원 공유 정책 상태 (Early Return 전에 호스팅되어야 함)
   const [roomPolicy, setRoomPolicy] = useState<'individual' | 'sponsor' | 'pool'>('individual');
 
+  // [신규] 게스트 입장 시 방장이 걸어놓은 스폰서 세팅 락온(잠금) 상태
+  const [hostSponsorLocked, setHostSponsorLocked] = useState<{ isLocked: boolean; modelName?: string }>({ isLocked: false });
+  const [sponsorPrice, setSponsorPrice] = useState<number>(0);
+
   useEffect(() => {
     if (isOpen) {
       loadSettings();
-      // 설정 창이 열릴 때 항상 기본으로 'AI 모델 & 방 설정' 탭이 표시되도록 초기화
       setActiveLayerTab('ai');
-      // 열릴 때 현재 스토어의 selectedProvider를 탭 기본값으로
-      setActiveTab(selectedProvider || 'openai');
-      // 로컬 스토리지에서 방 정책 동기화
+      
       const savedPolicy = localStorage.getItem('alo_room_policy') as any;
       if (savedPolicy) setRoomPolicy(savedPolicy);
+
+      const savedPrice = localStorage.getItem('alo_sponsor_price');
+      if (savedPrice) setSponsorPrice(Number(savedPrice));
+
+      // 내가 게스트로 방에 들어가있고 방장이 스폰서 모드를 켰다면? 그 모델로 탭을 강제고정!
+      let locked = false;
+      const userStr = localStorage.getItem('alo_user');
+      const parsedUser = userStr ? JSON.parse(userStr) : null;
+      if (currentRoom && parsedUser) {
+        const myMemberInfo = currentRoom.members?.find((m: any) => m.userId === parsedUser.id);
+        if (myMemberInfo && !myMemberInfo.isHost) {
+          const hostMember = currentRoom.members.find((m: any) => m.isHost);
+          if (hostMember?.user?.sponsorMode) {
+             locked = true;
+             setHostSponsorLocked({ isLocked: true, modelName: hostMember.user.sponsorModel || 'openai' });
+             setActiveTab((hostMember.user.sponsorModel || 'openai') as AIProvider);
+          }
+        }
+      }
+
+      if (!locked) {
+        setHostSponsorLocked({ isLocked: false });
+        setActiveTab(selectedProvider || 'openai');
+      }
       
-      // 친구 관리 데이터 패치
       if (activeLayerTab === 'friends') {
         fetchHiddenBlockedFriends();
       }
     }
-  }, [isOpen, activeLayerTab]);
+  }, [isOpen, activeLayerTab, currentRoom]);
 
   const fetchHiddenBlockedFriends = async () => {
     try {
@@ -181,14 +205,37 @@ export function SettingsModal() {
 
   if (!isOpen) return null;
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setApiKey(activeTab, inputValue.trim());
-    setSelectedProvider(activeTab);
+    if (!hostSponsorLocked.isLocked) {
+      setApiKey(activeTab, inputValue.trim());
+      setSelectedProvider(activeTab);
+    }
     
-    // (선택 사항) 로컬 스토리지에 방 정책도 함께 저장하여 불러오게 합니다
+    // (선택 사항) 로컬 스토리지에 방 정책도 함께 저장
     localStorage.setItem('alo_room_policy', roomPolicy);
+    localStorage.setItem('alo_sponsor_price', sponsorPrice.toString());
     
+    // DB에 스폰서 모드 동기화 (방장일 때 남들에게 보여주기 위함)
+    const userStr = localStorage.getItem('alo_user');
+    if (userStr) {
+      const parsedUser = JSON.parse(userStr);
+      try {
+        await fetch('/api/user/sponsor', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+             userId: parsedUser.id,
+             sponsorMode: roomPolicy === 'sponsor',
+             sponsorModel: !hostSponsorLocked.isLocked ? activeTab : (selectedProvider || 'openai'),
+             sponsorPrice: roomPolicy === 'sponsor' ? sponsorPrice : 0
+          })
+        });
+      } catch (err) {
+        console.warn('Sponsor DB sync failed', err);
+      }
+    }
+
     setIsOpen(false);
   };
 
@@ -249,21 +296,36 @@ export function SettingsModal() {
             </div>
 
             {/* AI 탭 내용 */}
-            <div className="flex bg-zinc-950 p-1 rounded-xl mb-5 border border-zinc-800">
-              {providers.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setActiveTab(p.id)}
-                  className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${
-                    activeTab === p.id 
-                    ? 'bg-zinc-800 text-white shadow-sm' 
-                    : 'text-zinc-500 hover:text-zinc-300'
-                  }`}
-                >
-                  {p.name}
-                </button>
-              ))}
+            <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+              {providers.map((p) => {
+                const isDisabled = hostSponsorLocked.isLocked && activeTab !== p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                        if (!hostSponsorLocked.isLocked) setActiveTab(p.id);
+                    }}
+                    disabled={isDisabled}
+                    className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${
+                      activeTab === p.id 
+                      ? 'bg-zinc-800 text-white shadow-sm ' + (hostSponsorLocked.isLocked ? 'ring-1 ring-teal-500/50 cursor-not-allowed' : '')
+                      : 'text-zinc-500 hover:text-zinc-300 ' + (isDisabled ? 'opacity-30 cursor-not-allowed grayscale' : '')
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
             </div>
+            
+            {/* 모델 비활성화 락 안내 메시지 */}
+            {hostSponsorLocked.isLocked && (
+               <div className="mt-2 p-2 rounded-lg bg-teal-500/10 border border-teal-500/20 text-teal-400 text-[11px] font-medium flex items-center justify-center gap-1.5 animate-pulse mb-3">
+                 <Key size={14} />
+                 방장 스폰서 연동 중 (방장의 모델 강제 적용)
+               </div>
+            )}
+            <div className="mb-4" />
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
@@ -317,6 +379,26 @@ export function SettingsModal() {
                     <span className="text-sm text-zinc-300">P2P 코인 풀링 (참여자 공동 부담)</span>
                   </label>
                 </div>
+
+                {roomPolicy === 'sponsor' && (
+                  <div className="mt-4 bg-zinc-900 border border-purple-500/30 p-3 rounded-lg animate-in slide-in-from-top-2 duration-300">
+                    <label className="flex items-center justify-between text-[11px] font-semibold text-purple-400 mb-1.5">
+                      <span>💡 방장 자율 과금 (1회 팩트체크당)</span>
+                      <span>단위: 코인</span>
+                    </label>
+                    <input 
+                      type="number"
+                      min="0"
+                      value={sponsorPrice}
+                      onChange={(e) => setSponsorPrice(Number(e.target.value))}
+                      className="w-full bg-black/40 border border-zinc-700 text-zinc-100 px-3 py-2 rounded-lg text-xs focus:ring-1 focus:ring-purple-500 outline-none"
+                    />
+                    <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">
+                      0코인 입력 시 무료 모델로 작동합니다.<br/>
+                      게스트가 팩트체크를 요청할 때마다 해당 금액이 게스트 지갑에서 방장(<strong className="text-zinc-400">나</strong>)의 지갑으로 자동 입금됩니다.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">

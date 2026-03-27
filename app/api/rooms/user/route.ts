@@ -24,7 +24,7 @@ export async function GET(request: Request) {
         members: {
           include: {
             user: {
-              select: { id: true, username: true, isAi: true, aiOwnerId: true, aiPrompt: true }
+              select: { id: true, username: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true }
             }
           }
         }

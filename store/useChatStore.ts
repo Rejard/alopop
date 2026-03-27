@@ -96,6 +96,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       window.dispatchEvent(new CustomEvent('room_name_updated', { detail: payload }));
     });
 
+    // [신규] 사후 메시지 업데이트 정보 수신부 (방장이 대리 연산해준 팩트체크 결과 수신)
+    socket.on('message_updated', async (payload) => {
+      const { messageId, aiAnalysis } = payload;
+      try {
+        // [중대 버그 수정] Dexie update()는 PK(++id)를 인자로 받으므로 messageId(UUID)를 넣으면 실패함! where.modify()를 써야함!
+        await db.messages.where('messageId').equals(messageId).modify({ aiAnalysis });
+        window.dispatchEvent(new CustomEvent('message_updated', { detail: payload }));
+      } catch (e) {
+        console.error('[DEBUG] Failed to sync message update:', e);
+      }
+    });
+
     socket.on('typing_start', (payload) => {
       window.dispatchEvent(new CustomEvent('typing_start', { detail: payload }));
     });

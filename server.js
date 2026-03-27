@@ -119,6 +119,33 @@ app.prepare().then(() => {
       io.to(payload.roomId).emit('room_name_updated', payload);
     });
 
+    // 3.1. [신규] 메시지 사후 업데이트 (AI 팩트체크 결과 서버 중계용) 브로드캐스트
+    socket.on('update_message', async (payload) => {
+      console.log(`[DEBUG] 🔄 Message updated by sponsor (Fact-check):`, payload.messageId);
+      try {
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        
+        const room = await prisma.room.findUnique({
+          where: { id: payload.roomId },
+          include: { members: true }
+        });
+
+        if (room && room.members) {
+          room.members.forEach((member) => {
+            const targetId = member.userId;
+            // 해당 멤버가 접속 중인지 확인 후, 룸 ID가 아닌 사용자 개인 고유 채널로 다이렉트 전송!
+            const roomSet = io.sockets.adapter.rooms.get(targetId);
+            if (roomSet && roomSet.size > 0 && targetId !== socket.userId) {
+              io.to(targetId).emit('message_updated', payload);
+            }
+          });
+        }
+      } catch (err) {
+        console.error('[DEBUG] Failed to relay update_message:', err);
+      }
+    });
+
     // 3.5. 휴먼 유저 타이핑 상태 릴레이 (자신을 제외한 방 멤버에게 브로드캐스트)
     socket.on('typing_start', (payload) => {
       socket.to(payload.roomId).emit('typing_start', payload);
