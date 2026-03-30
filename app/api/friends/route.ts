@@ -47,7 +47,16 @@ export async function POST(request: Request) {
     // 소문자 입력 방지: 강제로 대문자로 치환하여 찾도록 합니다.
     const searchTarget = targetFriendId.trim().toUpperCase();
 
-    // 입력받은 단축 코드(inviteCode)를 기반으로 대상 유저가 존재하는지 확인
+    // 1. 요청한 유저(나)가 실제로 존재하는지 확인 (만약 DB 초기화 등으로 로컬스토리지에만 남은 유령 유저인 경우 방지)
+    const callerUser = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!callerUser) {
+      return NextResponse.json({ error: '인증 정보가 유효하지 않거나 삭제된 계정입니다. 로그아웃 후 다시 로그인해주세요.' }, { status: 401 });
+    }
+
+    // 2. 입력받은 단축 코드(inviteCode)를 기반으로 대상 유저가 존재하는지 확인
     const targetUser = await prisma.user.findUnique({
       where: { inviteCode: searchTarget }
     });
@@ -60,6 +69,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '자기 자신을 친구로 추가할 수 없습니다.' }, { status: 400 });
     }
 
+    console.log(`[DEBUG] Adding friend: userId=${userId}, targetUser.id=${targetUser.id}`);
+    
     // 이미 친구로 등록되어 있는지 확인
     const existingFriendship = await prisma.friendship.findUnique({
       where: {
