@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar } from 'lucide-react';
+import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ChatMessage } from '@/lib/db';
@@ -33,6 +33,8 @@ export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; username: string; inviteCode?: string; walletBalance?: number } | null>(null);
   const [myProfile, setMyProfile] = useState<{ id: string; username: string; avatar_url: string | null; statusMessage: string | null; inviteCode?: string; walletBalance: number } | null>(null);
+
+  const [isGuideOpen, setIsGuideOpen] = useState(false); // 가이드 모달 오픈 상태
 
   const [inputText, setInputText] = useState('');
   const [rooms, setRooms] = useState<any[]>([]);
@@ -65,6 +67,14 @@ export default function Home() {
   // 내 프로필(상태메시지 수정) 모달 관련 상태
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [statusMsgValue, setStatusMsgValue] = useState('');
+
+  // 오라클 HUD 디지털 시계 상태
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  useEffect(() => {
+    setCurrentTime(new Date());
+    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const markRoomAsRead = useCallback((roomId: string) => {
     if (!user?.id) return;
@@ -154,6 +164,10 @@ export default function Home() {
   const [aiAgeValue, setAiAgeValue] = useState('20대 초반');
   const [aiToneValue, setAiToneValue] = useState('발랄하고 친근한 반말');
   const [aiHobbyValue, setAiHobbyValue] = useState('');
+
+  // 신규: AI 수정용 상태 유지
+  const [editingAiFriend, setEditingAiFriend] = useState<any | null>(null);
+  const [regenerateAiAvatar, setRegenerateAiAvatar] = useState(false);
   const [isAiCreating, setIsAiCreating] = useState(false);
 
   useEffect(() => {
@@ -301,8 +315,8 @@ export default function Home() {
       // 타인이 보낸 텍스트 메시지의 팩트체크가 비어있다면 백그라운드 연산(내 키 소모) 후 소켓 브로드캐스트
       const roomPolicy = localStorage.getItem('alo_room_policy') || 'personal';
       const aiEnabledStr = localStorage.getItem('alo_ai_enabled');
-      const isMyAiEnabled = aiEnabledStr !== null ? aiEnabledStr === 'true' : true; 
-      
+      const isMyAiEnabled = aiEnabledStr !== null ? aiEnabledStr === 'true' : true;
+
       // [DEBUG LOG] 방장 스폰서 대리연산 8가지 조건 실시간 평가 현황 출력
       console.log(`\n[SPONSOR CHECK] msg received from ${msg.senderName}`);
       console.log(`1. currentRoom ID match: ${currentRoomRef.current?.id === msg.receiverId} (${currentRoomRef.current?.id} === ${msg.receiverId})`);
@@ -315,103 +329,104 @@ export default function Home() {
       console.log(`8. not AI: ${!msg.senderName.includes('AI')}`);
 
       if (
-        currentRoomRef.current?.id === msg.receiverId && 
-        currentRoomRef.current?.isHost &&
-        roomPolicy === 'sponsor' && 
-        msg.aiRequested && 
-        msg.messageType === 'TEXT' && 
-        !msg.aiAnalysis && 
-        msg.senderId !== parsedUser.id && 
+        currentRoomRef.current?.id === msg.receiverId &&
+        (currentRoomRef.current?.isHost || !currentRoomRef.current?.isGroup) &&
+        roomPolicy === 'sponsor' &&
+        msg.aiRequested &&
+        msg.messageType === 'TEXT' &&
+        (!msg.aiAnalysis || msg.aiAnalysis.category === 'PENDING') &&
+        msg.senderId !== parsedUser.id &&
         !msg.senderName.includes('AI')
       ) {
-         console.log('✅ ALL CONDITIONS PASSED! Triggering Sponsor FactCheck...');
-         (async () => {
-             try {
-                // [신규] 종량제 결제 검증 (sponsorPrice가 0보다 크면 게스트 지갑에서 선 차감 후 방장 지갑으로 이체)
-                const hostMemberFromRef = currentRoomRef.current?.members?.find((m: any) => m.isHost);
-                const hostSponsorPrice = hostMemberFromRef?.user?.sponsorPrice || 0;
-                
-                if (hostSponsorPrice > 0) {
-                  const paymentRes = await fetch('/api/wallet/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      senderId: msg.senderId,   // 코인을 낼 사람 (게스트)
-                      receiverId: parsedUser.id,// 코인을 받을 사람 (방장)
-                      amount: hostSponsorPrice,
-                      reason: `[AI 팩트체크 요금] 방장 스폰서 연산`
-                    })
-                  });
+        console.log('✅ ALL CONDITIONS PASSED! Triggering Sponsor FactCheck...');
+        (async () => {
+          try {
+            // [신규] 종량제 결제 검증 (sponsorPrice가 0보다 크면 게스트 지갑에서 선 차감 후 스폰서 지갑으로 이체)
+            // 1:1 방이든 그룹 방이든, 이 코드를 실행하는 나(parsedUser.id)가 스폰서이므로 내 정보를 찾습니다.
+            const myMemberFromRef = currentRoomRef.current?.members?.find((m: any) => m.userId === parsedUser.id);
+            const hostSponsorPrice = myMemberFromRef?.user?.sponsorPrice || 0;
 
-                  if (!paymentRes.ok) {
-                    const errData = await paymentRes.json();
-                    console.log('[DEBUG] ❌ Payment Failed:', errData);
-                    
-                    // 결제 실패 시 (잔액 부족 등) 에러 메시지를 팩트체크 마커로 포장해서 던져줌
-                    const failResult = {
-                      category: 'NORMAL',
-                      confidence: 0,
-                      reason: `[결제 취소] ${errData.error || '잔액 부족으로 AI 연산이 거절되었습니다.'}`,
-                      isSponsored: true,
-                      sponsorModel: '결제 취소'
-                    };
-                    
-                    // 방장 화면 데이터베이스 업데이트
-                    await db.messages.where('messageId').equals(msg.messageId).modify({ aiAnalysis: failResult });
-                    
-                    // 게스트에게 캔슬 배지 발송
-                    useChatStore.getState().socket?.emit('update_message', { 
-                       roomId: msg.receiverId, 
-                       messageId: msg.messageId, 
-                       aiAnalysis: failResult 
-                    });
-                    
-                    // 팩트체크 연산 스킵!
-                    return;
-                  }
-                }
+            if (hostSponsorPrice > 0) {
+              const paymentRes = await fetch('/api/wallet/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  senderId: msg.senderId,   // 코인을 낼 사람 (게스트)
+                  receiverId: parsedUser.id,// 코인을 받을 사람 (방장)
+                  amount: hostSponsorPrice,
+                  reason: `[AI 팩트체크 요금] 방장 스폰서 연산`
+                })
+              });
 
-                const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-                const keysStr = localStorage.getItem('alo_api_keys');
-                const apiKeys = keysStr ? JSON.parse(keysStr) : {};
-                const byokKey = apiKeys[selectedProvider];
-                const aiModelStr = localStorage.getItem('alo_ai_model');
+              if (!paymentRes.ok) {
+                const errData = await paymentRes.json();
+                console.log('[DEBUG] ❌ Payment Failed:', errData);
 
-                if (!byokKey) return; 
+                // 결제 실패 시 (잔액 부족 등) 에러 메시지를 팩트체크 마커로 포장해서 던져줌
+                const failResult = {
+                  category: 'NORMAL',
+                  confidence: 0,
+                  reason: `[결제 취소] ${errData.error || '잔액 부족으로 AI 연산이 거절되었습니다.'}`,
+                  isSponsored: true,
+                  sponsorModel: '결제 취소'
+                };
 
-                console.log('[DEBUG] 👑 Host Sponsor Fact-Check Triggered for msg:', msg.messageId);
+                // 방장 화면 데이터베이스 업데이트
+                await db.messages.where('messageId').equals(msg.messageId).modify({ aiAnalysis: failResult });
 
-                const aiRes = await fetch('/api/chat', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    content: msg.content,
-                    provider: selectedProvider,
-                    byokKey,
-                    aiModel: aiModelStr 
-                  })
+                // 게스트에게 캔슬 배지 발송
+                useChatStore.getState().socket?.emit('update_message', {
+                  roomId: msg.receiverId,
+                  messageId: msg.messageId,
+                  aiAnalysis: failResult
                 });
 
-                if (aiRes.ok) {
-                  const checkResult = await aiRes.json();
-                  
-                  // 방장이 연산한 것임을 모든 유저가 알 수 있도록 명시적 표식 삽입
-                  checkResult.isSponsored = true;
-                  checkResult.sponsorModel = aiModelStr || selectedProvider;
+                // 팩트체크 연산 스킵!
+                return;
+              }
+            }
 
-                  // [중대 버그 수정] Dexie update()는 PK(++id)를 인자로 받으므로 messageId(UUID)를 넣으면 실패함! where.modify()를 써야함!
-                  await db.messages.where('messageId').equals(msg.messageId).modify({ aiAnalysis: checkResult });
-                  
-                  useChatStore.getState().socket?.emit('update_message', { 
-                     roomId: msg.receiverId, 
-                     messageId: msg.messageId, 
-                     aiAnalysis: checkResult 
-                  });
-                }
-             } catch (err) {
-                console.warn('[DEBUG] Sponsor Fact-check failed:', err);
-             }
-         })();
+            const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
+            const keysStr = localStorage.getItem('alo_api_keys');
+            const apiKeys = keysStr ? JSON.parse(keysStr) : {};
+            const byokKey = apiKeys[selectedProvider];
+            const aiModelStr = localStorage.getItem('alo_ai_model');
+
+            if (!byokKey) return;
+
+            console.log('[DEBUG] 👑 Host Sponsor Fact-Check Triggered for msg:', msg.messageId);
+
+            const aiRes = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: msg.content,
+                provider: selectedProvider,
+                byokKey,
+                aiModel: aiModelStr
+              })
+            });
+
+            if (aiRes.ok) {
+              const checkResult = await aiRes.json();
+
+              // 방장이 연산한 것임을 모든 유저가 알 수 있도록 명시적 표식 삽입
+              checkResult.isSponsored = true;
+              checkResult.sponsorModel = aiModelStr || selectedProvider;
+
+              // [중대 버그 수정] Dexie update()는 PK(++id)를 인자로 받으므로 messageId(UUID)를 넣으면 실패함! where.modify()를 써야함!
+              await db.messages.where('messageId').equals(msg.messageId).modify({ aiAnalysis: checkResult });
+
+              useChatStore.getState().socket?.emit('update_message', {
+                roomId: msg.receiverId,
+                messageId: msg.messageId,
+                aiAnalysis: checkResult
+              });
+            }
+          } catch (err) {
+            console.warn('[DEBUG] Sponsor Fact-check failed:', err);
+          }
+        })();
       }
 
       setLatestMessageTimes(prev => ({
@@ -430,12 +445,12 @@ export default function Home() {
           if (typeof window !== 'undefined' && navigator.vibrate) {
             navigator.vibrate([200]);
           }
-          
+
           setUnreadCounts(prev => ({
             ...prev,
             [msg.receiverId]: (prev[msg.receiverId] || 0) + 1
           }));
-        } 
+        }
         // 내가 보고 있는 방에 메시지가 도착했거나(조용히 즉시 읽음 처리), 
         // 혹은 내가 그 방에 직접 메시지를 보냈을 때
         else if (isCurrentRoom) {
@@ -507,7 +522,7 @@ export default function Home() {
       window.removeEventListener('room_name_updated', handleRoomNameUpdated);
       window.removeEventListener('typing_start', handleHumanTypingStart);
       window.removeEventListener('typing_end', handleHumanTypingEnd);
-      
+
       // 언마운트 시엔 연결 끊기
       chatStore.disconnectSocket();
     };
@@ -620,17 +635,17 @@ export default function Home() {
     // 진행 중인 타이머 해제
     Object.values(aiTimeoutsRef.current).forEach(clearTimeout);
     aiTimeoutsRef.current = {};
-    
+
     // 진행 중인 Fetch 차단
     Object.values(aiAbortControllersRef.current).forEach(ctrl => ctrl.abort());
     aiAbortControllersRef.current = {};
-    
+
     if (currentRoom?.id) {
       const { socket } = useChatStore.getState();
       if (socket) {
         Object.keys(pendingAiReplyRef.current).forEach(aiId => {
           if (pendingAiReplyRef.current[aiId]) {
-             socket.emit('typing_end', { roomId: currentRoom.id, userId: aiId });
+            socket.emit('typing_end', { roomId: currentRoom.id, userId: aiId });
           }
         });
       }
@@ -644,13 +659,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentRoom || !messages || messages.length === 0 || !user) return;
-    
+
     const lastMsg = messages[messages.length - 1];
-    
+
     // 이미 처리한 메시지면 패스 (렌더링 사이클 방어)
     if (lastProcessedAiMsgIdRef.current === lastMsg.messageId) return;
     lastProcessedAiMsgIdRef.current = lastMsg.messageId;
-    
+
     // 텍스트 메시지가 아니면 (사진/파일/시스템메시지) 무시
     if (lastMsg.messageType !== 'TEXT') return;
 
@@ -659,18 +674,31 @@ export default function Home() {
     const keysStr = localStorage.getItem('alo_api_keys');
     const apiKeys = keysStr ? JSON.parse(keysStr) : {};
     const byokKey = apiKeys[selectedProvider];
-    
-    if (!byokKey) return; 
+
+    if (!byokKey) return;
 
     // [신규] 방장 스폰서 옵션 체크
     const roomPolicy = localStorage.getItem('alo_room_policy') || 'personal';
-    const isSponsorMode = currentRoom.isHost && roomPolicy === 'sponsor';
-    
+    const isSponsorMode = (currentRoom.isHost || !currentRoom.isGroup) && roomPolicy === 'sponsor';
+
+    // [중요 로직 보완] 이 방이 '스폰서 락' 상태(내가 호스트가 아닌데 호스트가 스폰서 모드를 켠 경우)인지 확인
+    let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
+    if (!currentRoom.isGroup) {
+      sponsorMember = currentRoom.members?.find((m: any) => m.userId !== user?.id);
+    }
+    const amISponsor = sponsorMember?.userId === user?.id;
+    const isGuestInSponsorRoom = !amISponsor && sponsorMember?.user?.sponsorMode;
+
     // 현재 방 멤버 중, 내 클라이언트(이 브라우저)가 연산을 책임질 AI 발라내기
     const activeAIs = currentRoom.members.filter((m: any) => {
       if (!m.user?.isAi) return false; // 사람이면 제외
-      // 스폰서 모드일 경우: 내가 방장이므로, 내 소유 여부와 무관하게 모든 AI를 내가 연산해 줌!
+      
+      // 스폰서 모드일 경우: 내가 방장(스폰서)이므로, 내 소유 여부와 무관하게 모든 AI를 내가 연산해 줌!
       if (isSponsorMode) return true;
+      
+      // 반대로, 내가 '스폰서 방에 들어온 게스트'라면, 내가 만든 AI라도 내가 연산하면 안 됨! (호스트가 대신 연산해 주므로 중복 방지)
+      if (isGuestInSponsorRoom) return false;
+
       // 일반 모드일 경우: 내가 직접 창조한(내 로컬 기기에 본적이 있는) AI만 연산
       return m.user?.aiOwnerId === user.id;
     });
@@ -694,25 +722,25 @@ export default function Home() {
     // 내가 책임지는 각각의 AI들에 대해 개입 여부 평가
     activeAIs.forEach((aiMember: any) => {
       const aiUser = aiMember.user;
-      
+
       // 사람 발언 이후 이 특정 AI가 몇 번 말했는지(Quota) 검사
       let mySpeakCountSinceLastHuman = 0;
       for (let i = lastHumanMsgIndex + Math.max(0, 1); i < messages.length; i++) {
-         const m = messages[i];
-         if (m.senderId === aiUser.id || m.senderName === aiUser.username) {
-            mySpeakCountSinceLastHuman++;
-         }
+        const m = messages[i];
+        if (m.senderId === aiUser.id || m.senderName === aiUser.username) {
+          mySpeakCountSinceLastHuman++;
+        }
       }
 
       // 각 AI들은 사람의 한마디 이후 최대 연속 2번(티키타카 1회분)까지만 끼어들 수 있음
       if (mySpeakCountSinceLastHuman >= 2) {
-         console.log(`[DEBUG] ${aiUser.username}는 이미 2번 발언했습니다. 다른 AI의 턴을 위해 침묵합니다.`);
-         return; 
+        console.log(`[DEBUG] ${aiUser.username}는 이미 2번 발언했습니다. 다른 AI의 턴을 위해 침묵합니다.`);
+        return;
       }
-      
+
       // 연속으로 "자기 자신"이 두 번 말하는 진정한 의미의 혼잣말은 차단 (다른 AI가 받아쳐야 대답함)
       if (lastMsg.senderId === aiUser.id || lastMsg.senderName === aiUser.username) {
-         return;
+        return;
       }
 
       // 1:1 채팅방 여부 판별
@@ -725,10 +753,10 @@ export default function Home() {
 
       // 조용히 하라고 한 경우엔 멘션되어도 무조건 사과하고 침묵
       if (isCommandQuiet) {
-         setTimeout(() => {
-           chatStore.sendMessage(currentRoom.id, "앗... 넵 조용히 할게요 🤐", aiUser.id, aiUser.username, 'TEXT');
-         }, isOneOnOne ? 1000 : 3000);
-         return;
+        setTimeout(() => {
+          chatStore.sendMessage(currentRoom.id, "앗... 넵 조용히 할게요 🤐", aiUser.id, aiUser.username, 'TEXT');
+        }, isOneOnOne ? 1000 : 3000);
+        return;
       }
 
       // AI 응답 실행 함수 (독립 분리)
@@ -743,19 +771,19 @@ export default function Home() {
             const roomTyping = typingAIsRef.current[currentRoom.id] || [];
             const isOtherAiTypingState = roomTyping.some((a: any) => a.aiId !== aiUser.id);
             const isOtherAiPendingLocal = Object.entries(pendingAiReplyRef.current).some(([id, isPending]) => id !== aiUser.id && isPending);
-            
+
             if (isOtherAiTypingState || isOtherAiPendingLocal) {
-               console.log(`[DEBUG] ${aiUser.username}는 다른 AI의 턴을 존중하여 이번 대답을 미룹니다(턴 양보).`);
-               return; // 아무 일도 하지 않고 스킵! (다음 메시지 렌더링 사이클에서 다시 기회 획득)
+              console.log(`[DEBUG] ${aiUser.username}는 다른 AI의 턴을 존중하여 이번 대답을 미룹니다(턴 양보).`);
+              return; // 아무 일도 하지 않고 스킵! (다음 메시지 렌더링 사이클에서 다시 기회 획득)
             }
 
             // 내 턴이 통과되었으므로 타이핑 시작 선언!
             pendingAiReplyRef.current[aiUser.id] = true;
-            
+
             setTypingAIs(prev => {
               const roomAIs = prev[currentRoom.id] || [];
               if (!roomAIs.find(a => a.aiId === aiUser.id)) {
-                 return { ...prev, [currentRoom.id]: [...roomAIs, { aiId: aiUser.id, aiName: aiUser.username }] };
+                return { ...prev, [currentRoom.id]: [...roomAIs, { aiId: aiUser.id, aiName: aiUser.username }] };
               }
               return prev;
             });
@@ -768,85 +796,99 @@ export default function Home() {
             // 최신 문맥을 다시 추출 (딜레이 동안 쌓인 메시지 반영)
             let currentContext = "";
             db.messages
-               .where('receiverId').equals(currentRoom.id)
-               .sortBy('createdAt')
-               .then((allMsgs: any[]) => {
-                 currentContext = allMsgs.slice(-5).map((m: any) => `[${m.senderName}]: ${m.content}`).join('\n');
-                 return fetch('/api/chat/friend', {
-                   method: 'POST',
-                   headers: { 'Content-Type': 'application/json' },
-                   signal: controller.signal,
-                   body: JSON.stringify({
-                     provider: selectedProvider,
-                     byokKey,
-                     aiModel: selectedAiModel || localStorage.getItem('alo_ai_model'),
-                     systemPrompt: aiUser.aiPrompt,
-                     content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
-                   })
-                 });
-               })
-               .then((aiResponse: any) => aiResponse.json())
-               .then((resData: any) => {
-                 if (resData && resData.reply) {
-                    const aiReplyContent = resData.reply;
-                    chatStore.sendMessage(currentRoom.id, aiReplyContent, aiUser.id, aiUser.username, 'TEXT');
-                 }
-               })
-               .catch((e: any) => {
-                 if (e.name === 'AbortError') {
-                   console.log(`[DEBUG] AI ${aiUser.username} 응답이 사용자의 타이핑으로 인해 차단됨(Aborted)`);
-                 } else {
-                   console.error("AI 자율 응답 트리거 에러:", e);
-                 }
-               })
-               .finally(() => {
-                 pendingAiReplyRef.current[aiUser.id] = false;
-                 
-                 const { socket } = useChatStore.getState();
-                 if (socket) socket.emit('typing_end', { roomId: currentRoom.id, userId: aiUser.id });
-                 
-                 // 타이핑 인디케이터 끄기
-                 setTypingAIs(prev => {
-                   const roomAIs = prev[currentRoom.id] || [];
-                   return { ...prev, [currentRoom.id]: roomAIs.filter(a => a.aiId !== aiUser.id) };
-                 });
-               });
+              .where('receiverId').equals(currentRoom.id)
+              .sortBy('createdAt')
+              .then((allMsgs: any[]) => {
+                currentContext = allMsgs.slice(-5).map((m: any) => `[${m.senderName}]: ${m.content}`).join('\n');
+
+                const realProvider = localStorage.getItem('alo_ai_provider') || 'openai';
+                const savedKeys = JSON.parse(localStorage.getItem('alo_api_keys') || '{}');
+                const realByokKey = savedKeys[realProvider] || '';
+
+                return fetch('/api/chat/friend', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  signal: controller.signal,
+                  body: JSON.stringify({
+                    provider: realProvider,
+                    byokKey: realByokKey,
+                    aiModel: localStorage.getItem('alo_ai_model') || '',
+                    systemPrompt: aiUser.aiPrompt,
+                    content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
+                  })
+                });
+              })
+              .then((aiResponse: any) => {
+                if (!aiResponse.ok) {
+                  if (aiResponse.status === 429) {
+                    chatStore.sendMessage(currentRoom.id, `⚠️ [AI 알림] 무료 제공량이 모두 소진되어 일시 정지되었습니다. 방장이 스폰서 모드를 켜거나 개인 설정에서 API 키를 등록해주세요.`, 'system', 'System', 'SYSTEM');
+                  } else if (aiResponse.status === 400) {
+                    chatStore.sendMessage(currentRoom.id, `⚠️ [AI 알림] 무료 AI 시스템이 막혀 있습니다 (서버 관리자가 Google API Key를 등록하지 않았습니다).`, 'system', 'System', 'SYSTEM');
+                  }
+                }
+                return aiResponse.json();
+              })
+              .then((resData: any) => {
+                if (resData && resData.reply) {
+                  const aiReplyContent = resData.reply;
+                  chatStore.sendMessage(currentRoom.id, aiReplyContent, aiUser.id, aiUser.username, 'TEXT');
+                }
+              })
+              .catch((e: any) => {
+                if (e.name === 'AbortError') {
+                  console.log(`[DEBUG] AI ${aiUser.username} 응답이 사용자의 타이핑으로 인해 차단됨(Aborted)`);
+                } else {
+                  console.error("AI 자율 응답 트리거 에러:", e);
+                }
+              })
+              .finally(() => {
+                pendingAiReplyRef.current[aiUser.id] = false;
+
+                const { socket } = useChatStore.getState();
+                if (socket) socket.emit('typing_end', { roomId: currentRoom.id, userId: aiUser.id });
+
+                // 타이핑 인디케이터 끄기
+                setTypingAIs(prev => {
+                  const roomAIs = prev[currentRoom.id] || [];
+                  return { ...prev, [currentRoom.id]: roomAIs.filter(a => a.aiId !== aiUser.id) };
+                });
+              });
           } catch (err) {
             pendingAiReplyRef.current[aiUser.id] = false;
           }
         }, startDelayMs);
-        
+
         aiTimeoutsRef.current[aiUser.id] = timeoutId;
       };
 
       if (isMentioned || randomTrigger) {
-         // 즉시 개입 처리 (단톡방 1.5~3.5초, 1:1 방은 1~2.5초)
-         const delayMs = isOneOnOne ? Math.floor(Math.random() * 1500) + 1000 : Math.floor(Math.random() * 2000) + 1500;
-         executeAiReply(delayMs);
+        // 즉시 개입 처리 (단톡방 1.5~3.5초, 1:1 방은 1~2.5초)
+        const delayMs = isOneOnOne ? Math.floor(Math.random() * 1500) + 1000 : Math.floor(Math.random() * 2000) + 1500;
+        executeAiReply(delayMs);
       } else {
-         // [신규] 어색한 침묵 깨기 (단톡방 전용)
-         // 누군가 말하고 나서 아무도 대답이 없고 4초~6초의 정적이 흐르면 100% 확률로 AI가 개입합니다.
-         const silenceDelayMs = Math.floor(Math.random() * 2000) + 4000;
-         
-         const timeoutId = setTimeout(() => {
-            // 침묵 시간 후, 여전히 마지막 메시지가 방금 검사했던 lastMsg인지 확인 (누구도 말하지 않음)
-            db.messages.where('receiverId').equals(currentRoom.id).sortBy('createdAt').then((allMsgs: any[]) => {
-               if (allMsgs.length === 0) return;
-               const absoluteLastMsg = allMsgs[allMsgs.length - 1];
-               
-               // 침묵이 깨졌거나 현재 누군가 치고 있다면 개입 포기 (정적이 아님)
-               const hasLocalText = inputTextRef.current.trim().length > 0;
-               const otherTypers = humanTypingRef.current[currentRoom.id] || [];
-               if (hasLocalText || otherTypers.length > 0) return;
-               
-               if (absoluteLastMsg.messageId === lastMsg.messageId) {
-                  // 아무도 말 안했으므로 침묵 깨기 발동 (타이핑은 1~2초만 짧게 주고 바로 입력)
-                  executeAiReply(Math.floor(Math.random() * 1000) + 1000); 
-               }
-            });
-         }, silenceDelayMs);
-         
-         aiTimeoutsRef.current[aiUser.id + "_silence"] = timeoutId;
+        // [신규] 어색한 침묵 깨기 (단톡방 전용)
+        // 누군가 말하고 나서 아무도 대답이 없고 4초~6초의 정적이 흐르면 100% 확률로 AI가 개입합니다.
+        const silenceDelayMs = Math.floor(Math.random() * 2000) + 4000;
+
+        const timeoutId = setTimeout(() => {
+          // 침묵 시간 후, 여전히 마지막 메시지가 방금 검사했던 lastMsg인지 확인 (누구도 말하지 않음)
+          db.messages.where('receiverId').equals(currentRoom.id).sortBy('createdAt').then((allMsgs: any[]) => {
+            if (allMsgs.length === 0) return;
+            const absoluteLastMsg = allMsgs[allMsgs.length - 1];
+
+            // 침묵이 깨졌거나 현재 누군가 치고 있다면 개입 포기 (정적이 아님)
+            const hasLocalText = inputTextRef.current.trim().length > 0;
+            const otherTypers = humanTypingRef.current[currentRoom.id] || [];
+            if (hasLocalText || otherTypers.length > 0) return;
+
+            if (absoluteLastMsg.messageId === lastMsg.messageId) {
+              // 아무도 말 안했으므로 침묵 깨기 발동 (타이핑은 1~2초만 짧게 주고 바로 입력)
+              executeAiReply(Math.floor(Math.random() * 1000) + 1000);
+            }
+          });
+        }, silenceDelayMs);
+
+        aiTimeoutsRef.current[aiUser.id + "_silence"] = timeoutId;
       }
     });
 
@@ -874,28 +916,12 @@ export default function Home() {
       const data = await res.json();
 
       if (data.success) {
-        let aiAnalysisResult = undefined;
-        if (data.type === 'IMAGE' && isAiEnabled) {
-          try {
-            const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-            const keysStr = localStorage.getItem('alo_api_keys');
-            const apiKeys = keysStr ? JSON.parse(keysStr) : {};
-            const byokKey = apiKeys[selectedProvider];
-            const aiRes = await fetch('/api/chat', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content: '', imageUrl: data.url, provider: selectedProvider, byokKey, aiModel: selectedAiModel })
-            });
-            if (aiRes.ok) aiAnalysisResult = await aiRes.json();
-          } catch (err) {
-            console.warn('AI Vision Analysis failed:', err);
-          }
-        }
-
         const { socket } = chatStore;
         if (!socket) return;
 
+        const msgId = uuidv4();
         const newMessage: ChatMessage = {
-          messageId: uuidv4(),
+          messageId: msgId,
           senderId: user.id,
           senderName: user.username,
           receiverId: currentRoom.id,
@@ -903,12 +929,45 @@ export default function Home() {
           messageType: data.type as 'IMAGE' | 'FILE' | 'VIDEO',
           fileUrl: data.url,
           fileName: data.name,
-          aiAnalysis: aiAnalysisResult,
+          aiAnalysis: (data.type === 'IMAGE' && isAiEnabled) ? { category: 'PENDING' } : undefined,
           createdAt: Date.now()
         };
 
+        // 낙관적 UI: 로컬 DB 즉시 추가 및 소켓 发送
         await db.messages.add(newMessage);
-        socket.emit('send_message', { receiverId: currentRoom.id, message: newMessage });
+        setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
+        const emitMessage = { ...newMessage } as any;
+        delete emitMessage.id;
+        socket.emit('send_message', { receiverId: currentRoom.id, message: emitMessage });
+
+        // 백그라운드 AI 비전 스레드 (비동기)
+        if (data.type === 'IMAGE' && isAiEnabled) {
+          (async () => {
+            try {
+              const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
+              const keysStr = localStorage.getItem('alo_api_keys');
+              const apiKeys = keysStr ? JSON.parse(keysStr) : {};
+              const byokKey = apiKeys[selectedProvider];
+              const aiRes = await fetch('/api/chat', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: '', imageUrl: data.url, provider: selectedProvider, byokKey, aiModel: selectedAiModel })
+              });
+              if (aiRes.ok) {
+                const aiAnalysisResult = await aiRes.json();
+                await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+                if (socket) {
+                  socket.emit('update_message', {
+                    roomId: currentRoom?.id || 'global',
+                    messageId: msgId,
+                    aiAnalysis: aiAnalysisResult
+                  });
+                }
+              }
+            } catch (err) {
+              console.warn('AI Vision Analysis failed (skipped):', err);
+            }
+          })();
+        }
       }
     } catch (err) {
       console.error('File upload failed', err);
@@ -979,66 +1038,98 @@ export default function Home() {
       return;
     }
 
-    // --- 2. 일반 메시지 및 AI 팩트체크 처리 ---
-    let aiAnalysisResult = undefined;
-
-    // 비동기로 AI 백엔드에 팩트체크 요청
-    // 스폰서 락(isSponsorLocked) 상태라면 내 설정을 무시하고 방장의 대리연산으로 전적으로 위임해야 함!
-    const hostMember = currentRoom?.members?.find((m: any) => m.isHost);
-    const amIHost = currentRoom ? hostMember?.userId === user?.id : false;
-    const isSponsorLocked = currentRoom && !amIHost && hostMember?.user?.sponsorMode;
-
-    if (isAiEnabled && !isSponsorLocked) {
-      setIsAiProcessing(true);
-      try {
-        const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-        const keysStr = localStorage.getItem('alo_api_keys');
-        const apiKeys = keysStr ? JSON.parse(keysStr) : {};
-        const byokKey = apiKeys[selectedProvider];
-
-        const aiRes = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: messageContent,
-            provider: selectedProvider,
-            byokKey,
-            aiModel: selectedAiModel
-          })
-        });
-        if (aiRes.ok) {
-          aiAnalysisResult = await aiRes.json();
-        }
-      } catch (err) {
-        console.warn('AI 분석 실패 (건너뜀):', err);
-      } finally {
-        setIsAiProcessing(false);
-      }
+    // --- 2. 일반 메시지 전송 및 Optimistic UI (병렬 처리) ---
+    // 스폰서 락(isSponsorLocked) 상태라면 내 설정을 무시하고 상대방(스폰서)의 대리연산으로 전적으로 위임해야 함!
+    let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
+    if (currentRoom && !currentRoom.isGroup) {
+      sponsorMember = currentRoom.members?.find((m: any) => m.userId !== user?.id);
     }
+    const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
+    const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
 
-    // 로컬 스토어에 추가 및 소켓 릴레이 호출 (aiAnalysis 포함)
-    const { socket } = chatStore;
-    if (!socket) return;
-
+    const msgId = uuidv4();
     const newMessage: ChatMessage = {
-      messageId: uuidv4(),
+      messageId: msgId,
       senderId: user.id,
       senderName: user.username,
       receiverId: currentRoom?.id || 'global',
       content: messageContent,
       messageType: 'TEXT',
-      aiAnalysis: aiAnalysisResult,
+      aiAnalysis: isAiEnabled ? { category: 'PENDING' } : undefined,
       aiRequested: isAiEnabled, // 내 기기의 AI 토글 상태를 담아서 보냄 (방장이 보고 대리연산할지 결정하도록)
       createdAt: Date.now(),
     };
 
+    // 1️⃣ 로컬 스토어에 **즉시** 추가 (딜레이 0초)
     await db.messages.add(newMessage);
     setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
 
-    // 다시 방 단위(Room ID)로 발송하되, 로컬 고유 번호(id)는 제외해야 충돌 방지됨!
-    const emitMessage = { ...newMessage } as any;
-    delete emitMessage.id;
-    socket.emit('send_message', { receiverId: currentRoom?.id || 'global', message: emitMessage });
+    // 2️⃣ 소켓 릴레이 즉시 호출
+    const { socket } = chatStore;
+    if (socket) {
+      const emitMessage = { ...newMessage } as any;
+      delete emitMessage.id;
+      socket.emit('send_message', { receiverId: currentRoom?.id || 'global', message: emitMessage });
+    }
+
+    // 3️⃣ AI 팩트체크 백그라운드 연산 (결과 도착 시 사후 업데이트)
+    if (isAiEnabled && !isSponsorLocked) {
+      (async () => {
+        try {
+          const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
+          const keysStr = localStorage.getItem('alo_api_keys');
+          const apiKeys = keysStr ? JSON.parse(keysStr) : {};
+          const byokKey = apiKeys[selectedProvider];
+
+          const aiRes = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: messageContent,
+              provider: selectedProvider,
+              byokKey,
+              aiModel: selectedAiModel
+            })
+          });
+
+          if (aiRes.ok) {
+            const aiAnalysisResult = await aiRes.json();
+
+            // 로컬 DB 사후 업데이트 (PK id 이슈 방지를 위해 messageId 기준 검색)
+            await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+
+            // 다른 참여자들에게도 AI 분석 결과 전파
+            if (socket) {
+              socket.emit('update_message', {
+                roomId: currentRoom?.id || 'global',
+                messageId: msgId,
+                aiAnalysis: aiAnalysisResult
+              });
+            }
+          } else {
+            let reasonText = 'AI 서버 연산 실패 (나중에 다시 시도해주세요)';
+            if (aiRes.status === 429) {
+              reasonText = '무료 제공량 일일 한도 초과 (설정에서 개인 API 키를 등록하세요)';
+            } else if (aiRes.status === 400) {
+              reasonText = '서버 무료 AI 미설정 (관리자 키가 없습니다. 설정에서 개인 키를 등록하세요)';
+            }
+            const fallbackResult = { category: 'ERROR', confidence: 0, reason: reasonText };
+            await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: fallbackResult });
+            if (socket) {
+              socket.emit('update_message', {
+                roomId: currentRoom?.id || 'global',
+                messageId: msgId,
+                aiAnalysis: fallbackResult
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('AI 분석 처리 중 예외 발생:', err);
+          const errorCat = { category: 'ERROR', confidence: 0, reason: 'AI 엔진 접속 오류' };
+          db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: errorCat }).catch(console.error);
+        }
+      })();
+    }
   };
 
   const handleCreateRoom = async (friendId: string) => {
@@ -1356,37 +1447,65 @@ export default function Home() {
     }
   };
 
-  const handleCreateAIFriend = async (e: React.FormEvent) => {
+  const handleSubmitAiFriend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!aiNameValue.trim() || !user) return;
     setIsAiCreating(true);
     try {
-      const res = await fetch('/api/users/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ownerId: user.id,
-          name: aiNameValue,
-          mbti: aiMbtiValue,
-          gender: aiGenderValue,
-          age: aiAgeValue,
-          tone: aiToneValue,
-          hobby: aiHobbyValue
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(`${data.aiUser.username} AI 친구가 생성되어 친구 목록에 추가되었습니다!`);
-        setFriends(prev => [...prev, data.aiUser]);
-        setAddFriendTab('NORMAL');
-        setIsAddFriendModalOpen(false);
-        setAiNameValue('');
+      if (editingAiFriend) {
+        // AI 친구 수정
+        const res = await fetch(`/api/users/ai/${editingAiFriend.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ownerId: user.id,
+            name: aiNameValue,
+            mbti: aiMbtiValue,
+            gender: aiGenderValue,
+            age: aiAgeValue,
+            tone: aiToneValue,
+            hobby: aiHobbyValue,
+            regenerateAvatar: regenerateAiAvatar
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('AI 정보가 성공적으로 수정되었습니다.');
+          setFriends(prev => prev.map(f => f.id === editingAiFriend.id ? { ...f, ...data.aiUser } : f));
+          setIsAddFriendModalOpen(false);
+          setEditingAiFriend(null);
+        } else {
+          alert('수정 실패: ' + data.error);
+        }
       } else {
-        alert('AI 생성 실패: ' + data.error);
+        // AI 친구 신규 생성
+        const res = await fetch('/api/users/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ownerId: user.id,
+            name: aiNameValue,
+            mbti: aiMbtiValue,
+            gender: aiGenderValue,
+            age: aiAgeValue,
+            tone: aiToneValue,
+            hobby: aiHobbyValue
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(`${data.aiUser.username} AI 친구가 생성되어 친구 목록에 추가되었습니다!`);
+          setFriends(prev => [...prev, data.aiUser]);
+          setAddFriendTab('NORMAL');
+          setIsAddFriendModalOpen(false);
+          setAiNameValue('');
+        } else {
+          alert('AI 생성 실패: ' + data.error);
+        }
       }
     } catch (err) {
       console.error(err);
-      alert('AI 생성 중 오류가 발생했습니다.');
+      alert('AI 저장 중 오류가 발생했습니다.');
     } finally {
       setIsAiCreating(false);
     }
@@ -1434,6 +1553,66 @@ export default function Home() {
       alert('오류가 발생했습니다.');
     }
   };
+
+  // 신규: AI 친구 영구 삭제
+  const handleDeleteAiFriend = async (friend: any) => {
+    if (!user?.id) return;
+    if (friend.aiOwnerId !== user.id) {
+      alert('본인이 생성한 AI만 삭제할 수 있습니다.');
+      return;
+    }
+    if (!confirm(`'${friend.username}' AI를 정말 삭제하시겠습니까? (복구할 수 없습니다)`)) return;
+
+    try {
+      const res = await fetch(`/api/users/ai/${friend.id}?ownerId=${user.id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        alert('AI 친구가 완전히 삭제되었습니다.');
+        setFriends(prev => prev.filter(f => f.id !== friend.id));
+        setActiveFriendMenuId(null);
+      } else {
+        const errorData = await res.json();
+        alert('삭제 실패: ' + errorData.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('오류가 발생했습니다.');
+    }
+  };
+
+  // AI 친구 성격/이름/사진 수정 모달 열기
+  const handleEditAiFriend = (friend: any) => {
+    if (!user?.id) return;
+    if (friend.aiOwnerId !== user.id) {
+      alert('본인이 생성한 AI만 수정할 수 있습니다.');
+      return;
+    }
+
+    const promptStr = friend.aiPrompt || '';
+    
+    // 이전에 저장된 통문장에서 값을 뽑아냅니다. (없으면 기본값)
+    const nameMatch = promptStr.match(/- 이름: (.*)/);
+    const mbtiMatch = promptStr.match(/- MBTI: (.*)/);
+    const genderMatch = promptStr.match(/- 성별: (.*)/);
+    const ageMatch = promptStr.match(/- 연령대: (.*)/);
+    const toneMatch = promptStr.match(/- 말투\/성격: (.*)/);
+    const hobbyMatch = promptStr.match(/- 관심사\/취미: (.*)/);
+
+    setAiNameValue(nameMatch ? nameMatch[1].trim() : friend.username);
+    setAiMbtiValue(mbtiMatch ? mbtiMatch[1].trim() : 'ENFP');
+    setAiGenderValue(genderMatch ? genderMatch[1].trim() : '여성');
+    setAiAgeValue(ageMatch ? ageMatch[1].trim() : '20대 초반');
+    setAiToneValue(toneMatch ? toneMatch[1].trim() : '유쾌발랄, 친드레');
+    setAiHobbyValue(hobbyMatch && hobbyMatch[1].trim() !== '특별한 관심사 없음' ? hobbyMatch[1].trim() : '');
+
+    setEditingAiFriend(friend);
+    setRegenerateAiAvatar(false); // 기본은 사진 재생성 체크 해제
+    setActiveFriendMenuId(null);
+    setAddFriendTab('AI');
+    setIsAddFriendModalOpen(true);
+  };
+
 
   // 내 상태메시지 업데이트 API 호출
   const handleUpdateStatusMessage = async (e: React.FormEvent) => {
@@ -1529,11 +1708,14 @@ export default function Home() {
   };
 
   // --- [스폰서 UI Lock 상태 계산] ---
-  const hostMember = currentRoom?.members?.find((m: any) => m.isHost);
-  const amIHost = currentRoom ? hostMember?.userId === user?.id : false;
-  const isSponsorLocked = currentRoom && !amIHost && hostMember?.user?.sponsorMode;
-  const sponsorPrice = hostMember?.user?.sponsorPrice || 0;
-  const lockedProvider = hostMember?.user?.sponsorModel || 'openai';
+  let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
+  if (currentRoom && !currentRoom.isGroup) {
+    sponsorMember = currentRoom.members?.find((m: any) => m.userId !== user?.id);
+  }
+  const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
+  const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
+  const sponsorPrice = sponsorMember?.user?.sponsorPrice || 0;
+  const lockedProvider = sponsorMember?.user?.sponsorModel || 'openai';
   const lockedModelDisplayNames: Record<string, string> = {
     'openai': 'OpenAI (스폰서)',
     'gemini': 'Gemini (스폰서)',
@@ -1543,16 +1725,101 @@ export default function Home() {
 
   return (
     <div
-      className="fixed top-0 left-0 w-full bg-zinc-950 flex justify-center items-center text-zinc-100 p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+      className="fixed top-0 left-0 w-full bg-dark-bg flex justify-center items-center text-on-surface p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       style={{ height: 'var(--vh, 100%)' }}
     >
       <SettingsModal />
 
+      {/* 가이드(사용법) 모달창 */}
+      {isGuideOpen && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center p-4 bg-dark-bg/80 backdrop-blur-md">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-surface-container border border-outline-variant/15 rounded-lg shadow-ambient p-6 relative animate-in fade-in zoom-in duration-200 hide-scrollbar">
+            <button
+              onClick={() => setIsGuideOpen(false)}
+              className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white transition-colors rounded-full hover:bg-zinc-800"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><Sparkles className="text-primary" size={24} /> 알로팝 초보자 가이드</h2>
+            <p className="text-xs text-zinc-400 mb-6 font-medium">실시간 거짓말 탐지기 & 나만의 AI 챗봇 사용 설명서</p>
+
+            <div className="space-y-6">
+              <section>
+                <h3 className="text-sm font-bold text-primary flex items-center gap-1.5 mb-2"><Key size={16} /> 1. 무료 입장권 발급받는 방법 (필수)</h3>
+                <ol className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 list-decimal pl-6 space-y-1.5 marker:text-primary marker:font-bold">
+                  <div className="ml-[-16px] mb-2 text-primary font-medium">똑똑한 AI 비서와 놀려면 구글에서 공짜로 나눠주는 '무료 입장권(API 키)'이 꼭 하나 필요해요!</div>
+                  <li>
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline font-bold px-1 py-0.5 rounded bg-secondary/10 inline-flex items-center gap-1 transition-colors">
+                      [구글 스튜디오 접속하기]
+                    </a>
+                    버튼을 눌러 회원가입/구글 로그인을 해주세요.
+                  </li>
+                  <li className="pb-1">
+                    <span className="mb-2 block">다음 순서대로 화면의 버튼을 차례차례 클릭해서 입장권을 만드세요:</span>
+                    <div className="flex flex-wrap items-center gap-2 mb-3 bg-dark-bg p-3 rounded-md border border-outline-variant/30 text-[11px] font-mono">
+                      <div className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded border border-blue-500/30 whitespace-nowrap">1. API 키 만들기 클릭</div>
+                      <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
+                      <div className="bg-zinc-800 text-zinc-300 px-2 py-1 rounded border border-zinc-700 whitespace-nowrap">2. 새 키 만들기 클릭</div>
+                      <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
+                      <div className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded border border-blue-500/30 whitespace-nowrap">3. 방금 뜬 파란색 "키 만들기" 버튼 또 누르기</div>
+                      <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
+                      <div className="bg-zinc-200 text-zinc-900 font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm whitespace-nowrap"><Copy size={12} /> Copy API key (복사 버튼)</div>
+                    </div>
+                    <div className="flex items-center gap-2 mb-1 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
+                      <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                      <span className="text-emerald-200 text-[11px]">완료 후 화면에 <strong>무료 등급</strong>이라고 뜨니 결제되거나 돈 나갈 걱정은 안 하셔도 됩니다!</span>
+                    </div>
+                  </li>
+                  <li>이제 알로팝 우측 상단의 <strong>옵션(⚙️)버튼 &gt; [Gemini]</strong> 탭에 복사한 키를 붙여넣고 저장하면 채팅 준비 끝!</li>
+                </ol>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-teal-400 flex items-center gap-1.5 mb-2"><Bot size={16} /> 2. 똑똑한 두뇌 고르기 & 밥값 계산 규칙 정하기</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-2">
+                  <p>
+                    <strong>구글(Gemini), 챗GPT(OpenAI), 클로드(Anthropic)</strong> 세 가지 유명한 천재들 중 마음에 드는 성격을 골라서 초대할 수 있어요.
+                    이 똑똑이들이 대답할 때마다 들어가는 밥값(체력)을 누가 낼지 채팅방의 규칙을 정할 수 있답니다.
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 marker:text-teal-500/50">
+                    <li><strong>각자 부담 (더치페이)</strong>: 방 사람들이 본인이 스스로 발급받아 둔 무료 입장권을 각자 소모합니다.</li>
+                    <li><strong>방장이 쏜다! (스폰서 모드)</strong>: 방장님이 아주 좋은 입장권을 독점해서 가지고 있다면, 다른 시골 쥐 손님들에게도 무제한으로 공짜로 쓰게 베풀 수 있어요! (물론 방장이 마음이 바뀌어서 게스트들에게 "대답 1번 들을 때마다 알로팝 포인트 10원씩 내놔!"라고 설정할 수도 있습니다.)</li>
+                    <li><strong>다 같이 모아서 내기 (P2P 코인 풀링)</strong>: 방 사람들끼리 회비를 모아두고 공평하게 포인트를 깎아 나가는 모드입니다. (아직 뚝딱뚝딱 공사 중이에요!)</li>
+                  </ul>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5 mb-2"><ShieldAlert size={16} /> 3. 거짓말 탐지기 등장 (팩트체크 기능)</h3>
+                <p className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20">
+                  채팅을 칠 때 화면 밑에 있는 <strong>AI 전원버튼(🟢)</strong>을 켜보세요!
+                  수다를 떨 때 보이지 않는 탐정 코난이 숨어서 우리 대화가 가짜 뉴스인지 몰래 뒤에서 검색해 줍니다. <strong>"밥 먹었어?", "ㅋㅋㅋ" 같은 평범한 일상 대화에는 알아서 눈치껏 가만히 있다가</strong>, 누군가 인터넷 방송 지식이나 정치 얘기를 꺼내며 이상한 소리를 할 때만 짠! 하고 나타나서 빨간 펜으로 진실 도장을 쾅 찍어 줍니다.
+                </p>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-pink-400 flex items-center gap-1.5 mb-2"><UserPlus size={16} /> 4. 화가가 그려주는 내 AI 친구 프로필 사진</h3>
+                <p className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20">
+                  나만의 로봇 친구(가상 인물)를 만들 때 귀찮게 다른 사진을 안 찾고 그냥 프로필 사진 칸을 텅 비워두셔도 돼요! 알로팝 안에 숨어있는 화가 로봇이 여러분이 고른 친구의 MBTI 성격과 취미에 꼭 맞는 초상화를 10초 만에 뚝딱 공짜로 그려서 예쁘게 프로필 사진으로 붙여준답니다.
+                </p>
+              </section>
+            </div>
+
+            <button
+              onClick={() => setIsGuideOpen(false)}
+              className="w-full mt-8 py-3 bg-primary hover:bg-primary-hover text-white font-bold rounded-lg transition-colors"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 모바일 뷰 컨테이너 (최대 너비 480px, 세로로 꽉 찬 형태) */}
-      <div className="w-full h-full sm:h-[850px] sm:max-h-[90dvh] mx-auto max-w-md bg-[#0f0f13] sm:rounded-[2.5rem] sm:border-[8px] border-zinc-800 flex flex-col relative overflow-hidden shadow-2xl">
+      <div className="w-full h-full sm:h-[850px] sm:max-h-[90dvh] mx-auto max-w-md bg-surface-container sm:rounded-lg sm:border sm:border-outline-variant/15 flex flex-col relative overflow-hidden shadow-ambient">
 
         {/* 상단 헤더 */}
-        <header className="h-16 flex items-center justify-between px-5 bg-zinc-900/90 backdrop-blur-md sticky top-0 z-10 shrink-0 border-b border-zinc-800/50">
+        <header className="h-16 flex items-center justify-between px-5 bg-surface-container-high/60 backdrop-blur-md sticky top-0 z-10 shrink-0">
           <div className="flex items-center gap-3">
             {currentRoom && (
               <button
@@ -1564,7 +1831,7 @@ export default function Home() {
             )}
             <div className="flex flex-col gap-1">
               <div className="font-semibold text-lg flex items-center gap-1.5 line-clamp-1 max-w-[160px] sm:max-w-xs group">
-                <span className="text-purple-400 shrink-0">#</span>
+                {currentRoom && <span className="text-purple-400 shrink-0">#</span>}
                 {currentRoom && isEditingRoomName ? (
                   <div className="flex items-center gap-1.5 bg-zinc-800 rounded px-1 -ml-1 font-normal">
                     <input
@@ -1581,7 +1848,18 @@ export default function Home() {
                   </div>
                 ) : (
                   <>
-                    <h2 className="truncate">{currentRoom ? getRoomName(currentRoom, user?.id) : '채팅 & 친구 목록'}</h2>
+                    {currentRoom ? (
+                      <h2 className="truncate">{getRoomName(currentRoom, user?.id)}</h2>
+                    ) : (
+                      <div className="flex items-center gap-1.5 ml-1 select-none pointer-events-none">
+                        <svg width="24" height="24" viewBox="0 0 24 24" className="text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]">
+                          <circle cx="10" cy="12" r="5" fill="currentColor" />
+                          <circle cx="17" cy="8" r="3" fill="currentColor" opacity="0.8" />
+                          <circle cx="16" cy="16" r="2.5" fill="currentColor" opacity="0.6" />
+                        </svg>
+                        <span className="font-extrabold text-[22px] tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-purple-400 to-purple-200 drop-shadow-[0_0_12px_rgba(168,85,247,0.5)] mt-0.5">Alopop</span>
+                      </div>
+                    )}
                     {currentRoom?.isHost && <span className="text-xs shrink-0 ml-1">👑</span>}
                     {currentRoom && (
                       <button
@@ -1601,27 +1879,26 @@ export default function Home() {
                 {currentRoom && (
                   <div className="relative z-50 flex items-center gap-1.5 block md:hidden lg:block">
                     <button
-                      onClick={(e) => { 
-                         e.stopPropagation(); 
-                         if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen); 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen);
                       }}
-                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border shrink-0 shadow-sm ${
-                         isSponsorLocked 
-                         ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed' 
-                         : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
-                      }`}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border shrink-0 shadow-sm ${isSponsorLocked
+                        ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
+                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                        }`}
                     >
                       <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
                       {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
                     </button>
                     <button
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
+                      onClick={(e) => {
+                        e.stopPropagation();
                         const nextState = !isAiEnabled;
                         if (nextState && isSponsorLocked && sponsorPrice > 0) {
                           if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, 팩트체크 1회당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
                         }
-                        setIsAiEnabled(nextState); 
+                        setIsAiEnabled(nextState);
                       }}
                       className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
                         ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
@@ -1660,27 +1937,26 @@ export default function Home() {
               <>
                 <div className="relative z-50 hidden md:block lg:hidden mr-1 flex items-center gap-1.5">
                   <button
-                    onClick={(e) => { 
-                       e.stopPropagation(); 
-                       if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen); 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen);
                     }}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors border shrink-0 shadow-sm ${
-                       isSponsorLocked 
-                       ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed' 
-                       : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
-                    }`}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors border shrink-0 shadow-sm ${isSponsorLocked
+                      ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                      }`}
                   >
                     <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
                     {!isSponsorLocked && <ChevronDown size={12} className="opacity-70" />}
                   </button>
                   <button
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
+                    onClick={(e) => {
+                      e.stopPropagation();
                       const nextState = !isAiEnabled;
                       if (nextState && isSponsorLocked && sponsorPrice > 0) {
                         if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, 팩트체크 1회당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
                       }
-                      setIsAiEnabled(nextState); 
+                      setIsAiEnabled(nextState);
                     }}
                     className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
                       ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
@@ -1731,11 +2007,11 @@ export default function Home() {
           // 홈 화면 (LNB 탭 메뉴 방식으로 변경됨)
           <div className="flex-1 flex overflow-hidden">
             {/* 좌측 사이드바 LNB */}
-            <div className="w-16 bg-zinc-900 border-r border-zinc-800 flex flex-col items-center py-6 shrink-0 z-0 relative">
+            <div className="w-[4.5rem] bg-surface-container-lowest flex flex-col items-center py-6 shrink-0 z-0 relative">
               <div className="flex flex-col gap-6 w-full items-center">
                 {/* 탭 전환 상태 인디케이터 배지 (동적 위치) */}
                 <div
-                  className="absolute left-0 w-1 bg-purple-500 rounded-r-lg transition-all duration-300 ease-in-out"
+                  className="absolute left-0 w-1 bg-gradient-to-b from-primary to-primary-dim shadow-[0_0_10px_rgba(204,151,255,0.8)] rounded-r-lg transition-all duration-300 ease-in-out"
                   style={{
                     height: '24px',
                     top: currentTab === 'chats' ? '32px' : '96px' // 6 * 4 (py-6) + 8 = 32px (첫번 요소 초기위치 얼추 매칭), 차이 64px 계산
@@ -1745,7 +2021,7 @@ export default function Home() {
                 {/* 채팅 목록 탭 */}
                 <button
                   onClick={() => setCurrentTab('chats')}
-                  className={`relative p-3 rounded-2xl transition-all ${currentTab === 'chats' ? 'text-zinc-100 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'}`}
+                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'chats' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="채팅 목록"
                 >
                   <MessageSquare size={24} strokeWidth={currentTab === 'chats' ? 2.5 : 2} />
@@ -1756,17 +2032,35 @@ export default function Home() {
                 {/* 친구 목록 탭 */}
                 <button
                   onClick={() => setCurrentTab('friends')}
-                  className={`p-3 rounded-2xl transition-all ${currentTab === 'friends' ? 'text-zinc-100 bg-zinc-800' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'}`}
+                  className={`p-3 rounded-xl transition-all ${currentTab === 'friends' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="친구 목록"
                 >
-                  <User size={24} strokeWidth={currentTab === 'friends' ? 2.5 : 2} />
+                  <Users size={24} strokeWidth={currentTab === 'friends' ? 2.5 : 2} />
                 </button>
               </div>
 
-              {/* LNB 하단 내 프로필 (설정/로그아웃 버튼 제거됨) */}
-              <div className="flex flex-col items-center gap-3 mt-auto w-full pb-4">
+              {/* LNB 하단: 알림, 디지털 번호판 및 내 프로필 */}
+              <div className="flex flex-col items-center gap-4 mt-auto w-full pb-6">
+
+                {/* 헬프/가이드 버튼 */}
+                <button
+                  className="mb-1 text-zinc-500 hover:text-white transition-colors p-1 rounded-full hover:bg-zinc-800"
+                  onClick={() => setIsGuideOpen(true)}
+                  title="알로팝 사용 안내"
+                >
+                  <HelpCircle size={22} />
+                </button>
+
+                {/* 오라클 디지털 타이머 */}
+                <div className="flex flex-col items-center gap-0.5">
+                  <div className="text-[10px] font-mono font-bold text-secondary tracking-widest tabular-nums animate-pulse">
+                    {currentTime ? currentTime.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '00:00'}
+                  </div>
+                  <div className="text-[8px] font-mono text-outline-variant font-bold">UTC+9</div>
+                </div>
+
                 <div
-                  className="w-10 h-10 rounded-full bg-zinc-800 shadow-sm border border-zinc-700 flex items-center justify-center text-zinc-300 font-bold mt-2 cursor-pointer hover:ring-2 hover:ring-indigo-500/50 transition-all overflow-hidden"
+                  className="w-10 h-10 rounded-lg bg-surface-container-high shadow-ambient border border-outline-variant/30 flex items-center justify-center text-primary font-bold cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
                   title={user.username}
                   onClick={() => { setCurrentTab('friends'); setIsProfileModalOpen(true); }}
                 >
@@ -1780,12 +2074,12 @@ export default function Home() {
             </div>
 
             {/* 오른쪽 주 컨텐츠 영역 */}
-            <div className="flex-1 flex flex-col bg-zinc-950 overflow-y-auto">
+            <div className="flex-1 flex flex-col bg-surface-container overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
 
               {currentTab === 'chats' && (
-                <div className="p-4 space-y-4">
+                <div className="p-4 space-y-5">
                   <div className="px-2 pt-2">
-                    <h3 className="text-zinc-100 text-lg font-bold">채팅</h3>
+                    <h3 className="text-white text-display-sm font-extrabold tracking-tight">상태 및 교차로</h3>
                   </div>
                   <div className="space-y-2">
                     {rooms.length === 0 ? (
@@ -1807,13 +2101,13 @@ export default function Home() {
                           }}
                           role="button"
                           tabIndex={0}
-                          className="w-full flex items-center justify-between p-3.5 bg-zinc-900/50 hover:bg-zinc-900 rounded-2xl transition-colors text-left group border border-transparent hover:border-zinc-800 cursor-pointer"
+                          className="w-full flex items-center justify-between p-4 bg-surface-container hover:bg-surface-container-high rounded-xl transition-all text-left group border border-outline-variant/15 hover:border-outline-variant/30 cursor-pointer shadow-ambient"
                         >
                           <div className="flex items-center gap-4 min-w-0">
-                            <div className="relative w-12 h-12 rounded-2xl bg-purple-500/20 flex items-center justify-center text-purple-400 shrink-0 shadow-inner">
-                              <MessageSquare size={20} />
+                            <div className="relative w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shrink-0 shadow-inner">
+                              <MessageSquare size={22} />
                               {unreadCounts[room.id] > 0 && (
-                                <span className="absolute -top-1 -right-1 bg-red-500 border-2 border-zinc-500 text-white text-[10px] sm:text-xs font-bold leading-none min-w-[20px] h-[20px] px-1 flex items-center justify-center rounded-full z-10 shadow-lg">
+                                <span className="absolute -top-1.5 -right-1.5 bg-secondary border-2 border-dark-bg text-dark-bg text-[10px] sm:text-xs font-bold leading-none min-w-[22px] h-[22px] px-1 flex items-center justify-center rounded-full z-10 shadow-[0_0_10px_rgba(98,250,227,0.5)]">
                                   {unreadCounts[room.id] > 99 ? '99+' : unreadCounts[room.id]}
                                 </span>
                               )}
@@ -1822,14 +2116,14 @@ export default function Home() {
                               <div className="font-semibold text-[15px] text-zinc-100 truncate">
                                 {getRoomName(room, user?.id)}
                               </div>
-                              <div className="text-[13px] text-zinc-500 truncate mt-0.5 flex items-center gap-1.5 hidden sm:flex">
+                              <div className="text-[13px] text-on-surface-variant truncate mt-0.5 flex items-center gap-1.5 hidden sm:flex font-mono">
                                 <Users size={12} /> 참여자 {room.members.length}명
                               </div>
                             </div>
                           </div>
                           <button
                             onClick={(e) => handleLeaveRoom(room.id, e)}
-                            className="text-xs font-semibold bg-zinc-800/80 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 px-3 py-1.5 rounded-xl transition-colors shrink-0"
+                            className="text-xs font-bold bg-surface-container-high hover:bg-red-500/10 text-outline-variant hover:text-red-400 border border-outline-variant/15 px-3 py-1.5 rounded-lg transition-colors shrink-0"
                           >
                             나가기
                           </button>
@@ -1845,9 +2139,9 @@ export default function Home() {
                   {/* 최상단 내 프로필 카드 영역 */}
                   <div
                     onClick={() => setIsProfileModalOpen(true)}
-                    className="p-4 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl cursor-pointer transition-colors flex items-center gap-4 group"
+                    className="p-4 bg-surface-container-lowest border border-outline-variant/15 hover:border-outline-variant/30 rounded-[16px] shadow-inner cursor-pointer flex items-center gap-4 group transition-colors"
                   >
-                    <div className="w-14 h-14 rounded-full bg-zinc-800 border-2 border-zinc-700 group-hover:border-indigo-500/50 flex items-center justify-center text-zinc-300 font-bold overflow-hidden shadow-sm text-xl shrink-0 transition-colors">
+                    <div className="w-14 h-14 rounded-xl bg-surface-container border border-outline-variant/30 group-hover:border-primary/50 flex items-center justify-center text-primary font-bold overflow-hidden shadow-ambient text-xl shrink-0 transition-colors">
                       {myProfile?.avatar_url ? (
                         <img src={myProfile.avatar_url} alt="My Profile" className="w-full h-full object-cover" />
                       ) : (
@@ -1855,8 +2149,8 @@ export default function Home() {
                       )}
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      <h3 className="font-bold text-zinc-100 text-lg truncate whitespace-nowrap">{myProfile?.username || user.username}</h3>
-                      <p className="text-sm text-zinc-400 truncate mt-0.5">
+                      <h3 className="font-extrabold text-white text-xl tracking-tight truncate whitespace-nowrap">{myProfile?.username || user.username}</h3>
+                      <p className="text-sm text-secondary font-mono tracking-wide truncate mt-0.5">
                         {myProfile?.statusMessage || '상태메시지를 입력해주세요.'}
                       </p>
                     </div>
@@ -1864,10 +2158,10 @@ export default function Home() {
 
                   {/* 친구 리스트 헤더 */}
                   <div className="px-2 pt-4 flex items-center justify-between">
-                    <h3 className="text-zinc-100 text-lg font-bold">친구 <span className="text-sm font-medium text-zinc-500 ml-1">{friends.length}</span></h3>
+                    <h3 className="text-white text-display-sm font-extrabold tracking-tight">연락망 <span className="text-base font-mono text-outline-variant ml-1">{friends.length}</span></h3>
                     <button
                       onClick={() => setIsAddFriendModalOpen(true)}
-                      className="text-zinc-400 hover:text-zinc-100 transition-colors bg-zinc-800/50 hover:bg-zinc-800 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-semibold"
+                      className="text-on-surface-variant hover:text-white transition-colors bg-surface-container-high hover:bg-surface-variant border border-outline-variant/20 px-3 py-2 rounded-lg flex items-center gap-1.5 text-xs font-bold shadow-sm"
                     >
                       <UserPlus size={14} /> 추가
                     </button>
@@ -1882,25 +2176,40 @@ export default function Home() {
                       </div>
                     ) : (
                       friends.map((friend: any) => (
-                        <div key={friend.id} className="relative flex items-center justify-between p-3 hover:bg-zinc-900/50 rounded-2xl transition-colors group">
-                          <div className="flex items-center gap-3.5">
-                            <div className="w-11 h-11 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300 font-medium shadow-sm overflow-hidden text-[15px]">
+                        <div 
+                          key={friend.id} 
+                          onClick={() => handleCreateRoom(friend.id)}
+                          className="relative flex items-center justify-between p-4 mb-3 bg-[#150f1d] hover:bg-[#1f172b] border border-white/5 rounded-[16px] transition-colors cursor-pointer group shadow-sm"
+                        >
+                          <div className="flex items-center gap-4 min-w-0 flex-1">
+                            <div className="relative w-14 h-14 rounded-xl flex items-center justify-center font-bold text-[16px] shrink-0">
                               {friend.avatar_url ? (
-                                <img src={friend.avatar_url} alt={friend.username} className="w-full h-full object-cover" />
+                                <img src={friend.avatar_url} alt={friend.username} className="w-full h-full object-cover rounded-xl border-[1.5px] border-purple-900/60" />
                               ) : (
-                                friend.username.charAt(0).toUpperCase()
+                                <div className="w-full h-full rounded-xl bg-surface-container border-[1.5px] border-purple-900/60 flex items-center justify-center text-secondary">
+                                  {friend.username.charAt(0).toUpperCase()}
+                                </div>
                               )}
                             </div>
-                            <span className="font-medium text-[15px] text-zinc-200">{friend.username}</span>
+                            
+                            <div className="flex flex-col min-w-0 pr-2">
+                              <span className="font-extrabold text-[16px] text-white truncate">{friend.username}</span>
+                              <span className="text-[13px] text-zinc-400 truncate mt-0.5">{friend.statusMessage || '상태 메시지가 없습니다.'}</span>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => handleCreateRoom(friend.id)}
-                              className="text-xs font-semibold bg-purple-600/90 hover:bg-purple-500 text-white px-3 py-1.5 rounded-xl transition-colors shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
-                            >
-                              <MessageSquare size={14} className="shrink-0" /> 대화
-                            </button>
+                          <div className="flex items-center gap-2 shrink-0 pl-2">
+                            {friend.isAi && friend.aiPrompt && (() => {
+                              const mbtiMatch = friend.aiPrompt.match(/- MBTI: (.*)/);
+                              const mbti = mbtiMatch ? mbtiMatch[1].trim() : null;
+                              return mbti ? (
+                                <span className="mr-1 px-2 py-[2px] text-[10px] sm:text-xs font-bold tracking-widest text-[#62fae3] bg-[#00ffcc]/10 border border-[#00ffcc]/20 rounded-md whitespace-nowrap">
+                                  {mbti}
+                                </span>
+                              ) : null;
+                            })()}
+                            
+                            <ChevronRight size={18} className="text-zinc-600 shrink-0" />
 
                             <div className="relative shrink-0">
                               <button
@@ -1908,25 +2217,44 @@ export default function Home() {
                                   e.stopPropagation();
                                   setActiveFriendMenuId(activeFriendMenuId === friend.id ? null : friend.id);
                                 }}
-                                className="text-zinc-500 hover:text-zinc-300 p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+                                className="text-on-surface-variant hover:text-white p-1.5 rounded-lg hover:bg-surface-container transition-colors"
                               >
                                 <MoreVertical size={16} />
                               </button>
 
                               {activeFriendMenuId === friend.id && (
                                 <div className="absolute right-0 top-full mt-1.5 w-28 bg-zinc-800 border border-zinc-700/50 rounded-xl overflow-hidden shadow-lg z-10 animate-in fade-in zoom-in duration-100">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleUpdateFriendStatus(friend.id, 'HIDDEN'); }}
-                                    className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
-                                  >
-                                    숨김
-                                  </button>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleUpdateFriendStatus(friend.id, 'BLOCKED'); }}
-                                    className="w-full text-left px-3.5 py-2.5 text-xs text-red-400 hover:bg-zinc-700 hover:text-red-300 transition-colors"
-                                  >
-                                    차단
-                                  </button>
+                                  {friend.isAi ? (
+                                    <>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleEditAiFriend(friend); }}
+                                        className="w-full text-left px-3.5 py-2.5 text-xs text-blue-300 hover:bg-zinc-700 hover:text-blue-200 transition-colors"
+                                      >
+                                        수정
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleUpdateFriendStatus(friend.id, 'HIDDEN'); }}
+                                        className="w-full text-left px-3.5 py-2.5 text-xs text-red-400 hover:bg-zinc-700 hover:text-red-300 transition-colors"
+                                      >
+                                        숨김
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleUpdateFriendStatus(friend.id, 'HIDDEN'); }}
+                                        className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+                                      >
+                                        숨김
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleUpdateFriendStatus(friend.id, 'BLOCKED'); }}
+                                        className="w-full text-left px-3.5 py-2.5 text-xs text-red-400 hover:bg-zinc-700 hover:text-red-300 transition-colors"
+                                      >
+                                        차단
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1952,8 +2280,8 @@ export default function Home() {
               }}
               onClick={() => { setSelectedMemberId(null); setIsAiModelDropdownOpen(false); }}
             >
-              <div className="flex justify-center mb-4 mt-2">
-                <div className="bg-zinc-800/60 px-4 py-1.5 rounded-full text-xs text-zinc-400 border border-zinc-700/50 text-center">
+              <div className="flex justify-center mb-6 mt-2">
+                <div className="bg-surface-container-high px-4 py-2 rounded-full text-xs text-on-surface-variant border border-outline-variant/15 text-center shadow-sm font-mono tracking-tight">
                   이전 대화 내역이 로컬 기기에 암호화되어 보관됩니다. (No-Log)<br />
                   /송금 [금액] 명령어로 지갑을 테스트 해보세요!
                 </div>
@@ -1986,9 +2314,9 @@ export default function Home() {
                   }
 
                   const dateBadge = showDateBadge ? (
-                    <div className="flex justify-center my-4 w-full">
-                      <div className="bg-zinc-800/60 px-4 py-1.5 rounded-full text-[12px] text-zinc-400 border border-zinc-700/50 shadow-sm flex items-center gap-1.5 backdrop-blur-sm z-10 font-medium tracking-wide">
-                        <Calendar size={13} className="opacity-70" />
+                    <div className="flex justify-center my-6 w-full relative z-10">
+                      <div className="bg-surface-container-high/80 px-5 py-2 rounded-full text-[12px] text-primary border border-primary/20 shadow-ambient shadow-inner-glow flex items-center gap-2 backdrop-blur-md font-bold tracking-wide">
+                        <Calendar size={13} className="opacity-90 drop-shadow-md" />
                         {msgDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
                       </div>
                     </div>
@@ -2001,17 +2329,25 @@ export default function Home() {
                     const cat = msg.aiAnalysis.category;
                     const isFakeOld = msg.aiAnalysis.is_fake; // 구버전 호환용
 
-                    // 일반 텍스트의 NORMAL도 숨기지 않고 회색 마크로 표시하여 AI 연산이 이뤄졌음을 알림!
-                    if (cat || isFakeOld !== undefined) {
-                      let config = { icon: '🤖', color: 'text-zinc-400', bg: 'bg-zinc-800' };
+                    // 팩트체크가 불필요한 일상 대화('PASS', 'NORMAL')는 이전 디자인 기획처럼 배지를 숨겨서 사용자 피로도를 줄임
+                    if (cat === 'NORMAL' || cat === 'PASS') {
+                      // Do not render tag
+                    } else if (cat === 'PENDING') {
+                      aiTag = (
+                        <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full w-fit text-primary bg-primary/10 border border-primary/20 shadow-sm animate-pulse">
+                          <Loader2 size={12} className="animate-spin opacity-80" />
+                          <span className="opacity-90">AI 팩트체크 분석 중...</span>
+                        </div>
+                      );
+                    } else if (cat || isFakeOld !== undefined) {
+                      let config = { icon: '🤖', color: 'text-on-surface-variant', bg: 'bg-surface-container-high' };
                       if (cat === 'FAKE' || isFakeOld === true) config = { icon: '🚨', color: 'text-rose-400', bg: 'bg-rose-500/20' };
-                      else if (cat === 'AI_GENERATED') config = { icon: '🤖', color: 'text-purple-400', bg: 'bg-purple-500/20' };
+                      else if (cat === 'AI_GENERATED') config = { icon: '🤖', color: 'text-primary text-glow-purple', bg: 'bg-purple-500/20' };
                       else if (cat === 'SUSPICIOUS') config = { icon: '⚠️', color: 'text-amber-400', bg: 'bg-amber-500/20' };
                       else if (cat === 'VERIFIED' || isFakeOld === false) config = { icon: '✅', color: 'text-emerald-400', bg: 'bg-emerald-500/20' };
-                      else if (cat === 'NORMAL') config = { icon: '💬', color: 'text-zinc-400', bg: 'bg-zinc-800' }; // NORMAL 가시화
 
-                      const reasonText = msg.aiAnalysis.reason || (cat === 'NORMAL' && msg.messageType === 'IMAGE' ? '안전한 이미지 (조작 흔적/위험요소 없음)' : (cat === 'NORMAL' ? '일상적인 대화 (검증 불필요)' : '특이사항 없음'));
-                      
+                      const reasonText = msg.aiAnalysis.reason || '특이사항 없음';
+
                       // 스폰서 제공 정보 꼬리표
                       const sponsorInfo = msg.aiAnalysis.isSponsored ? `\n\n🎁 [방장 스폰서 AI가 대신 분석함]\n제공 모델: ${msg.aiAnalysis.sponsorModel}` : '';
 
@@ -2034,14 +2370,14 @@ export default function Home() {
                   const attachmentBlock = (msg.messageType === 'IMAGE' || msg.messageType === 'VIDEO' || msg.messageType === 'FILE') && msg.fileUrl ? (
                     <div className="mt-2 text-[15px]">
                       {msg.messageType === 'IMAGE' ? (
-                        <div 
+                        <div
                           className="relative rounded-xl overflow-hidden shadow-sm border border-black/10 bg-black/5 flex justify-center cursor-pointer hover:opacity-90 transition-opacity"
                           onClick={() => setSelectedMedia({ url: msg.fileUrl!, type: 'IMAGE' })}
                         >
                           <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-contain rounded-xl" />
                         </div>
                       ) : msg.messageType === 'VIDEO' ? (
-                        <div 
+                        <div
                           className="relative rounded-xl overflow-hidden shadow-sm border border-black/10 bg-black/5 flex justify-center cursor-pointer hover:opacity-90 transition-opacity"
                           onClick={() => setSelectedMedia({ url: msg.fileUrl!, type: 'VIDEO' })}
                         >
@@ -2111,36 +2447,46 @@ export default function Home() {
                       {unreadDivider}
                       {dateBadge}
                       {isMe ? (
-                        <div className="flex justify-end gap-2 w-full">
+                        <div className="flex justify-end gap-2 w-full mt-2">
                           <div className="flex flex-col items-end max-w-[75%]">
-                            <div className="bg-purple-600 text-white p-3.5 rounded-2xl rounded-tr-sm text-[15px] shadow-md shadow-purple-900/20 leading-relaxed font-normal break-words whitespace-pre-wrap">
+                            <div className="bg-gradient-to-r from-primary to-primary-dim text-white p-4 rounded-xl rounded-tr-none text-[15px] shadow-ambient shadow-inner-glow leading-relaxed font-bold break-words whitespace-pre-wrap">
                               {msg.content}
                               {attachmentBlock}
                             </div>
                             {aiTag && <div className="mt-1 flex justify-end">{aiTag}</div>}
                             <div className="flex items-end justify-end mt-1 mr-1.5 gap-0.5">
                               {readBadge}
-                              <span className="text-[10px] text-zinc-500">
-                                {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              <span className="text-[10px] text-outline-variant font-mono font-bold tracking-wider">
+                                {new Date(msg.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             </div>
                           </div>
                         </div>
                       ) : (
-                        <div className="flex gap-2 w-full">
-                          <div className="w-9 h-9 rounded-2xl bg-amber-600 flex items-center justify-center text-sm font-medium shrink-0 shadow-sm">
-                            {msg.senderName.charAt(0).toUpperCase()}
-                          </div>
+                        <div className="flex gap-3 w-full mt-2 group">
+                          {(() => {
+                            const senderMember = currentRoom?.members?.find((m: any) => m.userId === msg.senderId);
+                            const avatarUrl = senderMember?.user?.avatar_url;
+                            return (
+                              <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-sm font-bold shrink-0 shadow-inner border border-outline-variant/15 text-secondary overflow-hidden">
+                                {avatarUrl ? (
+                                  <img src={avatarUrl} alt="profile" className="w-full h-full object-cover" />
+                                ) : (
+                                  (msg.senderName || '?').charAt(0).toUpperCase()
+                                )}
+                              </div>
+                            );
+                          })()}
                           <div className="flex flex-col max-w-[75%]">
-                            <span className="text-[11px] text-zinc-400 mb-1 ml-1.5 font-medium">{msg.senderName}</span>
-                            <div className="bg-zinc-800 text-zinc-100 p-3.5 rounded-2xl rounded-tl-sm text-[15px] border border-zinc-700/50 shadow-sm leading-relaxed break-words whitespace-pre-wrap">
-                              {msg.content}
+                            <span className="text-[11px] text-on-surface-variant mb-1 ml-1 font-bold">{msg.senderName || '익명'}</span>
+                            <div className="bg-surface-variant text-on-surface p-4 rounded-xl rounded-tl-none text-[15px] shadow-sm leading-relaxed break-words whitespace-pre-wrap font-medium">
+                              {msg.content || ''}
                               {attachmentBlock}
                             </div>
                             {aiTag && <div className="mt-1 flex justify-start">{aiTag}</div>}
-                            <div className="flex items-end justify-start mt-1 ml-1.5 gap-0.5">
-                              <span className="text-[10px] text-zinc-500">
-                                {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            <div className="flex items-end justify-start mt-1 ml-1 gap-1">
+                              <span className="text-[10px] text-outline-variant font-mono font-bold tracking-wider">
+                                {new Date(msg.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                               {readBadge}
                             </div>
@@ -2182,7 +2528,7 @@ export default function Home() {
               const currentAIs = typingAIs[currentRoom.id] || [];
               const currentHumans = humanTyping[currentRoom.id] || [];
               const allTypers = [...currentAIs.map(a => a.aiName), ...currentHumans.map(h => h.userName)];
-              
+
               if (allTypers.length === 0) return null;
 
               return (
@@ -2200,11 +2546,11 @@ export default function Home() {
             })()}
 
             {/* 하단 입력 영역 */}
-            <div className="p-3 bg-zinc-900 border-t border-zinc-800/80 shrink-0 pb-safe relative z-20">
+            <div className="p-3 bg-surface-container-low shrink-0 pb-[calc(env(safe-area-inset-bottom)+12px)] relative z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
               {isUploading && (
                 <div className="absolute inset-x-0 -top-12 z-10 flex justify-center pointer-events-none">
-                  <div className="flex items-center gap-2 bg-zinc-800/90 py-1.5 px-4 rounded-full border border-zinc-700/50 text-emerald-400 font-medium text-sm shadow-xl animate-in slide-in-from-bottom-2 fade-in">
-                    <Loader2 size={16} className="animate-spin" /> 사진/파일 전송 및 분석 중...
+                  <div className="flex items-center gap-2 bg-surface-container-high/90 py-1.5 px-4 rounded-full border border-primary/30 text-secondary font-bold text-sm shadow-ambient shadow-inner-glow animate-in slide-in-from-bottom-2 fade-in">
+                    <Loader2 size={16} className="animate-spin text-primary" /> 전송 중...
                   </div>
                 </div>
               )}
@@ -2214,11 +2560,11 @@ export default function Home() {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isAiProcessing}
-                  className="w-[46px] h-[46px] rounded-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/50 text-zinc-400 hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-sm active:scale-95 disabled:opacity-50"
+                  className="w-12 h-12 rounded-lg bg-surface-container hover:bg-surface-container-high border border-outline-variant/20 text-on-surface-variant hover:text-primary flex items-center justify-center transition-colors shrink-0 shadow-inner active:scale-95 disabled:opacity-50"
                 >
                   <Paperclip size={20} />
                 </button>
-                <div className={`flex-1 bg-zinc-800 border ${isAiProcessing ? 'border-purple-500/50' : 'border-zinc-700'} rounded-2xl overflow-hidden focus-within:ring-1 focus-within:ring-purple-500 focus-within:border-purple-500 transition-all shadow-inner`}>
+                <div className={`flex-1 bg-surface-container-highest border-b-2 ${isAiProcessing ? 'border-b-primary shadow-inner-glow' : 'border-b-transparent focus-within:border-b-secondary'} rounded-t-lg rounded-b-none overflow-hidden transition-all font-mono`}>
                   <textarea
                     rows={1}
                     value={inputText}
@@ -2235,28 +2581,28 @@ export default function Home() {
                     autoCorrect="off"
                     spellCheck={false}
                     autoCapitalize="off"
-                    className="w-full bg-transparent text-zinc-100 px-4 py-3 outline-none resize-none max-h-24 placeholder-zinc-500 text-[15px] disabled:opacity-50"
+                    className="w-full bg-transparent text-on-surface px-4 py-3 outline-none resize-none max-h-24 placeholder-outline-variant/50 text-[15px] disabled:opacity-50"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={!inputText.trim() || isAiProcessing}
-                  className={`w-[46px] h-[46px] rounded-full flex items-center justify-center transition-colors shrink-0 shadow-lg active:scale-95 disabled:cursor-not-allowed
-                    ${inputText.trim() && !isAiProcessing ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-900/30' : 'bg-zinc-800 text-zinc-600 shadow-none'}`}
+                  className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all shrink-0 active:scale-95 disabled:cursor-not-allowed
+                    ${inputText.trim() && !isAiProcessing ? 'bg-primary text-dark-bg shadow-ambient shadow-[0_0_15px_rgba(204,151,255,0.4)] font-bold' : 'bg-surface-container border border-outline-variant/15 text-outline-variant shadow-none'}`}
                 >
-                  {isAiProcessing ? <Loader2 size={18} className="animate-spin text-purple-400" /> : <Send size={18} className="ml-0.5" />}
+                  {isAiProcessing ? <Loader2 size={18} className="animate-spin text-primary" /> : <Send size={18} className="ml-0.5" />}
                 </button>
               </form>
             </div>
 
             {/* 참가자 목록 사이드서랍 (Drawer) */}
             {isDrawerOpen && (
-              <div className="absolute inset-0 z-40 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => { setIsDrawerOpen(false); setSelectedMemberId(null); }}>
+              <div className="absolute inset-0 z-40 flex justify-end bg-black/60 backdrop-blur-md" onClick={() => { setIsDrawerOpen(false); setSelectedMemberId(null); }}>
                 <div
-                  className="w-64 h-full bg-zinc-900 border-l border-zinc-800 shadow-2xl flex flex-col p-4 animate-in slide-in-from-right-full duration-300"
+                  className="w-64 h-full bg-surface-container-lowest border-l border-outline-variant/15 shadow-ambient flex flex-col p-4 animate-in slide-in-from-right-full duration-300"
                   onClick={(e) => { e.stopPropagation(); setSelectedMemberId(null); }} // 드로어 내부 클릭 시 열린 메뉴 닫기
                 >
-                  <div className="flex justify-between items-start pb-4 border-b border-zinc-800/80 mb-4">
+                  <div className="flex justify-between items-start pb-4 border-b border-outline-variant/15 mb-4">
                     <div className="flex flex-col w-full mr-2 gap-1.5">
                       {isEditingRoomName ? (
                         <div className="flex items-center gap-1.5">
@@ -2461,34 +2807,38 @@ export default function Home() {
           <div className="absolute inset-x-0 bottom-0 top-auto h-[85%] bg-zinc-900 border-t border-zinc-800 rounded-t-3xl p-5 z-50 flex flex-col animate-in slide-in-from-bottom shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-bold text-zinc-100 text-lg flex items-center gap-2">
-                <UserPlus className="text-purple-400" size={20} /> 새로운 친구 추가
+                <UserPlus className="text-primary text-glow-purple" size={20} /> 
+                {editingAiFriend ? 'AI 친구 정보 수정' : '새로운 친구 추가'}
               </h4>
-              <button 
+              <button
                 onClick={() => {
                   setIsAddFriendModalOpen(false);
                   setAddFriendTab('NORMAL');
-                }} 
+                  setEditingAiFriend(null);
+                }}
                 className="text-zinc-400 hover:text-white p-1 bg-zinc-800/50 rounded-full"
               >
                 <X size={20} />
               </button>
             </div>
 
-            {/* 탭 헤더 */}
-            <div className="flex bg-zinc-800/50 p-1 rounded-xl mb-6 shrink-0">
-              <button 
-                onClick={() => setAddFriendTab('NORMAL')}
-                className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'NORMAL' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
-              >
-                👤 사람 추가
-              </button>
-              <button 
-                onClick={() => setAddFriendTab('AI')}
-                className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'AI' ? 'bg-purple-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
-              >
-                🤖 AI 생성
-              </button>
-            </div>
+            {/* 탭 헤더 (수정 모드일때는 숨김) */}
+            {!editingAiFriend && (
+              <div className="flex bg-zinc-800/50 p-1 rounded-xl mb-6 shrink-0">
+                <button
+                  onClick={() => setAddFriendTab('NORMAL')}
+                  className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'NORMAL' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
+                >
+                  👤 사람 추가
+                </button>
+                <button
+                  onClick={() => setAddFriendTab('AI')}
+                  className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'AI' ? 'bg-purple-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
+                >
+                  🤖 AI 생성
+                </button>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto space-y-6 pb-4">
               {addFriendTab === 'NORMAL' ? (
@@ -2535,7 +2885,7 @@ export default function Home() {
                   </form>
                 </>
               ) : (
-                <form onSubmit={handleCreateAIFriend} className="space-y-4">
+                <form onSubmit={handleSubmitAiFriend} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-zinc-400 mb-1.5 ml-1">AI 이름 (표시될 닉네임) <span className="text-red-400">*</span></label>
                     <input type="text" required value={aiNameValue} onChange={e => setAiNameValue(e.target.value)} placeholder="예: 챗봇 매니저" className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 px-3 py-2.5 rounded-lg text-sm outline-none focus:border-purple-500 transition-colors" />
@@ -2544,7 +2894,7 @@ export default function Home() {
                     <div>
                       <label className="block text-xs font-semibold text-zinc-400 mb-1.5 ml-1">MBTI 성격 <span className="text-red-400">*</span></label>
                       <select value={aiMbtiValue} onChange={e => setAiMbtiValue(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 px-3 py-2.5 rounded-lg text-sm outline-none focus:border-purple-500 transition-colors">
-                        {['ESTJ','ESTP','ESFJ','ESFP','ENTJ','ENTP','ENFJ','ENFP','ISTJ','ISTP','ISFJ','ISFP','INTJ','INTP','INFJ','INFP'].map(m => <option key={m} value={m}>{m}</option>)}
+                        {['ESTJ', 'ESTP', 'ESFJ', 'ESFP', 'ENTJ', 'ENTP', 'ENFJ', 'ENFP', 'ISTJ', 'ISTP', 'ISFJ', 'ISFP', 'INTJ', 'INTP', 'INFJ', 'INFP'].map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </div>
                     <div>
@@ -2583,13 +2933,26 @@ export default function Home() {
                     <label className="block text-xs font-semibold text-zinc-400 mb-1.5 ml-1">주요 관심사 (선택)</label>
                     <input type="text" value={aiHobbyValue} onChange={e => setAiHobbyValue(e.target.value)} placeholder="예: 게임, IT, 음악, 아이돌 등" className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 px-3 py-2.5 rounded-lg text-sm outline-none focus:border-purple-500 transition-colors" />
                   </div>
-                  
+
+                  {editingAiFriend && (
+                    <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-700 p-3 rounded-lg mt-2 cursor-pointer transition-colors hover:bg-zinc-800/80" onClick={() => setRegenerateAiAvatar(!regenerateAiAvatar)}>
+                      <input 
+                        type="checkbox" 
+                        checked={regenerateAiAvatar} 
+                        onChange={e => setRegenerateAiAvatar(e.target.checked)}
+                        className="w-4 h-4 text-purple-600 rounded bg-zinc-800 border-zinc-700 accent-purple-500 cursor-pointer flex-shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span className="text-xs text-zinc-300 font-medium">📷 프로필 사진 새로 생성하기 (로봇 화가 호출)</span>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={!aiNameValue.trim() || isAiCreating}
                     className="w-full mt-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
                   >
-                    {isAiCreating ? <span className="animate-pulse">생성 중...</span> : 'AI 친구 생성 및 등록'}
+                    {isAiCreating ? <span className="animate-pulse">처리 중...</span> : (editingAiFriend ? '수정 완료' : 'AI 친구 생성 및 등록')}
                   </button>
                   <p className="text-[11px] text-zinc-500 text-center mt-3">※ 이 AI는 내 환경에 등록된 API 키 권한으로 응답합니다.</p>
                 </form>
@@ -2600,11 +2963,11 @@ export default function Home() {
 
         {/* 미디어 풀스크린 뷰어 (Lightbox) */}
         {selectedMedia && (
-          <div 
+          <div
             className="fixed inset-0 z-[100] bg-black/95 flex flex-col justify-center items-center animate-in fade-in duration-200"
             onClick={() => setSelectedMedia(null)}
           >
-            <button 
+            <button
               className="absolute top-4 right-4 sm:top-6 sm:right-6 text-white p-2 hover:bg-white/10 rounded-full transition-colors z-[110]"
               onClick={(e) => { e.stopPropagation(); setSelectedMedia(null); }}
             >

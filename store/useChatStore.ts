@@ -20,10 +20,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (get().socket) return; // 이미 연결되어 있으면 무시
 
     // 서버와 같은 Origin으로 소켓 연결 (현재 window.location)
-    // 리버스 프록시/로드밸런서 환경에서 polling 세션 불일치 트러블 슈팅을 위해 websocket 강제
     const socket = io(undefined, {
       path: '/socket.io/',
-      transports: ['websocket'],
+      // transports: ['websocket'], // 모바일 환경(LTE/5G)에서 접속 끊김(Disconnected) 후 PWA에서 영구적으로 소켓 릴레이 큐가 막히는 증상을 막기 위해 기본값(polling -> websocket 승격)으로 원복
     });
 
     socket.on('connect', () => {

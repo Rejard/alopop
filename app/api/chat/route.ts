@@ -4,6 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
+import { search } from 'duck-duck-scrape';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -15,7 +16,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Content or image is required' }, { status: 400 });
     }
 
-    const apiKey = byokKey || process.env.OPENAI_API_KEY;
+    let apiKey = byokKey;
+    if (!apiKey) {
+      if (provider === 'gemini' || provider === 'gemini-free') apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
+      else apiKey = process.env.OPENAI_API_KEY;
+    }
 
     if (!apiKey) {
       return NextResponse.json({ error: `No API Key provided for ${provider || 'openai'}` }, { status: 400 });
@@ -25,9 +31,10 @@ export async function POST(request: Request) {
     const currentProvider = provider || 'openai';
 
     switch (currentProvider) {
+      case 'gemini-free':
       case 'gemini':
         const customGoogle = createGoogleGenerativeAI({ apiKey });
-        modelInstance = customGoogle(aiModel || 'gemini-3.1-pro-preview');
+        modelInstance = customGoogle(currentProvider === 'gemini-free' ? 'gemini-1.5-pro-latest' : (aiModel || 'gemini-1.5-pro-latest'));
         break;
       case 'anthropic':
         const customAnthropic = createAnthropic({ apiKey });
@@ -74,22 +81,36 @@ export async function POST(request: Request) {
       });
     }
 
+    let injectedSearchContext = `\n\n[현재 시스템 시각: ${new Date().toLocaleString('ko-KR')}]`;
+    if (content && content.length > 5) {
+      try {
+        const searchResults = await search(content);
+        if (searchResults && searchResults.results && searchResults.results.length > 0) {
+          const summary = searchResults.results.slice(0, 3).map((r: any) => `제목: ${r.title}\n내용: ${r.description}`).join('\n\n');
+          injectedSearchContext = `\n\n[💡 최신 웹 포렌식 검색 결과 (현재 시각: ${new Date().toLocaleString('ko-KR')})]\n분석 대상이 최신 사실과 부합하는지 아래 인터넷 검색 결과를 교차 검증의 근거로 우선 활용하세요:\n${summary}`;
+        }
+      } catch (e) {
+        console.error('Fact-check Web Search failed:', e);
+      }
+    }
+
     const result = await generateObject({
       model: modelInstance,
-      system: `당신은 최고 수준의 디지털 포렌식 및 팩트체크 AI입니다. 사용자가 전송한 텍스트 또는 사진 이미지를 정밀 분석하세요.
+      system: `당신은 최고 수준의 디지털 포렌식 및 팩트체크 AI입니다. 사용자가 전송한 텍스트 또는 사진 이미지를 정밀 분석하세요.${injectedSearchContext}
       
-      [이미지 분석 특별 지침]
-      1. 사진이 업로드된 경우, 육안으로 보기에 AI가 생성한 그림(Midjourney, DALL-E, Stable Diffusion 등) 특유의 질감, 비현실적인 광원, 매끄러운 피부, 형태 왜곡 등이 조금이라도 의심된다면 무조건 'AI_GENERATED'로 분류하세요.
-      2. 인물이나 상황이 악의적으로 합성된 딥페이크나 가짜 뉴스용 조작 사진이라면 'FAKE' 또는 'SUSPICIOUS'로 분류하세요.
-      3. 사람이 직접 카메라로 촬영한 실제 현실의 무보정 사진임이 100% 확실할 때만 'NORMAL'을 부여하세요.
+      [특별 지침]
+      1. 단순한 인사말("안녕", "뭐해"), 일상적인 감정 표현("ㅋㅋ", "ㅠㅠ", "배고파"), 상대방과의 평범한 잡담 등 팩트체크가 전혀 무의미한 일상 대화라면 **반드시 'PASS'**로 분류하세요.
+      2. 사진이 업로드된 경우, AI가 생성한 그림(특유의 질감, 비현실적인 광원, 매끄러운 피부, 형태 왜곡 등)이 의심된다면 'AI_GENERATED'로 분류하세요.
+      3. 인물이나 상황이 악의적으로 합성된 딥페이크나 가짜 뉴스용 조작 사진이거나 허위 주장이면 'FAKE' 또는 'SUSPICIOUS'로 분류하세요.
+      4. 실제 현실의 무보정 사진임이 확실하거나 주장하는 바가 명백한 객관적 진실일 때만 'VERIFIED' 또는 'NORMAL'을 부여하세요.
       
       분석 내용을 바탕으로 다음 JSON 객체를 반환하세요.
-      - category: NORMAL, SUSPICIOUS, FAKE, VERIFIED, AI_GENERATED 중 하나
+      - category: PASS, NORMAL, SUSPICIOUS, FAKE, VERIFIED, AI_GENERATED 중 하나 
       - confidence: 0에서 1사이의 실수 (확신도)
-      - reason: 분석 결과에 대한 타당한 이유 (한국어로 짧게 1~2문장. NORMAL일 때도 이유 작성)`,
+      - reason: 분석 결과에 대한 타당한 이유 (한국어로 짧게 1~2문장. PASS일 때는 '일상 대화입니다' 등으로 작성)`,
       messages: promptMessages,
       schema: z.object({
-        category: z.enum(['FAKE', 'AI_GENERATED', 'SUSPICIOUS', 'VERIFIED', 'NORMAL']),
+        category: z.enum(['PASS', 'FAKE', 'AI_GENERATED', 'SUSPICIOUS', 'VERIFIED', 'NORMAL']),
         confidence: z.number().min(0).max(1),
         reason: z.string()
       }),
@@ -100,9 +121,13 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('AI check error:', error);
+    const messageStr = error?.message || '';
+    const isQuotaError = messageStr.includes('429') || messageStr.toLowerCase().includes('exhausted') || messageStr.toLowerCase().includes('quota');
+    const status = isQuotaError ? 429 : 500;
+    
     return NextResponse.json(
-      { error: error?.message || 'Failed to process AI analysis' },
-      { status: 500 }
+      { error: messageStr || 'Failed to process AI analysis', status },
+      { status }
     );
   }
 }

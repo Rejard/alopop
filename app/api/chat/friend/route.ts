@@ -13,7 +13,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
     }
 
-    const apiKey = byokKey || process.env.OPENAI_API_KEY;
+    let apiKey = byokKey;
+    if (!apiKey) {
+      if (provider === 'gemini' || provider === 'gemini-free') apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
+      else apiKey = process.env.OPENAI_API_KEY;
+    }
 
     if (!apiKey) {
       return NextResponse.json({ error: `No API Key provided for ${provider || 'openai'}` }, { status: 400 });
@@ -23,9 +28,10 @@ export async function POST(request: Request) {
     const currentProvider = provider || 'openai';
 
     switch (currentProvider) {
+      case 'gemini-free':
       case 'gemini':
         const customGoogle = createGoogleGenerativeAI({ apiKey });
-        modelInstance = customGoogle(aiModel || 'gemini-1.5-pro-latest');
+        modelInstance = customGoogle(currentProvider === 'gemini-free' ? 'gemini-1.5-pro-latest' : (aiModel || 'gemini-1.5-pro-latest'));
         break;
       case 'anthropic':
         const customAnthropic = createAnthropic({ apiKey });
@@ -68,9 +74,13 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('AI chat friend error:', error);
+    const messageStr = error?.message || '';
+    const isQuotaError = messageStr.includes('429') || messageStr.toLowerCase().includes('exhausted') || messageStr.toLowerCase().includes('quota');
+    const status = isQuotaError ? 429 : 500;
+    
     return NextResponse.json(
-      { error: error?.message || 'Failed to process conversational AI chat' },
-      { status: 500 }
+      { error: messageStr || 'Failed to process conversational AI chat', status },
+      { status }
     );
   }
 }

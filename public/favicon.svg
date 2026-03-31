@@ -1,7 +1,5 @@
-<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg">
- <g>
-  <title>Layer 1</title>
-  <text transform="matrix(0.542324 0 0 0.564309 27.8108 16.3457)" stroke="null" x="-11.31962" id="svg_1" font-size="90" y="91.32409">💬</text>
- </g>
-
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <circle cx="10" cy="12" r="5" fill="#A855F7" />
+  <circle cx="17" cy="8" r="3" fill="#A855F7" opacity="0.8" />
+  <circle cx="16" cy="16" r="2.5" fill="#A855F7" opacity="0.6" />
 </svg>

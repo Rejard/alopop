@@ -18,7 +18,7 @@ function CustomGoogleButton({ onSuccess, onError, disabled }: { onSuccess: (res:
     <button
       onClick={() => login()}
       disabled={disabled}
-      className={`flex items-center justify-center gap-3 w-full bg-white text-zinc-900 font-bold py-3.5 px-4 rounded-full shadow-md transition-all ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-100 active:scale-95'}`}
+      className={`flex items-center justify-center gap-3 w-full bg-white text-zinc-900 font-bold py-3.5 px-4 rounded-lg shadow-ambient transition-all border border-white/10 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-zinc-100 active:scale-95'}`}
     >
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -146,16 +146,16 @@ export default function InvitePage() {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100 p-4 font-sans">
-      <div className="w-full max-w-sm bg-zinc-900 rounded-3xl p-8 shadow-2xl border border-zinc-800 text-center relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-indigo-500"></div>
-        <div className="w-20 h-20 bg-gradient-to-tr from-purple-500/20 to-indigo-500/20 rounded-2xl mx-auto mb-6 flex items-center justify-center border border-indigo-500/30">
-          <UserPlus size={36} className="text-indigo-400" />
+    <div className="min-h-screen flex items-center justify-center bg-dark-bg text-on-surface p-4 font-sans">
+      <div className="w-full max-w-sm bg-surface-container rounded-lg p-8 shadow-ambient border border-outline-variant/15 text-center relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary to-primary-dim"></div>
+        <div className="w-24 h-24 bg-gradient-to-br from-primary to-primary-dim rounded-lg mx-auto mb-8 flex items-center justify-center shadow-ambient shadow-inner-glow transform rotate-3">
+          <UserPlus size={40} className="text-white drop-shadow-md" />
         </div>
         
-        <h1 className="text-2xl font-bold mb-2">초대장 도착</h1>
-        <p className="text-zinc-400 text-sm mb-4">
-          <span className="font-bold text-zinc-200 tracking-widest bg-zinc-800 px-2 py-0.5 rounded mr-1">{targetCode}</span> 사용자로부터 메신저 초대를 받았습니다.
+        <h1 className="text-3xl font-extrabold mb-3 tracking-tight text-white">초대장 도착</h1>
+        <p className="text-on-surface-variant text-sm mb-6 font-medium">
+          <span className="font-bold text-secondary font-mono tracking-widest bg-surface-container-high border border-outline-variant/30 px-2 py-0.5 rounded mr-1">{targetCode}</span> 사용자로부터 초대.
         </p>
 
         {isWebview && (
@@ -171,21 +171,21 @@ export default function InvitePage() {
 
         {currentUser ? (
           <div className="space-y-4">
-            <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 mb-6">
-              <p className="text-sm text-zinc-300 leading-relaxed">
-                현재 <span className="font-semibold text-white">{currentUser.username}</span> 님으로 접속 중입니다.<br/>
+            <div className="bg-surface-container-lowest/50 rounded-lg p-5 border border-outline-variant/15 mb-6 shadow-inner">
+              <p className="text-sm text-on-surface-variant leading-relaxed">
+                현재 <span className="font-bold text-secondary">{currentUser.username}</span> 님으로 접속 중입니다.<br/>
               </p>
             </div>
             <button
               onClick={handleAddFriend}
               disabled={isLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-primary to-primary-dim text-white font-bold py-3.5 rounded-lg shadow-ambient shadow-inner-glow transition-all active:scale-95 disabled:opacity-50"
             >
               {isLoading ? '연동 중...' : '친구 추가 수락하기'}
             </button>
             <button
               onClick={() => router.push('/')}
-              className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold py-3 rounded-xl transition-all"
+              className="w-full bg-surface-container-high hover:bg-surface-variant text-on-surface font-semibold py-3 rounded-lg border border-outline-variant/20 transition-all shadow-sm"
             >
               그냥 홈으로 돌아가기
             </button>
@@ -194,7 +194,7 @@ export default function InvitePage() {
           <div className="space-y-4 text-left mt-2">
             <button
               onClick={() => setViewMode('NEW')}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-primary to-primary-dim text-white font-bold py-3.5 rounded-lg shadow-ambient shadow-inner-glow transition-all active:scale-95 flex items-center justify-center gap-2"
             >
               <UserPlus size={18} />
               처음이신가요? 시작하기
@@ -202,7 +202,7 @@ export default function InvitePage() {
             
             <button
               onClick={() => setViewMode('EXISTING')}
-              className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 border border-zinc-700"
+              className="w-full bg-surface-container-highest hover:bg-surface-variant text-secondary font-bold py-3.5 rounded-lg shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 border border-outline-variant/30"
             >
               <LogIn size={18} />
               이미 앱을 사용 중이신가요?
@@ -213,20 +213,20 @@ export default function InvitePage() {
             <button 
               type="button" 
               onClick={() => setViewMode('SELECT')}
-              className="text-zinc-400 hover:text-white mb-2 flex items-center gap-1 text-sm transition-colors"
+              className="text-on-surface-variant hover:text-white mb-2 flex items-center gap-1 text-sm font-semibold transition-colors"
             >
               <ArrowLeft size={16} /> 뒤로
             </button>
-            <div className="bg-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 mb-4 text-center">
-              <p className="text-xs text-zinc-400 leading-relaxed mb-4">
-                alo-pop 초보안 프라이빗 메신저입니다.<br/>
-                안전한 구글 계정으로 초대를 수락해 보세요!
+            <div className="bg-surface-container-lowest/40 rounded-lg p-5 border border-outline-variant/15 mb-4 text-center shadow-inner">
+              <p className="text-xs text-on-surface-variant font-mono tracking-wide leading-relaxed mb-5">
+                ALO-POP SYNC GATEWAY.<br/>
+                SECURE GOOGLE AUTH REQUIRED.
               </p>
               
               {isLoading ? (
-                <div className="w-full py-4 text-zinc-400 text-sm animate-pulse border border-zinc-700 rounded-xl">처리 중...</div>
+                <div className="w-full py-4 text-secondary text-sm animate-pulse border border-outline-variant/20 rounded-lg bg-surface-container">처리 중...</div>
               ) : isClient && clientId ? (
-                <div className="flex justify-center w-full bg-zinc-950 py-3 rounded-xl border border-zinc-800">
+                <div className="flex justify-center w-full bg-surface-container py-3 rounded-lg border border-outline-variant/20 shadow-sm">
                   <GoogleOAuthProvider clientId={clientId}>
                     <CustomGoogleButton
                       onSuccess={handleGoogleJoinAndAdd}

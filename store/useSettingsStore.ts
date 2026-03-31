@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type AIProvider = 'openai' | 'gemini' | 'anthropic';
+export type AIProvider = 'gemini-free' | 'openai' | 'gemini' | 'anthropic';
 
 interface SettingsStore {
   isOpen: boolean;
@@ -14,8 +14,9 @@ interface SettingsStore {
 
 export const useSettingsStore = create<SettingsStore>((set) => ({
   isOpen: false,
-  selectedProvider: 'openai',
+  selectedProvider: 'gemini-free',
   apiKeys: {
+    'gemini-free': '',
     openai: '',
     gemini: '',
     anthropic: '',

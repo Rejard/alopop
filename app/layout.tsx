@@ -1,36 +1,45 @@
-// Copyright (c) 2026 Alonics Inc. (주식회사 알로닉스). All rights reserved.
-// Licensed under the AGPL-3.0 License.
-// For commercial use, investment, or partnerships, please contact the author.
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+﻿import type { Metadata, Viewport } from "next";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import { PwaRegistry } from "@/components/PwaRegistry";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const plusJakarta = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Alopop - 프라이빗 채팅",
-  description: "알로팝에서 친구의 채팅 초대가 도착했습니다!",
+  title: "Alopop Private Chat",
+  description: "Secure, P2P encrypted messaging platform",
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Alopop",
+    startupImage: [
+      {
+        url: "/icon.png",
+        media: "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)",
+      },
+      {
+        url: "/icon.png",
+        media: "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)",
+      }
+    ]
+  },
   icons: {
-    icon: '/favicon.svg',
+    icon: "/icon.svg",
+    apple: "/icon.png",
   },
 };
 
-export const viewport = {
-  width: 'device-width',
+export const viewport: Viewport = {
+  width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  interactiveWidget: 'resizes-content',
+  viewportFit: "cover",
+  themeColor: "#130b1a",
 };
 
 export default function RootLayout({
@@ -41,7 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased overflow-hidden overscroll-none fixed inset-0`}
+        className={`${plusJakarta.variable} antialiased overflow-hidden overscroll-none fixed inset-0 font-sans`}
       >
         <PwaRegistry />
         {children}

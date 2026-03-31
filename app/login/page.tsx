@@ -16,7 +16,7 @@ function CustomGoogleButton({ onSuccess, onError }: { onSuccess: (res: any) => v
   return (
     <button
       onClick={() => login()}
-      className="flex items-center justify-center gap-3 w-full bg-white hover:bg-zinc-100 text-zinc-900 font-bold py-3.5 px-4 rounded-full shadow-md transition-all active:scale-95"
+      className="flex items-center justify-center gap-3 w-full bg-white hover:bg-zinc-100 text-zinc-900 font-bold py-3.5 px-4 rounded-lg shadow-ambient transition-all active:scale-95 border border-white/10"
     >
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -91,16 +91,16 @@ export default function LoginPage() {
 
   return (
     <div 
-      className="fixed top-0 left-0 w-full bg-zinc-950 flex justify-center items-center text-zinc-100 p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]"
+      className="fixed top-0 left-0 w-full bg-dark-bg flex justify-center items-center text-on-surface p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]"
       style={{ height: 'var(--vh, 100%)' }}
     >
-      <div className="w-full h-full sm:h-[850px] sm:max-h-[90dvh] mx-auto max-w-md bg-zinc-900 sm:rounded-[2.5rem] sm:border-[8px] border-zinc-800 p-8 shadow-2xl flex flex-col justify-center relative overflow-hidden">
+      <div className="w-full h-full sm:h-[850px] sm:max-h-[90dvh] mx-auto max-w-md bg-surface-container sm:rounded-lg sm:border sm:border-outline-variant/15 p-8 shadow-ambient flex flex-col justify-center relative overflow-hidden">
         <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-gradient-to-tr from-purple-500 to-indigo-500 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg shadow-purple-500/30 transform rotate-3">
-            <span className="text-3xl font-bold text-white tracking-tighter">alo</span>
+          <div className="w-24 h-24 bg-gradient-to-br from-primary to-primary-dim rounded-lg mx-auto mb-8 flex items-center justify-center shadow-ambient shadow-inner-glow transform rotate-3">
+            <span className="text-4xl font-extrabold text-white tracking-[tight]">alo</span>
           </div>
-          <h1 className="text-2xl font-bold mb-2">alo-pop 에 오신 것을 환영합니다</h1>
-          <p className="text-zinc-400">당신만의 프라이빗한 대화 공간</p>
+          <h1 className="text-3xl font-bold mb-3 tracking-tight text-white leading-tight">THE DIRECT<br/><span className="text-primary">ORACLE</span></h1>
+          <p className="text-secondary text-sm font-medium tracking-wide font-mono mt-4">PRIVATE • SECURE • PEER-TO-PEER</p>
         </div>
 
         <div className="flex flex-col items-center justify-center space-y-4">
@@ -136,8 +136,8 @@ export default function LoginPage() {
           )}
         </div>
         
-        <div className="mt-8 text-center text-xs text-zinc-500">
-          <p>alo-pop은 서버에 대화 내역을 저장하지 않는 초보안 메신저입니다.</p>
+        <div className="mt-12 text-center text-xs text-outline-variant font-mono">
+          <p>NO CLOUD MEMORY. NO TRACES.</p>
         </div>
       </div>
     </div>

@@ -21,7 +21,8 @@ export async function GET(request: Request) {
             avatar_url: true,
             isAi: true,
             aiOwnerId: true,
-            aiPrompt: true
+            aiPrompt: true,
+            statusMessage: true
           }
         }
       },

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import fs from 'fs/promises';
+import path from 'path';
 
 const prisma = new PrismaClient();
 
@@ -28,6 +30,36 @@ export async function POST(request: Request) {
 3. 누가 "조용히 해" 등 명백한 거부 의사를 표하면 즉시 "알았어 🤐", "넵 죄송.." 정도로 반응하고 뒤로 물러나.
 4. 네가 AI 모델이라는 언급은 특별한 상황(유저가 AI라고 강하게 추궁할 때)이 아니면 먼저 하지 말고 사람 친구로서 동화되어 줘.`;
 
+    let finalAvatarUrl = avatar;
+    
+    // 프로필 사진이 지정되지 않았다면 무료 Pollinations AI를 통해 즉각 초상화 생성 및 로컬 저장
+    if (!finalAvatarUrl) {
+      try {
+        const seed = Math.floor(Math.random() * 1000000);
+        // 간단한 한영 치환 (프롬프트 정확도 향상)
+        const englishGender = gender.includes('여') ? 'girl' : gender.includes('남') ? 'boy' : 'person';
+        const imagePrompt = `A highly detailed digital art portrait avatar of an attractive young ${englishGender} with MBTI ${mbti}. The character has a ${tone} vibe and atmosphere. Beautiful lighting, sharp focus, face portrait, dark cyber aesthetic background.`;
+        
+        const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=256&height=256&nologo=true&seed=${seed}`;
+        
+        const response = await fetch(pollinationsUrl);
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          const fileName = `ai_avatar_${Date.now()}_${seed}.jpg`;
+          const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+          
+          // uploads 디렉토리가 없을 수 있으므로 예외 처리 없이 생성 (기존 로직과 호환)
+          try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+          
+          const filePath = path.join(uploadsDir, fileName);
+          await fs.writeFile(filePath, Buffer.from(buffer));
+          finalAvatarUrl = `/uploads/${fileName}`;
+          console.log('[AI Avatar Generated successfully]:', finalAvatarUrl);
+        }
+      } catch (err) {
+        console.error('Failed to generate AI avatar:', err);
+      }
+    }
     // 1. AI 유저 생성 (User 테이블)
     const aiUser = await prisma.user.create({
       data: {
@@ -35,7 +67,7 @@ export async function POST(request: Request) {
         isAi: true,
         aiOwnerId: ownerId,
         aiPrompt,
-        avatar_url: avatar || undefined,
+        avatar_url: finalAvatarUrl || undefined,
         walletBalance: 0,
         statusMessage: `${mbti} | ${age} | ${tone}` // 리스트에 보여줄 상태메시지
       }
