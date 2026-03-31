@@ -244,7 +244,7 @@ export default function Home() {
   useEffect(() => {
     const list = AI_MODELS[selectedProvider || 'openai'] || [];
     if (selectedAiModel && !list.some(m => m.id === selectedAiModel)) {
-      const defaultModel = list[0]?.id || 'gpt-5.4';
+      const defaultModel = selectedProvider === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (selectedProvider === 'openai' ? 'gpt-5.4-mini' : list[0]?.id || 'gpt-5.4');
       setSelectedAiModel(defaultModel);
       localStorage.setItem('alo_ai_model', defaultModel);
     }
@@ -276,7 +276,7 @@ export default function Home() {
     if (savedModel && AI_MODELS[providerValue]?.some(m => m.id === savedModel)) {
       setSelectedAiModel(savedModel);
     } else {
-      setSelectedAiModel(AI_MODELS[providerValue]?.[0]?.id || 'gpt-5.4');
+      setSelectedAiModel(providerValue === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (providerValue === 'openai' ? 'gpt-5.4-mini' : AI_MODELS[providerValue]?.[0]?.id || 'gpt-5.4'));
     }
 
     const savedAiEnabled = localStorage.getItem('alo_ai_enabled');
@@ -1908,13 +1908,13 @@ export default function Home() {
               <X size={20} />
             </button>
             <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><Sparkles className="text-primary" size={24} /> 알로팝 초보자 가이드</h2>
-            <p className="text-xs text-zinc-400 mb-6 font-medium">실시간 거짓말 탐지기 & 나만의 AI 챗봇 사용 설명서</p>
+            <p className="text-xs text-zinc-400 mb-6 font-medium">실시간 AI 팩트 필터 & 나만의 AI 챗봇 사용 설명서</p>
 
             <div className="space-y-6">
               <section>
-                <h3 className="text-sm font-bold text-primary flex items-center gap-1.5 mb-2"><Key size={16} /> 1. 무료 입장권 발급받는 방법 (필수)</h3>
+                <h3 className="text-sm font-bold text-primary flex items-center gap-1.5 mb-2"><Key size={16} /> 1. Gemini 입장권 발급받는 방법 (권장)</h3>
                 <ol className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 list-decimal pl-6 space-y-1.5 marker:text-primary marker:font-bold">
-                  <div className="ml-[-16px] mb-2 text-primary font-medium">똑똑한 AI 비서와 놀려면 구글에서 공짜로 나눠주는 '무료 입장권(API 키)'이 꼭 하나 필요해요!</div>
+                  <div className="ml-[-16px] mb-2 text-primary font-medium">똑똑한 AI 비서와 놀려면 구글에서 발급해주는 '무료/유료 입장권(API 키)'이 반드시 필요해요!</div>
                   <li>
                     <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline font-bold px-1 py-0.5 rounded bg-secondary/10 inline-flex items-center gap-1 transition-colors">
                       [구글 스튜디오 접속하기]
@@ -1924,51 +1924,160 @@ export default function Home() {
                   <li className="pb-1">
                     <span className="mb-2 block">다음 순서대로 화면의 버튼을 차례차례 클릭해서 입장권을 만드세요:</span>
                     <div className="flex flex-wrap items-center gap-2 mb-3 bg-dark-bg p-3 rounded-md border border-outline-variant/30 text-[11px] font-mono">
-                      <div className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded border border-blue-500/30 whitespace-nowrap">1. API 키 만들기 클릭</div>
+                      <div className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded border border-blue-500/30 whitespace-nowrap">1. "API 키 만들기" 버튼 클릭</div>
                       <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
-                      <div className="bg-zinc-800 text-zinc-300 px-2 py-1 rounded border border-zinc-700 whitespace-nowrap">2. 새 키 만들기 클릭</div>
+                      <div className="bg-zinc-800 text-zinc-300 px-2 py-1 rounded border border-zinc-700 whitespace-nowrap">2. "새 키 만들기" 클릭</div>
                       <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
-                      <div className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded border border-blue-500/30 whitespace-nowrap">3. 방금 뜬 파란색 "키 만들기" 버튼 또 누르기</div>
+                      <div className="bg-zinc-800 text-zinc-300 px-2 py-1 rounded border border-zinc-700 whitespace-nowrap">3. "키 만들기" 버튼 클릭</div>
                       <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
                       <div className="bg-zinc-200 text-zinc-900 font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm whitespace-nowrap"><Copy size={12} /> Copy API key (복사 버튼)</div>
                     </div>
                     <div className="flex items-center gap-2 mb-1 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
                       <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                      <span className="text-emerald-200 text-[11px]">완료 후 화면에 <strong>무료 등급</strong>이라고 뜨니 결제되거나 돈 나갈 걱정은 안 하셔도 됩니다!</span>
+                      <span className="text-emerald-200 text-[11px]">기본적으로 <strong>무료 등급</strong>으로 발급되니, 본인이 직접 결제 카드를 구글에 등록하지 않는 한 자동 결제 걱정은 전혀 안 하셔도 됩니다!</span>
                     </div>
                   </li>
                   <li>이제 알로팝 우측 상단의 <strong>옵션(⚙️)버튼 &gt; [Gemini]</strong> 탭에 복사한 키를 붙여넣고 저장하면 채팅 준비 끝!</li>
                 </ol>
               </section>
 
+              <section className="mt-6">
+                <h3 className="text-sm font-bold text-amber-500 flex items-center gap-1.5 mb-2"><Key size={16} /> 1-2. OpenAI 입장권 발급받는 방법 (선택)</h3>
+                <ol className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 list-decimal pl-6 space-y-1.5 marker:text-amber-500 marker:font-bold">
+                  <div className="ml-[-16px] mb-2 text-amber-400 font-medium">유명한 ChatGPT와 놀고 싶다면, 전용(유료) OpenAPI 티켓이 필요해요!</div>
+                  <li>
+                    <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:underline font-bold px-1 py-0.5 rounded bg-amber-500/10 inline-flex items-center gap-1 transition-colors">
+                      [OpenAI 플랫폼 접속하기]
+                    </a>
+                    버튼을 눌러 로그인 해주세요.
+                  </li>
+                  <li className="pb-1">
+                    <span className="mb-2 block">다음 순서대로 화면의 메뉴를 클릭해서 입장권을 만드세요:</span>
+                    <div className="flex flex-wrap items-center gap-2 mb-3 bg-dark-bg p-3 rounded-md border border-outline-variant/30 text-[11px] font-mono">
+                      <div className="bg-emerald-600/20 text-emerald-300 px-2 py-1 rounded border border-emerald-500/30 whitespace-nowrap">+ Create new secret key 버튼 클릭</div>
+                      <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
+                      <div className="bg-zinc-800 text-zinc-300 px-2 py-1 rounded border border-zinc-700 whitespace-nowrap">이름 대충 입력 후 Create 클릭</div>
+                      <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
+                      <div className="bg-zinc-200 text-zinc-900 font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm whitespace-nowrap"><Copy size={12} /> Copy (복사 버튼)</div>
+                    </div>
+                    <div className="flex items-center gap-2 mb-1 p-2 bg-amber-500/10 border border-amber-500/20 rounded-md">
+                      <CheckCircle2 size={16} className="text-amber-500 shrink-0" />
+                      <span className="text-amber-200/80 text-[11px]">주의: OpenAI는 가입 직후를 제외하고는 기본적으로 <strong>본인 결제 카드를 설정(Billing)하고 5달러 이상 선불 충전</strong>해야만 API가 대답을 시작합니다. 과금 없이 가볍게 즐기시길 원한다면 1번 안내의 Gemini 무료 모드를 강력히 추천합니다!</span>
+                    </div>
+                  </li>
+                  <li>이제 알로팝 우측 상단의 <strong>옵션(⚙️)버튼 &gt; [OpenAI]</strong> 탭에 복사한 키를 붙여넣고 저장하면 준비 끝!</li>
+                </ol>
+              </section>
+
+              <section className="mt-6">
+                <h3 className="text-sm font-bold text-fuchsia-400 flex items-center gap-1.5 mb-2"><Key size={16} /> 1-3. Anthropic 입장권 발급받는 방법 (선택)</h3>
+                <ol className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 list-decimal pl-6 space-y-1.5 marker:text-fuchsia-500 marker:font-bold">
+                  <div className="ml-[-16px] mb-2 text-fuchsia-400 font-medium">따뜻하고 감성적인 Claude 모델과 대화하려면 전용(유료) Anthropic 티켓이 필요해요!</div>
+                  <li>
+                    <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-fuchsia-400 hover:underline font-bold px-1 py-0.5 rounded bg-fuchsia-500/10 inline-flex items-center gap-1 transition-colors">
+                      [Anthropic 콘솔 접속하기]
+                    </a>
+                    버튼을 눌러 가입 및 로그인을 해주세요.
+                  </li>
+                  <li className="pb-1">
+                    <span className="mb-2 block">다음 순서대로 화면의 메뉴를 클릭해서 입장권을 만드세요:</span>
+                    <div className="flex flex-wrap items-center gap-2 mb-3 bg-dark-bg p-3 rounded-md border border-outline-variant/30 text-[11px] font-mono">
+                      <div className="bg-fuchsia-600/20 text-fuchsia-300 px-2 py-1 rounded border border-fuchsia-500/30 whitespace-nowrap">Create Key 버튼 클릭</div>
+                      <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
+                      <div className="bg-zinc-800 text-zinc-300 px-2 py-1 rounded border border-zinc-700 whitespace-nowrap">이름(예: alopop) 입력 후 Create Key 클릭</div>
+                      <ChevronRight size={14} className="text-zinc-600 hidden sm:block shrink-0" />
+                      <div className="bg-zinc-200 text-zinc-900 font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm whitespace-nowrap"><Copy size={12} /> Copy 키 복사</div>
+                    </div>
+                    <div className="flex items-center gap-2 mb-1 p-2 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-md">
+                      <CheckCircle2 size={16} className="text-fuchsia-400 shrink-0" />
+                      <span className="text-fuchsia-200/80 text-[11px]">주의: Anthropic(Claude) 역시 기본적으로 <strong>본인 결제 카드(Billing)를 등록하고 5달러 이상 선불 충전(Claim)</strong>해야만 정상적으로 대답합니다. 과금 없이 가볍게 즐기시길 원한다면 똑똑한 1번 'Gemini 무료 모드'를 강력히 추천합니다!</span>
+                    </div>
+                  </li>
+                  <li>이제 알로팝 우측 상단의 <strong>옵션(⚙️)버튼 &gt; [Anthropic]</strong> 탭에 복사한 키를 붙여넣고 저장하면 준비 끝!</li>
+                </ol>
+              </section>
+
               <section>
-                <h3 className="text-sm font-bold text-teal-400 flex items-center gap-1.5 mb-2"><Bot size={16} /> 2. 똑똑한 두뇌 고르기 & 밥값 계산 규칙 정하기</h3>
-                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-2">
-                  <p>
-                    <strong>구글(Gemini), 챗GPT(OpenAI), 클로드(Anthropic)</strong> 세 가지 유명한 천재들 중 마음에 드는 성격을 골라서 초대할 수 있어요.
-                    이 똑똑이들이 대답할 때마다 들어가는 밥값(체력)을 누가 낼지 채팅방의 규칙을 정할 수 있답니다.
-                  </p>
-                  <ul className="list-disc pl-5 space-y-1 marker:text-teal-500/50">
-                    <li><strong>각자 부담 (더치페이)</strong>: 방 사람들이 본인이 스스로 발급받아 둔 무료 입장권을 각자 소모합니다.</li>
-                    <li><strong>방장이 쏜다! (스폰서 모드)</strong>: 방장님이 아주 좋은 입장권을 독점해서 가지고 있다면, 다른 시골 쥐 손님들에게도 무제한으로 공짜로 쓰게 베풀 수 있어요! (물론 방장이 마음이 바뀌어서 게스트들에게 "대답 1번 들을 때마다 알로팝 포인트 10원씩 내놔!"라고 설정할 수도 있습니다.)</li>
-                    <li><strong>다 같이 모아서 내기 (P2P 코인 풀링)</strong>: 방 사람들끼리 회비를 모아두고 공평하게 포인트를 깎아 나가는 모드입니다. (아직 뚝딱뚝딱 공사 중이에요!)</li>
-                  </ul>
+                <h3 className="text-sm font-bold text-teal-400 flex items-center gap-1.5 mb-2"><Bot size={16} /> 2. 대화형 AI 설정 및 결제 모드 선택</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-3">
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">📌 사용할 AI 모델 세팅하기</strong>
+                    설정(⚙️) 메뉴에서 본인에게 맞는 주력 AI(Gemini, OpenAI, Anthropic 등)를 선택하세요. 방을 만들거나 챗봇을 추가할 때 해당 모델이 기본으로 작동합니다.
+                  </div>
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">💳 채팅방 API 과금(결제) 방식 설정</strong>
+                    방장이 채팅방을 개설할 때, AI의 대답 비용을 누가 부담할지 결정해야 합니다:
+                    <ul className="list-disc pl-5 mt-1 space-y-1 marker:text-teal-500/50">
+                      <li><strong>각자 부담 (기본)</strong>: 참여자 각자가 본인 설정에 등록해둔 API 키를 소모합니다.</li>
+                      <li><strong>스폰서 모드 (방장 부담)</strong>: 방장의 API 키로 모든 대화 비용을 처리합니다. (옵션: 게스트에게 AI 대답 1회당 일정량의 알로팝 코인을 징수할 수도 있습니다.)</li>
+                      <li><strong>P2P 코인 풀링 (예정)</strong>: 참여자들이 코인을 공동으로 모아 AI 비용을 지불하는 시스템입니다.</li>
+                    </ul>
+                  </div>
                 </div>
               </section>
 
               <section>
-                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5 mb-2"><ShieldAlert size={16} /> 3. 거짓말 탐지기 등장 (팩트체크 기능)</h3>
-                <p className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20">
-                  채팅을 칠 때 화면 밑에 있는 <strong>AI 전원버튼(🟢)</strong>을 켜보세요!
-                  수다를 떨 때 보이지 않는 탐정 코난이 숨어서 우리 대화가 가짜 뉴스인지 몰래 뒤에서 검색해 줍니다. <strong>"밥 먹었어?", "ㅋㅋㅋ" 같은 평범한 일상 대화에는 알아서 눈치껏 가만히 있다가</strong>, 누군가 인터넷 방송 지식이나 정치 얘기를 꺼내며 이상한 소리를 할 때만 짠! 하고 나타나서 빨간 펜으로 진실 도장을 쾅 찍어 줍니다.
-                </p>
+                <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5 mb-2"><ShieldAlert size={16} /> 3. 실시간 AI 팩트 필터 사용법</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-2">
+                  <ol className="list-decimal pl-5 space-y-1.5 marker:text-emerald-500 marker:font-bold">
+                    <li>채팅방 입장 후 하단 입력창 옆의 <strong>AI 활성화 버튼(🟢)</strong>을 켭니다.</li>
+                    <li>모든 참여자의 대화를 AI가 모니터링하기 시작합니다.</li>
+                    <li>단 "안녕", "ㅋㅋㅋ" 등 단순 친목 대화에는 AI가 반응하지 않습니다 (불필요한 과금 방지 표적).</li>
+                    <li>전문 지식, 시사, 역사 등 <strong>참과 거짓의 검증이 필요한 정보</strong>가 언급될 경우, AI가 실시간으로 객관적 팩트를 검색하여 채팅창에 정답 도장을 찍어줍니다.</li>
+                  </ol>
+                </div>
               </section>
 
               <section>
-                <h3 className="text-sm font-bold text-pink-400 flex items-center gap-1.5 mb-2"><UserPlus size={16} /> 4. 화가가 그려주는 내 AI 친구 프로필 사진</h3>
-                <p className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20">
-                  나만의 로봇 친구(가상 인물)를 만들 때 귀찮게 다른 사진을 안 찾고 그냥 프로필 사진 칸을 텅 비워두셔도 돼요! 알로팝 안에 숨어있는 화가 로봇이 여러분이 고른 친구의 MBTI 성격과 취미에 꼭 맞는 초상화를 10초 만에 뚝딱 공짜로 그려서 예쁘게 프로필 사진으로 붙여준답니다.
-                </p>
+                <h3 className="text-sm font-bold text-pink-400 flex items-center gap-1.5 mb-2"><UserPlus size={16} /> 4. AI 챗봇 자동 프로필 얼굴 생성 기능</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-2">
+                  <ol className="list-decimal pl-5 space-y-1.5 marker:text-pink-500 marker:font-bold">
+                    <li>좌측 메뉴에서 <strong>[+ 친구 추가]</strong> 버튼을 누르고 <strong>'AI 챗봇'</strong> 탭을 선택합니다.</li>
+                    <li>가상 챗봇의 성격(MBTI), 연령대, 특이사항을 텍스트로 자세히 설정합니다.</li>
+                    <li>복잡하게 이미지를 업로드할 필요 없이 <strong>프로필 사진 칸을 그대로 빈칸</strong>으로 둡니다.</li>
+                    <li>[추가하기] 버튼을 누르면, 입력된 캐릭터의 설정값을 바탕으로 <strong>AI가 약 10초 내외로 최적화된 아바타 이미지를 자동 완성</strong>하여 프로필에 부착해 줍니다.</li>
+                  </ol>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-blue-400 flex items-center gap-1.5 mb-2"><UserPlus size={16} /> 5. 실제 사람 친구 초대 및 맺기</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-2">
+                  <ol className="list-decimal pl-5 space-y-1.5 marker:text-blue-500 marker:font-bold">
+                    <li>좌측 하단의 <strong>[+ 친구 추가]</strong> 버튼을 누르고 <strong>'친구 추가'</strong> 탭을 선택합니다.</li>
+                    <li><strong>QR코드 스캔:</strong> 내 화면의 QR코드를 직접 친구에게 보여주거나, 반대로 내 카메라를 켜서 친구의 QR코드를 스캔하면 즉시 친구가 맺어집니다.</li>
+                    <li><strong>6자리 고유 코드:</strong> 화면에 표시된 영문/숫자 조합의 6자리 보안 코드를 상대방이 입력하면 원격으로도 친구를 추가할 수 있습니다.</li>
+                    <li><strong>초대 링크 공유:</strong> [초대 링크 복사] 버튼을 눌러 카카오톡 등 외부 연락처로 보내면, 해당 링크를 통해 가입 및 친구 추가가 동시에 진행됩니다.</li>
+                  </ol>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-violet-400 flex items-center gap-1.5 mb-2"><MessageSquare size={16} /> 6. 채팅방 내 주요 기능 및 활용법</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-3">
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">📌 채팅방 상단 메뉴 (우측 상단 ☰)</strong>
+                    <ul className="list-disc pl-5 mt-1 space-y-1">
+                      <li><strong>채팅방 이름 변경:</strong> 연필(✏️) 아이콘을 눌러 그룹 채팅방의 제목을 자유롭게 수정할 수 있습니다.</li>
+                      <li><strong>AI 응답 모델 교체:</strong> 채팅방 상단의 드롭다운 메뉴를 눌러, 현재 방에서 대답을 전담할 AI 모델(Gemini, GPT, Claude 등)을 실시간으로 바꿀 수 있습니다.</li>
+                      <li><strong>새로운 친구 & AI 초대:</strong> <em>[+ 멤버 초대]</em> 버튼을 활용하여 내 친구나 내가 만든 AI 가상 챗봇을 한 방에 여러 명 추가하고 <strong>그룹 채팅</strong>을 즐겨보세요!</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">👑 방장 전용 관리 기능</strong>
+                    <ul className="list-disc pl-5 mt-1 space-y-1">
+                      <li><strong>방장 양도:</strong> 우측 멤버 탭에서 특정 친구를 눌러 <em>[👑 방장 양도]</em>를 실행하면, 채팅방 소유권과 과금 주체가 해당 유저에게 양도됩니다.</li>
+                      <li><strong>강퇴 (추방):</strong> 방 분위기를 흐리는 멤버를 방장 권한으로 <em>[강퇴]</em> 하여 내보낼 수 있습니다.</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">💰 송금 및 AI 컨트롤</strong>
+                    <ul className="list-disc pl-5 mt-1 space-y-1">
+                      <li><strong>송금 (코인 이체):</strong> 우측 멤버 탭에서 <strong>[💸 송금]</strong> 아이콘을 누르면, 원하는 친구에게 수수료 없이 나의 알로팝 코인을 즉시 이체할 수 있습니다.</li>
+                      <li><strong>AI 팩트 필터 스위치:</strong> 대화창 텍스트 입력 칸 우측 상단의 <strong>(🟢 / ⛔) 버튼</strong>을 누르면 언제든지 실시간 팩트체크 요정의 개입을 끄고 켤 수 있습니다.</li>
+                    </ul>
+                  </div>
+                </div>
               </section>
             </div>
 
@@ -2933,9 +3042,13 @@ export default function Home() {
                             }}
                           >
                             <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-semibold text-zinc-200">
-                                {member.user.username.charAt(0).toUpperCase()}
-                              </div>
+                              {member.user.avatar_url ? (
+                                <img src={member.user.avatar_url} alt={member.user.username} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-semibold text-zinc-200 shrink-0">
+                                  {member.user.username.charAt(0).toUpperCase()}
+                                </div>
+                              )}
                               <span className="text-sm font-medium text-zinc-200">
                                 {member.user.username} {isMe && <span className="text-xs text-zinc-500 ml-1">(나)</span>}
                               </span>
@@ -3152,7 +3265,7 @@ export default function Home() {
                   onClick={() => setAddFriendTab('NORMAL')}
                   className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'NORMAL' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
                 >
-                  👤 사람 추가
+                  👤 친구 추가
                 </button>
                 <button
                   onClick={() => setAddFriendTab('AI')}
