@@ -3164,7 +3164,9 @@ export default function Home() {
                         <option value="20대 초반">20대 초반</option>
                         <option value="20대 후반">20대 후반</option>
                         <option value="30대">30대</option>
-                        <option value="40대 이상">40대 이상</option>
+                        <option value="40대">40대</option>
+                        <option value="50대">50대</option>
+                        <option value="60대 이상 (노년층)">60대 이상 (노년층)</option>
                         <option value="연령 미상">연령 미상</option>
                       </select>
                     </div>
