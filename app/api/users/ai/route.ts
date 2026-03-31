@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 
 export async function POST(request: Request) {
   try {
-    const { ownerId, name, mbti, gender, age, tone, hobby, avatar } = await request.json();
+    const { ownerId, name, mbti, gender, age, tone, hobby, avatar, aiProvider, apiKey } = await request.json();
 
     if (!ownerId || !name || !mbti || !tone) {
       return NextResponse.json({ error: 'AI 설정 정보가 부족합니다.' }, { status: 400 });
@@ -32,32 +32,117 @@ export async function POST(request: Request) {
 
     let finalAvatarUrl = avatar;
     
-    // 프로필 사진이 지정되지 않았다면 무료 Pollinations AI를 통해 즉각 초상화 생성 및 로컬 저장
+    // 프로필 사진이 지정되지 않았다면 AI 자화상 생성 시도
     if (!finalAvatarUrl) {
-      try {
-        const seed = Math.floor(Math.random() * 1000000);
-        // 간단한 한영 치환 (프롬프트 정확도 향상)
-        const englishGender = gender.includes('여') ? 'girl' : gender.includes('남') ? 'boy' : 'person';
-        const imagePrompt = `A highly detailed digital art portrait avatar of an attractive young ${englishGender} with MBTI ${mbti}. The character has a ${tone} vibe and atmosphere. Beautiful lighting, sharp focus, face portrait, dark cyber aesthetic background.`;
-        
-        const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=256&height=256&nologo=true&seed=${seed}`;
-        
-        const response = await fetch(pollinationsUrl);
-        if (response.ok) {
-          const buffer = await response.arrayBuffer();
-          const fileName = `ai_avatar_${Date.now()}_${seed}.jpg`;
-          const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-          
-          // uploads 디렉토리가 없을 수 있으므로 예외 처리 없이 생성 (기존 로직과 호환)
-          try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
-          
-          const filePath = path.join(uploadsDir, fileName);
-          await fs.writeFile(filePath, Buffer.from(buffer));
-          finalAvatarUrl = `/uploads/${fileName}`;
-          console.log('[AI Avatar Generated successfully]:', finalAvatarUrl);
+      let isSuccess = false;
+      const englishGender = gender.includes('여') ? 'girl' : gender.includes('남') ? 'boy' : 'person';
+      const imagePrompt = `A highly detailed digital art portrait avatar of an attractive young ${englishGender} with MBTI ${mbti}. The character has a ${tone} vibe and atmosphere. Beautiful lighting, sharp focus, face portrait, dark cyber aesthetic background.`;
+
+      // 1순위: OpenAI DALL-E 3
+      if (aiProvider === 'openai' && apiKey) {
+        try {
+          console.log('[AI Avatar] Generating via DALL-E 3...');
+          const openaiRes = await fetch('https://api.openai.com/v1/images/generations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: "dall-e-3",
+              prompt: imagePrompt,
+              n: 1,
+              size: "1024x1024"
+            })
+          });
+
+          if (openaiRes.ok) {
+            const openaiData = await openaiRes.json();
+            if (openaiData.data && openaiData.data[0]?.url) {
+              const imgRes = await fetch(openaiData.data[0].url);
+              if (imgRes.ok) {
+                const buffer = await imgRes.arrayBuffer();
+                const fileName = `ai_avatar_${Date.now()}_dalle.jpg`;
+                const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+                try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+                const filePath = path.join(uploadsDir, fileName);
+                await fs.writeFile(filePath, Buffer.from(buffer));
+                finalAvatarUrl = `/uploads/${fileName}`;
+                isSuccess = true;
+                console.log('[AI Avatar Generated via DALL-E 3 successfully]');
+              }
+            }
+          } else {
+             console.error('[DALL-E 3 Error]', await openaiRes.text());
+          }
+        } catch (err) {
+          console.error('[DALL-E 3 Exception]', err);
         }
-      } catch (err) {
-        console.error('Failed to generate AI avatar:', err);
+      }
+      
+      // 1.5순위: Gemini (Google Generative AI Imagen 3)
+      else if ((aiProvider === 'gemini' || aiProvider === 'gemini-free') && apiKey) {
+        try {
+          console.log('[AI Avatar] Generating via Gemini (Imagen 3)...');
+          const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              instances: [{ prompt: imagePrompt }],
+              parameters: { sampleCount: 1, aspectRatio: "1:1" }
+            })
+          });
+
+          if (geminiRes.ok) {
+            const geminiData = await geminiRes.json();
+            const base64Image = geminiData?.predictions?.[0]?.bytesBase64Encoded;
+            if (base64Image) {
+              const buffer = Buffer.from(base64Image, 'base64');
+              const fileName = `ai_avatar_${Date.now()}_gemini.jpg`;
+              const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+              try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+              const filePath = path.join(uploadsDir, fileName);
+              await fs.writeFile(filePath, buffer);
+              finalAvatarUrl = `/uploads/${fileName}`;
+              isSuccess = true;
+              console.log('[AI Avatar Generated via Gemini (Imagen) successfully]');
+            }
+          } else {
+             console.error('[Gemini Imagen Error]', await geminiRes.text());
+          }
+        } catch (err) {
+          console.error('[Gemini Imagen Exception]', err);
+        }
+      }
+      if (!isSuccess) {
+        try {
+          console.log('[AI Avatar] Generating via Pollinations AI as Fallback...');
+          const seed = Math.floor(Math.random() * 1000000);
+          const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=256&height=256&nologo=true&seed=${seed}`;
+          
+          const response = await fetch(pollinationsUrl);
+          if (response.ok) {
+            const buffer = await response.arrayBuffer();
+            const fileName = `ai_avatar_${Date.now()}_${seed}.jpg`;
+            const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+            try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+            const filePath = path.join(uploadsDir, fileName);
+            await fs.writeFile(filePath, Buffer.from(buffer));
+            finalAvatarUrl = `/uploads/${fileName}`;
+            isSuccess = true;
+            console.log('[AI Avatar Generated via Pollinations successfully]');
+          } else {
+             console.error('[Pollinations Error]', await response.text());
+          }
+        } catch (err) {
+          console.error('[Pollinations Exception]', err);
+        }
+      }
+
+      // 3순위: 이니셜 처리 (완전 실패 시 null 유지)
+      if (!isSuccess) {
+        console.warn('[AI Avatar] All generation attempts failed. Falling back to initials.');
+        finalAvatarUrl = null;
       }
     }
     // 1. AI 유저 생성 (User 테이블)
@@ -67,7 +152,7 @@ export async function POST(request: Request) {
         isAi: true,
         aiOwnerId: ownerId,
         aiPrompt,
-        avatar_url: finalAvatarUrl || undefined,
+        avatar_url: finalAvatarUrl,
         walletBalance: 0,
         statusMessage: `${mbti} | ${age} | ${tone}` // 리스트에 보여줄 상태메시지
       }

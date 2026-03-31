@@ -5,7 +5,7 @@ import path from 'path';
 
 export async function PUT(request: Request, context: { params: Promise<{ aiUserId: string }> }) {
   try {
-    const { ownerId, name, mbti, gender, age, tone, hobby, regenerateAvatar } = await request.json();
+    const { ownerId, name, mbti, gender, age, tone, hobby, regenerateAvatar, aiProvider, apiKey } = await request.json();
     const { aiUserId } = await context.params;
 
     if (!aiUserId || !ownerId || !name || !mbti || !tone) {
@@ -36,29 +36,117 @@ export async function PUT(request: Request, context: { params: Promise<{ aiUserI
 
     let finalAvatarUrl = aiUser.avatar_url;
 
-    // "사진 재생성" 옵션이 켜져 있다면, 기존 사진을 덮어쓰고 새로운 Pollinations URL을 추출합니다.
+    // "사진 재생성" 옵션이 켜져 있다면, 기존 사진을 덮어쓰고 새로운 초상화를 추출합니다.
     if (regenerateAvatar || !finalAvatarUrl) {
-      try {
-        const seed = Math.floor(Math.random() * 1000000);
-        const englishGender = gender.includes('여') ? 'girl' : gender.includes('남') ? 'boy' : 'person';
-        const imagePrompt = `A highly detailed digital art portrait avatar of an attractive young ${englishGender} with MBTI ${mbti}. The character has a ${tone} vibe and atmosphere. Beautiful lighting, sharp focus, face portrait, dark cyber aesthetic background.`;
-        
-        const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=256&height=256&nologo=true&seed=${seed}`;
-        
-        const response = await fetch(pollinationsUrl);
-        if (response.ok) {
-          const buffer = await response.arrayBuffer();
-          const fileName = `ai_avatar_${Date.now()}_${seed}.jpg`;
-          const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-          
-          try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
-          
-          const filePath = path.join(uploadsDir, fileName);
-          await fs.writeFile(filePath, Buffer.from(buffer));
-          finalAvatarUrl = `/uploads/${fileName}`;
+      let isSuccess = false;
+      const englishGender = gender.includes('여') ? 'girl' : gender.includes('남') ? 'boy' : 'person';
+      const imagePrompt = `A highly detailed digital art portrait avatar of an attractive young ${englishGender} with MBTI ${mbti}. The character has a ${tone} vibe and atmosphere. Beautiful lighting, sharp focus, face portrait, dark cyber aesthetic background.`;
+
+      // 1순위: OpenAI DALL-E 3
+      if (aiProvider === 'openai' && apiKey) {
+        try {
+          console.log('[AI Avatar UPDATE] Generating via DALL-E 3...');
+          const openaiRes = await fetch('https://api.openai.com/v1/images/generations', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: "dall-e-3",
+              prompt: imagePrompt,
+              n: 1,
+              size: "1024x1024"
+            })
+          });
+
+          if (openaiRes.ok) {
+            const openaiData = await openaiRes.json();
+            if (openaiData.data && openaiData.data[0]?.url) {
+              const imgRes = await fetch(openaiData.data[0].url);
+              if (imgRes.ok) {
+                const buffer = await imgRes.arrayBuffer();
+                const fileName = `ai_avatar_${Date.now()}_dalle.jpg`;
+                const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+                try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+                const filePath = path.join(uploadsDir, fileName);
+                await fs.writeFile(filePath, Buffer.from(buffer));
+                finalAvatarUrl = `/uploads/${fileName}`;
+                isSuccess = true;
+                console.log('[AI Avatar UPDATE via DALL-E 3 successfully]');
+              }
+            }
+          } else {
+             console.error('[DALL-E 3 UPDATE Error]', await openaiRes.text());
+          }
+        } catch (err) {
+          console.error('[DALL-E 3 UPDATE Exception]', err);
         }
-      } catch (err) {
-        console.error('Failed to regenerate AI avatar:', err);
+      }
+
+      // 1.5순위: Gemini (Google Generative AI Imagen 3)
+      else if ((aiProvider === 'gemini' || aiProvider === 'gemini-free') && apiKey) {
+        try {
+          console.log('[AI Avatar UPDATE] Generating via Gemini (Imagen 3)...');
+          const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              instances: [{ prompt: imagePrompt }],
+              parameters: { sampleCount: 1, aspectRatio: "1:1" }
+            })
+          });
+
+          if (geminiRes.ok) {
+            const geminiData = await geminiRes.json();
+            const base64Image = geminiData?.predictions?.[0]?.bytesBase64Encoded;
+            if (base64Image) {
+              const buffer = Buffer.from(base64Image, 'base64');
+              const fileName = `ai_avatar_${Date.now()}_gemini.jpg`;
+              const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+              try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+              const filePath = path.join(uploadsDir, fileName);
+              await fs.writeFile(filePath, buffer);
+              finalAvatarUrl = `/uploads/${fileName}`;
+              isSuccess = true;
+              console.log('[AI Avatar UPDATE via Gemini (Imagen) successfully]');
+            }
+          } else {
+             console.error('[Gemini Imagen UPDATE Error]', await geminiRes.text());
+          }
+        } catch (err) {
+          console.error('[Gemini Imagen UPDATE Exception]', err);
+        }
+      }
+      if (!isSuccess) {
+        try {
+          console.log('[AI Avatar UPDATE] Generating via Pollinations AI as Fallback...');
+          const seed = Math.floor(Math.random() * 1000000);
+          const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=256&height=256&nologo=true&seed=${seed}`;
+          
+          const response = await fetch(pollinationsUrl);
+          if (response.ok) {
+            const buffer = await response.arrayBuffer();
+            const fileName = `ai_avatar_${Date.now()}_${seed}.jpg`;
+            const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+            try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+            const filePath = path.join(uploadsDir, fileName);
+            await fs.writeFile(filePath, Buffer.from(buffer));
+            finalAvatarUrl = `/uploads/${fileName}`;
+            isSuccess = true;
+            console.log('[AI Avatar UPDATE via Pollinations successfully]');
+          } else {
+             console.error('[Pollinations UPDATE Error]', await response.text());
+          }
+        } catch (err) {
+          console.error('[Pollinations UPDATE Exception]', err);
+        }
+      }
+
+      // 3순위: 이니셜 처리 (완전 실패 시 null 유지)
+      if (!isSuccess) {
+        console.warn('[AI Avatar UPDATE] All generation attempts failed. Falling back to initials.');
+        finalAvatarUrl = null;
       }
     }
 
@@ -67,7 +155,7 @@ export async function PUT(request: Request, context: { params: Promise<{ aiUserI
       data: {
         username: name,
         aiPrompt: aiPrompt,
-        avatar_url: finalAvatarUrl || undefined,
+        avatar_url: finalAvatarUrl,
         statusMessage: `${mbti} | ${age} | ${tone}`
       }
     });

@@ -154,7 +154,7 @@ export default function Home() {
   };
 
   const chatStore = useChatStore();
-  const { setIsOpen: setSettingsOpen, selectedProvider, loadSettings } = useSettingsStore();
+  const { setIsOpen: setSettingsOpen, selectedProvider, apiKeys, loadSettings } = useSettingsStore();
 
   // 앱 최초 로드 시 로컬 스토리지의 AI 설정을 스토어에 즉시 동기화
   useEffect(() => {
@@ -1562,7 +1562,9 @@ export default function Home() {
             age: aiAgeValue,
             tone: aiToneValue,
             hobby: aiHobbyValue,
-            regenerateAvatar: regenerateAiAvatar
+            regenerateAvatar: regenerateAiAvatar,
+            aiProvider: selectedProvider,
+            apiKey: apiKeys[selectedProvider]
           })
         });
         const data = await res.json();
@@ -1586,7 +1588,9 @@ export default function Home() {
             gender: aiGenderValue,
             age: aiAgeValue,
             tone: aiToneValue,
-            hobby: aiHobbyValue
+            hobby: aiHobbyValue,
+            aiProvider: selectedProvider,
+            apiKey: apiKeys[selectedProvider]
           })
         });
         const data = await res.json();
