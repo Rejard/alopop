@@ -72,15 +72,13 @@ export async function POST(request: Request) {
     
     // 1.5순위: Gemini (Google Generative AI Imagen 3)
     else if ((aiProvider === 'gemini' || aiProvider === 'gemini-free') && apiKey) {
+      const ai = new GoogleGenAI({ apiKey: apiKey });
       try {
         console.log('[Avatar Generator] Generating via Gemini (Imagen 3) using SDK...');
-        const ai = new GoogleGenAI({ apiKey: apiKey });
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash-image",
           contents: imagePrompt,
         });
-        
-        // console.log("Gemini Response:", JSON.stringify(response, null, 2));
 
         if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.inlineData?.data) {
           const imageData = response.candidates[0].content.parts[0].inlineData.data;
@@ -96,10 +94,52 @@ export async function POST(request: Request) {
           isSuccess = true;
           console.log('[Avatar Generator] Gemini (Imagen) SDK successfully generated!');
         } else {
-           console.error('[Avatar Generator] Gemini Imagen Error: No image data found in candidate parts');
+           throw new Error('No image data found from Gemini');
         }
       } catch (err) {
-        console.error('[Avatar Generator] Gemini Imagen SDK Exception:', err);
+        console.error('[Avatar Generator] Gemini Imagen SDK Exception, falling back to SVG generation:', err);
+        // Fallback: Text Model (gemini-3.1-flash-lite) to generate SVG
+        try {
+          console.log('[Avatar Generator] Fallback to Gemini 3.1 Flash Lite Preview for SVG generation...');
+          const englishAge = age.replace('대', 's');
+          const svgPrompt = `Create a stunning SVG vector illustration of a ${englishAge} Korean ${englishGender} based on the ${mbti} personality type. 
+          Follow these instructions strictly:
+          1. Persona Context: Express the core traits, vibe, and energy of the ${mbti} personality type.
+          2. Color Palette: Choose appropriate colors for the background, outfit, and skin tone that match the ${mbti} vibe and ${englishAge} demographic.
+          3. Facial & Detail Features: Carefully design the hairstyle, eyes, mouth shape, and facial expressions to reflect the persona.
+          4. Technical Constraints: Compose all elements using simple geometric shapes (Path, Circle, Rect). Strictly set the SVG canvas size to width="256" height="256" with viewBox="0 0 256 256". Use a center-focused Radial Gradient for background lighting effects.
+          Respond ONLY with the pure <svg>...</svg> code string. Do not use markdown tags like \`\`\`svg. Output exactly starting with <svg> and ending with </svg>.`;
+          
+          const svgResponse = await ai.models.generateContent({
+            model: "gemini-3.1-flash-lite-preview",
+            contents: svgPrompt,
+          });
+          
+          let svgText = svgResponse.text || svgResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          
+          // Clean up potential markdown formatting
+          svgText = svgText.replace(/```xml/gi, '').replace(/```svg/gi, '').replace(/```html/gi, '').replace(/```/g, '').trim();
+          
+          if (svgText.startsWith('<svg') && svgText.includes('</svg>')) {
+             const startIndex = svgText.indexOf('<svg');
+             const endIndex = svgText.lastIndexOf('</svg>') + 6;
+             const pureSvg = svgText.slice(startIndex, endIndex);
+             
+             const fileName = `ai_avatar_${Date.now()}_gemini.svg`;
+             const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+             try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+             const filePath = path.join(uploadsDir, fileName);
+             await fs.writeFile(filePath, pureSvg, 'utf-8');
+             
+             finalAvatarUrl = `/uploads/${fileName}`;
+             isSuccess = true;
+             console.log('[Avatar Generator] Gemini SVG successfully generated as fallback!');
+          } else {
+             console.error('[Avatar Generator] Gemini SVG response was invalid:', svgText.substring(0, 100));
+          }
+        } catch (svgErr) {
+          console.error('[Avatar Generator] Gemini SVG generation Exception:', svgErr);
+        }
       }
     }
 
