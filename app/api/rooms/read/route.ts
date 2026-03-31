@@ -3,11 +3,13 @@ import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request) {
   try {
-    const { userId, roomId } = await req.json();
+    const { userId, roomId, localTimestamp } = await req.json();
 
     if (!userId || !roomId) {
       return NextResponse.json({ error: 'Missing userId or roomId' }, { status: 400 });
     }
+
+    const readAtDate = localTimestamp ? new Date(localTimestamp) : new Date();
 
     const roomMember = await prisma.roomMember.update({
       where: {
@@ -17,7 +19,7 @@ export async function POST(req: Request) {
         }
       },
       data: {
-        lastReadAt: new Date()
+        lastReadAt: readAtDate
       }
     });
 

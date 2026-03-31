@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ChatMessage } from '@/lib/db';
@@ -55,7 +55,7 @@ export default function Home() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
-  const [currentTab, setCurrentTab] = useState<'chats' | 'friends'>('chats'); // 좌측 LNB 탭 상태
+  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats'>('chats'); // 좌측 LNB 탭 상태
 
   // 친구 목록 컨텍스트 메뉴 상태
   const [activeFriendMenuId, setActiveFriendMenuId] = useState<string | null>(null);
@@ -68,6 +68,9 @@ export default function Home() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [statusMsgValue, setStatusMsgValue] = useState('');
 
+  // 친구 프로필 보기 관련 상태
+  const [selectedFriendProfile, setSelectedFriendProfile] = useState<any | null>(null);
+
   // 오라클 HUD 디지털 시계 상태
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   useEffect(() => {
@@ -76,16 +79,28 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  const markRoomAsRead = useCallback((roomId: string) => {
+  const markRoomAsRead = useCallback(async (roomId: string) => {
     if (!user?.id) return;
-    const now = Date.now();
+    
+    // 디바이스간 시간(Clock)이 안 맞는 경우(상대방 시간이 내 폰 시간보다 미래일 때)
+    // 현재 읽고 있는 시점의 시간이 메시지 발송 시간보다 작아져서 읽음 표시가 안 지워지는 버그(1 안사라짐) 방어
+    let maxMsgTime = 0;
+    try {
+      const msgs = await db.messages.where('receiverId').equals(roomId).toArray();
+      if (msgs.length > 0) {
+        maxMsgTime = Math.max(...msgs.map(m => m.createdAt || 0));
+      }
+    } catch (err) {}
+    
+    const now = Math.max(Date.now(), maxMsgTime + 100); // 확보한 최신 메시지 시간보다 무조건 약간 미래로 마크
+
     setRoomMemberReadTimes(prev => ({
       ...prev,
       [roomId]: { ...(prev[roomId] || {}), [user.id]: now }
     }));
     fetch('/api/rooms/read', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: user.id, roomId })
+      body: JSON.stringify({ userId: user.id, roomId, localTimestamp: now })
     }).catch(err => console.error(err));
 
     const { socket } = useChatStore.getState();
@@ -169,6 +184,44 @@ export default function Home() {
   const [editingAiFriend, setEditingAiFriend] = useState<any | null>(null);
   const [regenerateAiAvatar, setRegenerateAiAvatar] = useState(false);
   const [isAiCreating, setIsAiCreating] = useState(false);
+
+  // 일일 전체 AI 누적 사용량 추적 및 API 키 여부
+  const [totalAiUsageCount, setTotalAiUsageCount] = useState<number>(0);
+  const [hasPersonalKey, setHasPersonalKey] = useState(false);
+
+  useEffect(() => {
+    // 1. 누적 사용량 로드 (무료/유료 통합)
+    const saved = localStorage.getItem('alo_total_ai_usage');
+    const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
+    let used = 0;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.date === today) {
+          used = parsed.used || 0;
+        }
+      } catch (e) {}
+    } else {
+      localStorage.setItem('alo_total_ai_usage', JSON.stringify({ date: today, used: 0 }));
+    }
+    setTotalAiUsageCount(used);
+
+    // 2. 초기 키 로드
+    const checkKey = () => {
+      try {
+        const savedKeys = JSON.parse(localStorage.getItem('alo_api_keys') || '{}');
+        const provider = localStorage.getItem('alo_ai_provider') || 'openai';
+        setHasPersonalKey(!!savedKeys[provider]);
+      } catch (e) {
+        setHasPersonalKey(false);
+      }
+    };
+    checkKey();
+    
+    // 설정 모달 닫힐 때 등 스토리지 변경 시 업데이트 폴링(간이)
+    const interval = setInterval(checkKey, 2000);
+    return () => clearInterval(interval);
+  }, [selectedProvider]);
 
   useEffect(() => {
     setIsAiEnabled(false);
@@ -457,14 +510,15 @@ export default function Home() {
           // 채팅 중 서로 전송/수신 할 때 '도미솔 타격 화음' 을 작게 재생 (유저 요청)
           playChatSound();
 
-          const now = Date.now();
+          // 내가 보고 있는 방에 메시지가 오면: 클라이언트 딜레이 대비 버퍼를 더해 로컬타임 수정 (상대방 시간이 더 빠를 때 방어)
+          const now = Math.max(Date.now(), msg.createdAt + 100);
           setRoomMemberReadTimes(prev => ({
             ...prev,
             [curr!.id]: { ...(prev[curr!.id] || {}), [parsedUser.id]: now }
           }));
           fetch('/api/rooms/read', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: parsedUser.id, roomId: curr!.id })
+            body: JSON.stringify({ userId: parsedUser.id, roomId: curr!.id, localTimestamp: now })
           }).catch(console.error);
           useChatStore.getState().socket?.emit('read_receipt', { roomId: curr!.id, userId: parsedUser.id, timestamp: now });
         }
@@ -560,6 +614,33 @@ export default function Home() {
     () => db.messages.where('receiverId').equals(currentRoom?.id || 'none').sortBy('createdAt'),
     [currentRoom?.id]
   );
+
+  // AI 통계 실시간 쿼리 및 월별 그룹화 (Stats Tab)
+  const aiStatsData = useLiveQuery(() => db.aiStats ? db.aiStats.toArray() : [], []) || [];
+  
+  const monthlyStats = useMemo(() => {
+    if (!aiStatsData || !aiStatsData.length) return {};
+    const grouped: Record<string, { date: string, count: number }[]> = {};
+    aiStatsData.forEach(stat => {
+      const month = stat.date.substring(0, 7); // "YYYY-MM"
+      if (!grouped[month]) grouped[month] = [];
+      grouped[month].push(stat);
+    });
+    // 각 리스트 내에서 일자 최신순 정렬
+    Object.keys(grouped).forEach(m => {
+      grouped[m].sort((a, b) => b.date.localeCompare(a.date));
+    });
+    return grouped;
+  }, [aiStatsData]);
+
+  // 통계 아코디언 상태 (가장 최근 월을 기본 오픈)
+  const [expandedStatMonth, setExpandedStatMonth] = useState<string | null>(null);
+  useEffect(() => {
+    if (Object.keys(monthlyStats).length > 0 && !expandedStatMonth) {
+      const sortedMonths = Object.keys(monthlyStats).sort().reverse();
+      setExpandedStatMonth(sortedMonths[0]);
+    }
+  }, [monthlyStats, expandedStatMonth]);
 
   // 내 타이핑 상태 소켓 브로드캐스트
   const isTypingRef = useRef(false);
@@ -692,10 +773,10 @@ export default function Home() {
     // 현재 방 멤버 중, 내 클라이언트(이 브라우저)가 연산을 책임질 AI 발라내기
     const activeAIs = currentRoom.members.filter((m: any) => {
       if (!m.user?.isAi) return false; // 사람이면 제외
-      
+
       // 스폰서 모드일 경우: 내가 방장(스폰서)이므로, 내 소유 여부와 무관하게 모든 AI를 내가 연산해 줌!
       if (isSponsorMode) return true;
-      
+
       // 반대로, 내가 '스폰서 방에 들어온 게스트'라면, 내가 만든 AI라도 내가 연산하면 안 됨! (호스트가 대신 연산해 주므로 중복 방지)
       if (isGuestInSponsorRoom) return false;
 
@@ -805,6 +886,15 @@ export default function Home() {
                 const savedKeys = JSON.parse(localStorage.getItem('alo_api_keys') || '{}');
                 const realByokKey = savedKeys[realProvider] || '';
 
+                // 전체 AI 사용량 무조건 1 증가
+                const savedUsage = JSON.parse(localStorage.getItem('alo_total_ai_usage') || '{"used": 0}');
+                const newUsed = savedUsage.used + 1;
+                localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, used: newUsed }));
+                setTotalAiUsageCount(newUsed);
+                
+                // Dexie 로컬 영구 DB에도 오늘 날짜로 기록 동기화
+                db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error("aiStats put 에러", e));
+
                 return fetch('/api/chat/friend', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -821,7 +911,7 @@ export default function Home() {
               .then((aiResponse: any) => {
                 if (!aiResponse.ok) {
                   if (aiResponse.status === 429) {
-                    chatStore.sendMessage(currentRoom.id, `⚠️ [AI 알림] 무료 제공량이 모두 소진되어 일시 정지되었습니다. 방장이 스폰서 모드를 켜거나 개인 설정에서 API 키를 등록해주세요.`, 'system', 'System', 'SYSTEM');
+                    chatStore.sendMessage(currentRoom.id, `⚠️ [AI 알림] 오늘 무료 제공량을 모두 소진한 것 같습니다. 내일 다시 이용하시거나 환경설정에서 API 키를 등록해주세요. (혹은 스폰서 방 이용)`, 'system', 'System', 'SYSTEM');
                   } else if (aiResponse.status === 400) {
                     chatStore.sendMessage(currentRoom.id, `⚠️ [AI 알림] 무료 AI 시스템이 막혀 있습니다 (서버 관리자가 Google API Key를 등록하지 않았습니다).`, 'system', 'System', 'SYSTEM');
                   }
@@ -1081,6 +1171,13 @@ export default function Home() {
           const apiKeys = keysStr ? JSON.parse(keysStr) : {};
           const byokKey = apiKeys[selectedProvider];
 
+          // 전체 AI 사용량 1 증가 (팩트체크 요청)
+          const savedUsage = JSON.parse(localStorage.getItem('alo_total_ai_usage') || '{"used": 0}');
+          const newUsed = savedUsage.used + 1;
+          localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, used: newUsed }));
+          setTotalAiUsageCount(newUsed);
+          db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error(e));
+
           const aiRes = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1109,7 +1206,7 @@ export default function Home() {
           } else {
             let reasonText = 'AI 서버 연산 실패 (나중에 다시 시도해주세요)';
             if (aiRes.status === 429) {
-              reasonText = '무료 제공량 일일 한도 초과 (설정에서 개인 API 키를 등록하세요)';
+              reasonText = '오늘 무료 제공량을 모두 소진한 것 같습니다. 내일 다시 이용하시거나 설정에서 개인 API 키를 등록하세요.';
             } else if (aiRes.status === 400) {
               reasonText = '서버 무료 AI 미설정 (관리자 키가 없습니다. 설정에서 개인 키를 등록하세요)';
             }
@@ -1590,7 +1687,7 @@ export default function Home() {
     }
 
     const promptStr = friend.aiPrompt || '';
-    
+
     // 이전에 저장된 통문장에서 값을 뽑아냅니다. (없으면 기본값)
     const nameMatch = promptStr.match(/- 이름: (.*)/);
     const mbtiMatch = promptStr.match(/- MBTI: (.*)/);
@@ -2042,6 +2139,16 @@ export default function Home() {
               {/* LNB 하단: 알림, 디지털 번호판 및 내 프로필 */}
               <div className="flex flex-col items-center gap-4 mt-auto w-full pb-6">
 
+                {/* AI 사용 통계 타일 */}
+                <button 
+                  onClick={() => { setCurrentTab('stats'); setIsDrawerOpen(false); setCurrentRoom(null); }}
+                  className="flex flex-col items-center justify-center gap-1 w-10 h-10 mb-2 rounded-xl bg-purple-900/20 border border-purple-500/30 hover:border-purple-400/50 hover:bg-purple-900/40 text-purple-300 shadow-inner group transition-all"
+                  title="오늘 AI 총 대화 횟수"
+                >
+                  <Bot size={16} className="opacity-80 group-hover:scale-110 transition-transform" />
+                  <span className="text-[9px] font-mono font-bold leading-none">{totalAiUsageCount}</span>
+                </button>
+
                 {/* 헬프/가이드 버튼 */}
                 <button
                   className="mb-1 text-zinc-500 hover:text-white transition-colors p-1 rounded-full hover:bg-zinc-800"
@@ -2079,7 +2186,7 @@ export default function Home() {
               {currentTab === 'chats' && (
                 <div className="p-4 space-y-5">
                   <div className="px-2 pt-2">
-                    <h3 className="text-white text-display-sm font-extrabold tracking-tight">상태 및 교차로</h3>
+                    <h3 className="text-white text-display-sm font-extrabold tracking-tight">채팅</h3>
                   </div>
                   <div className="space-y-2">
                     {rooms.length === 0 ? (
@@ -2134,6 +2241,84 @@ export default function Home() {
                 </div>
               )}
 
+              {currentTab === 'stats' && (
+                <div className="p-4 space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <BarChart2 className="text-secondary" size={24} />
+                    <h2 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-secondary to-primary drop-shadow-sm flex-1">
+                      나의 AI 사용 통계
+                    </h2>
+                  </div>
+                  
+                  {Object.keys(monthlyStats).length > 0 ? (
+                    Object.entries(monthlyStats).sort((a,b) => b[0].localeCompare(a[0])).map(([month, stats]) => {
+                      const isExpanded = expandedStatMonth === month;
+                      const maxCount = Math.max(...stats.map(s => s.count), 1); 
+                      // 이번 달 표시 리스트 중 상위 최신 7개 항목 기준 주간 사용량
+                      const weekTotal = stats.slice(0, 7).reduce((acc, curr) => acc + curr.count, 0); 
+                      const monthTotal = stats.reduce((acc, curr) => acc + curr.count, 0);
+                      
+                      return (
+                        <div key={month} className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden shadow-sm">
+                          {/* 아코디언 헤더 */}
+                          <div 
+                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-surface-variant/30 transition-colors"
+                            onClick={() => setExpandedStatMonth(isExpanded ? null : month)}
+                          >
+                            <div>
+                              <div className="font-bold text-zinc-200">{month.replace('-', '년 ')}월 리포트</div>
+                              <div className="text-[11px] text-zinc-500 mt-0.5">총 {monthTotal.toLocaleString()}회 AI 대화</div>
+                            </div>
+                            <ChevronDown size={18} className={`text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          </div>
+                          
+                          {/* 아코디언 본문 (수제 막대 차트) */}
+                          {isExpanded && (
+                            <div className="px-4 pb-5 pt-3 border-t border-outline-variant/10 bg-surface-container-low/50">
+                              <div className="text-xs text-secondary/90 font-semibold mb-4 bg-secondary/15 w-fit px-2.5 py-1.5 rounded-md inline-flex items-center gap-1.5 border border-secondary/20">
+                                <Sparkles size={14} />
+                                최근 주간(7일) 대화량: {weekTotal.toLocaleString()}회
+                              </div>
+                              
+                              {/* 막대 차트 가로 스크롤 영역 */}
+                              <div className="h-44 flex items-end gap-3 overflow-x-auto pb-4 custom-scrollbar">
+                                {stats.slice().reverse().map((stat) => {
+                                  // x축 표기: 'DD일'
+                                  const displayDate = stat.date.substring(8); 
+                                  const heightRatio = Math.max(5, (stat.count / maxCount) * 100); 
+                                  return (
+                                    <div key={stat.date} className="flex flex-col items-center gap-1.5 min-w-[32px] group relative" title={`${stat.date}: ${stat.count}회`}>
+                                      <div className="text-[10px] font-mono font-bold text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap absolute -top-5">
+                                        {stat.count}
+                                      </div>
+                                      <div className="w-6 bg-surface-container-highest rounded-t-sm relative overflow-hidden group-hover:ring-1 group-hover:ring-secondary/50 transition-all border border-b-0 border-outline-variant/20" style={{ height: '110px' }}>
+                                        <div 
+                                          className="absolute bottom-0 w-full bg-gradient-to-t from-purple-600 to-teal-400 rounded-t-sm transition-all duration-500 group-hover:brightness-125 saturate-150"
+                                          style={{ height: `${heightRatio}%` }}
+                                        ></div>
+                                      </div>
+                                      <div className="text-[10px] text-zinc-500 tracking-tighter shrink-0 mt-0.5 font-medium">
+                                        {displayDate}일
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  ) : (
+                     <div className="flex flex-col items-center justify-center h-48 text-zinc-500 gap-3 bg-surface-container-low rounded-xl border border-outline-variant/10 border-dashed">
+                      <Bot size={32} className="opacity-40" />
+                      <p className="text-sm font-medium">아직 기록된 통계가 없습니다.</p>
+                      <p className="text-xs opacity-70 text-center px-4">AI 친구와 한 번이라도 대화를 나누면<br/>이곳에 멋진 그래프가 그려집니다!</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {currentTab === 'friends' && (
                 <div className="p-4 space-y-4">
                   {/* 최상단 내 프로필 카드 영역 */}
@@ -2158,12 +2343,12 @@ export default function Home() {
 
                   {/* 친구 리스트 헤더 */}
                   <div className="px-2 pt-4 flex items-center justify-between">
-                    <h3 className="text-white text-display-sm font-extrabold tracking-tight">연락망 <span className="text-base font-mono text-outline-variant ml-1">{friends.length}</span></h3>
+                    <h3 className="text-white text-display-sm font-extrabold tracking-tight">친구<span className="text-base font-mono text-outline-variant ml-1">{friends.length}</span></h3>
                     <button
                       onClick={() => setIsAddFriendModalOpen(true)}
                       className="text-on-surface-variant hover:text-white transition-colors bg-surface-container-high hover:bg-surface-variant border border-outline-variant/20 px-3 py-2 rounded-lg flex items-center gap-1.5 text-xs font-bold shadow-sm"
                     >
-                      <UserPlus size={14} /> 추가
+                      <UserPlus size={14} /> 친구 추가
                     </button>
                   </div>
 
@@ -2176,13 +2361,25 @@ export default function Home() {
                       </div>
                     ) : (
                       friends.map((friend: any) => (
-                        <div 
-                          key={friend.id} 
+                        <div
+                          key={friend.id}
                           onClick={() => handleCreateRoom(friend.id)}
                           className="relative flex items-center justify-between p-4 mb-3 bg-[#150f1d] hover:bg-[#1f172b] border border-white/5 rounded-[16px] transition-colors cursor-pointer group shadow-sm"
                         >
                           <div className="flex items-center gap-4 min-w-0 flex-1">
-                            <div className="relative w-14 h-14 rounded-xl flex items-center justify-center font-bold text-[16px] shrink-0">
+                            <div 
+                              className="relative w-14 h-14 rounded-xl flex items-center justify-center font-bold text-[16px] shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (friend.isAi) {
+                                  // AI 친구는 기존 프로필(설정) 팝업 열기
+                                  handleEditAiFriend(friend);
+                                } else {
+                                  // 일반 친구는 조회용 프로필 팝업 열기
+                                  setSelectedFriendProfile(friend);
+                                }
+                              }}
+                            >
                               {friend.avatar_url ? (
                                 <img src={friend.avatar_url} alt={friend.username} className="w-full h-full object-cover rounded-xl border-[1.5px] border-purple-900/60" />
                               ) : (
@@ -2191,10 +2388,14 @@ export default function Home() {
                                 </div>
                               )}
                             </div>
-                            
+
                             <div className="flex flex-col min-w-0 pr-2">
                               <span className="font-extrabold text-[16px] text-white truncate">{friend.username}</span>
-                              <span className="text-[13px] text-zinc-400 truncate mt-0.5">{friend.statusMessage || '상태 메시지가 없습니다.'}</span>
+                              <span className="text-[13px] text-zinc-400 truncate mt-0.5">
+                                {friend.isAi 
+                                  ? (friend.aiPrompt?.match(/- 관심사\/취미: (.*)/)?.[1]?.trim() || '')
+                                  : (friend.statusMessage || '')}
+                              </span>
                             </div>
                           </div>
 
@@ -2203,12 +2404,12 @@ export default function Home() {
                               const mbtiMatch = friend.aiPrompt.match(/- MBTI: (.*)/);
                               const mbti = mbtiMatch ? mbtiMatch[1].trim() : null;
                               return mbti ? (
-                                <span className="mr-1 px-2 py-[2px] text-[10px] sm:text-xs font-bold tracking-widest text-[#62fae3] bg-[#00ffcc]/10 border border-[#00ffcc]/20 rounded-md whitespace-nowrap">
+                                <span className="mr-1 px-2.5 py-0.5 text-xs font-bold tracking-widest text-white bg-primary-dim border border-primary/20 rounded-full whitespace-nowrap shadow-sm">
                                   {mbti}
                                 </span>
                               ) : null;
                             })()}
-                            
+
                             <ChevronRight size={18} className="text-zinc-600 shrink-0" />
 
                             <div className="relative shrink-0">
@@ -2575,6 +2776,12 @@ export default function Home() {
                         if (!isAiProcessing) handleSendMessage(e);
                       }
                     }}
+                    onFocus={(e) => {
+                      // 모바일 사파리/안드로이드 환경에서 키보드가 올라올 때 입력창이 가려지는 문제 방어
+                      setTimeout(() => {
+                        e.target.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                      }, 300);
+                    }}
                     disabled={isAiProcessing}
                     placeholder={isAiProcessing ? "AI 분석 중..." : "메시지 입력..."}
                     autoComplete="off"
@@ -2802,12 +3009,55 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* 일반 친구 프로필 조회 모달 */}
+        {selectedFriendProfile && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedFriendProfile(null)}>
+            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setSelectedFriendProfile(null)}
+                className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="flex flex-col items-center text-center mt-4">
+                <div className="relative w-24 h-24 mb-4">
+                  <div className="w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
+                    {selectedFriendProfile.avatar_url ? (
+                      <img src={selectedFriendProfile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      selectedFriendProfile.username.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                </div>
+
+                <h3 className="text-xl font-bold text-zinc-100 mb-1">{selectedFriendProfile.username}</h3>
+                <div className="text-sm text-zinc-400 whitespace-pre-wrap max-w-full px-4 mb-4 min-h-[1.5rem]">
+                  {selectedFriendProfile.statusMessage || '(상태메시지 없음)'}
+                </div>
+                
+                <div className="w-full pt-4 mt-2 border-t border-zinc-800">
+                  <button 
+                    onClick={() => {
+                      setSelectedFriendProfile(null);
+                      handleCreateRoom(selectedFriendProfile.id);
+                    }}
+                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-[15px] transition-colors flex items-center justify-center gap-2 shadow-lg active:scale-[0.98]"
+                  >
+                    <MessageSquare size={16} /> 1:1 대화 시작
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {/* 최상단 친구 추가 모달 (전역 탭뷰 위 표시) */}
         {isAddFriendModalOpen && !currentRoom && (
           <div className="absolute inset-x-0 bottom-0 top-auto h-[85%] bg-zinc-900 border-t border-zinc-800 rounded-t-3xl p-5 z-50 flex flex-col animate-in slide-in-from-bottom shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-bold text-zinc-100 text-lg flex items-center gap-2">
-                <UserPlus className="text-primary text-glow-purple" size={20} /> 
+                <UserPlus className="text-primary text-glow-purple" size={20} />
                 {editingAiFriend ? 'AI 친구 정보 수정' : '새로운 친구 추가'}
               </h4>
               <button
@@ -2924,7 +3174,12 @@ export default function Home() {
                         <option value="발랄하고 친근한 반말">발랄하고 친근한 반말</option>
                         <option value="정중하고 다정한 존댓말">정중하고 다정한 존댓말</option>
                         <option value="시니컬하고 팩트폭력 반말">시니컬하고 팩트폭력 반말</option>
+                        <option value="건조하고 차가운 사무적 비서 존댓말">건조하고 차가운 사무적 비서 존댓말</option>
                         <option value="애교 섞인 귀여운 말투">애교 섞인 귀여운 말투</option>
+                        <option value="트렌디한 MZ 신조어 밈 말투">트렌디한 MZ 신조어 밈 말투</option>
+                        <option value="인간미 넘치는 구수한 아재 밈 말투">인간미 넘치는 구수한 아재 밈 말투</option>
+                        <option value="찐한 경상도 사투리 반말">찐한 경상도 사투리 반말</option>
+                        <option value="구수한 전라도 사투리 반말">구수한 전라도 사투리 반말</option>
                         <option value="군대식 다나까 말투">군대식 다나까 말투</option>
                       </select>
                     </div>
@@ -2936,9 +3191,9 @@ export default function Home() {
 
                   {editingAiFriend && (
                     <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-700 p-3 rounded-lg mt-2 cursor-pointer transition-colors hover:bg-zinc-800/80" onClick={() => setRegenerateAiAvatar(!regenerateAiAvatar)}>
-                      <input 
-                        type="checkbox" 
-                        checked={regenerateAiAvatar} 
+                      <input
+                        type="checkbox"
+                        checked={regenerateAiAvatar}
                         onChange={e => setRegenerateAiAvatar(e.target.checked)}
                         className="w-4 h-4 text-purple-600 rounded bg-zinc-800 border-zinc-700 accent-purple-500 cursor-pointer flex-shrink-0"
                         onClick={(e) => e.stopPropagation()}

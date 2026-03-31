@@ -1,5 +1,10 @@
 import Dexie, { type EntityTable } from 'dexie';
 
+export interface AiUsageStat {
+  date: string; // YYYY-MM-DD 로컬 날짜
+  count: number;
+}
+
 export interface ChatMessage {
   id?: number; // IndexedDB 자동 생성 기본키 (숫자)
   messageId: string; // 고유 메시지 ID (UUID)
@@ -20,12 +25,22 @@ const db = new Dexie('AloPopDatabase') as Dexie & {
     ChatMessage,
     'id' // pk
   >;
+  aiStats: EntityTable<
+    AiUsageStat,
+    'date' // pk
+  >;
 };
 
 // 스키마 버전 1
 db.version(1).stores({
   // 인덱스로 사용할 필드들 지정 (조회를 빠르게 하기 위함)
   messages: '++id, messageId, receiverId, createdAt'
+});
+
+// 스키마 버전 2 (aiStats 테이블 추가)
+db.version(2).stores({
+  messages: '++id, messageId, receiverId, createdAt',
+  aiStats: 'date' // date 필드를 Primary Key로 사용
 });
 
 export { db };
