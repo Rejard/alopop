@@ -49,7 +49,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="ko" translate="no">
+      <head>
+        <meta name="google" content="notranslate" />
+      </head>
       <body
         className={`${plusJakarta.variable} antialiased overflow-hidden overscroll-none fixed inset-0 font-sans`}
       >

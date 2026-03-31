@@ -275,13 +275,16 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
             )}
             <div className="mb-4" />
 
-            <form onSubmit={handleSave} className="space-y-4">
+            <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-on-surface-variant mb-2 ml-1">
                     {activeTab === 'gemini' ? 'Google Gemini API Key' : activeTab === 'anthropic' ? 'Anthropic API Key (sk-ant-...)' : 'OpenAI API Key (sk-...)'}
                   </label>
                   <input
-                    type="password"
+                    type="text"
+                    style={{ WebkitTextSecurity: 'disc' } as any}
+                    autoComplete="off"
+                    name="alo_api_key_prevent_autofill"
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     placeholder="여기에 키를 입력하세요"
@@ -358,7 +361,8 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
 
               <div className="flex gap-2 pt-2">
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleSave}
                   className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-dim text-white font-bold rounded-lg text-sm transition-colors shadow-ambient shadow-inner-glow active:scale-95 flex justify-center items-center gap-2"
                 >
                   <Key size={16} /> 선택 및 저장
@@ -371,7 +375,7 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                   <LogOut size={16} /> 로그아웃
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         )}
 
