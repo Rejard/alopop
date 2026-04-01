@@ -761,8 +761,8 @@ export default function Home() {
     const apiKeys = keysStr ? JSON.parse(keysStr) : {};
     const byokKey = apiKeys[selectedProvider];
 
-    // [신규] 방장 스폰서 옵션 체크
-    const isSponsorMode = currentRoom.isHost && currentRoom.sponsorMode;
+    // [신규] 방장 스폰서 옵션 체크 (방장이 아니더라도 이 방이 스폰서 방인지 알아야 함)
+    const isSponsorMode = currentRoom.sponsorMode === true;
 
     // [중요 로직 보완] 이 방이 '스폰서 락' 상태인지 확인 (단톡, 1:1 무관하게 오직 방장(isHost)의 설정만 따름)
     let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
@@ -939,7 +939,9 @@ export default function Home() {
                     headers: { 'Content-Type': 'application/json' },
                     signal: controller.signal,
                     body: JSON.stringify({
-                      provider: realProvider,
+                      provider: isSponsorMode 
+                        ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
+                        : realProvider,
                       byokKey: realByokKey,
                       aiModel: isSponsorMode ? currentRoom.sponsorModel : localStorage.getItem('alo_ai_model') || '',
                       systemPrompt: aiUser.aiPrompt,
@@ -968,7 +970,8 @@ export default function Home() {
                   let extraAnalysis = undefined;
                   const hostSponsorPrice = currentRoom.sponsorPrice || 0;
                   
-                  if (isSponsorMode && aiUser.aiOwnerId !== user?.id && hostSponsorPrice > 0) {
+                  // 임시 방장이 화면을 보고 있든 아니든, 찐방장의 AI가 아니라면 무조건 뱃지를 달고 결제 내역을 띄움
+                  if (isSponsorMode && aiUser.aiOwnerId !== sponsorMember?.userId && hostSponsorPrice > 0) {
                     const aiModelStr = currentRoom.sponsorModel || 'AI 모델';
                     
                     extraAnalysis = {
