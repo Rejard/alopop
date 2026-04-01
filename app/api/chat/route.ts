@@ -27,26 +27,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `No API Key provided for ${provider || 'openai'}` }, { status: 400 });
     }
 
-    let modelInstance;
-    const currentProvider = provider || 'openai';
-
-    switch (currentProvider) {
-      case 'gemini-free':
-      case 'gemini':
-        const customGoogle = createGoogleGenerativeAI({ apiKey });
-        modelInstance = customGoogle(currentProvider === 'gemini-free' ? 'gemini-1.5-pro-latest' : (aiModel || 'gemini-1.5-pro-latest'));
-        break;
-      case 'anthropic':
-        const customAnthropic = createAnthropic({ apiKey });
-        modelInstance = customAnthropic(aiModel || 'claude-3-haiku-20240307');
-        break;
-      case 'openai':
-      default:
-        const customOpenAI = createOpenAI({ apiKey });
-        modelInstance = customOpenAI(aiModel || 'gpt-5.4');
-        break;
-    }
-
     let imageBuffer: Buffer | null = null;
     let mimeType = 'image/jpeg';
     if (imageUrl) {
@@ -61,6 +41,33 @@ export async function POST(request: Request) {
           console.error("Failed to read image for vision API:", e);
         }
       }
+    }
+
+    let finalAiModel = aiModel;
+    const currentProvider = provider || 'openai';
+
+    // GPT-5.4-Pro (OpenAI 추론 모델)는 Vision(멀티모달 이미지) 입력을 아직 지원하지 않으므로, 
+    // 이미지가 포함된 팩트체크 시에는 범용 모델(gpt-5.4)로 강제 Fallback 처리하여 에러 방지
+    if (imageBuffer && currentProvider === 'openai' && finalAiModel === 'gpt-5.4-pro') {
+      finalAiModel = 'gpt-5.4';
+    }
+
+    let modelInstance;
+    switch (currentProvider) {
+      case 'gemini-free':
+      case 'gemini':
+        const customGoogle = createGoogleGenerativeAI({ apiKey });
+        modelInstance = customGoogle(currentProvider === 'gemini-free' ? 'gemini-1.5-pro-latest' : (finalAiModel || 'gemini-1.5-pro-latest'));
+        break;
+      case 'anthropic':
+        const customAnthropic = createAnthropic({ apiKey });
+        modelInstance = customAnthropic(finalAiModel || 'claude-3-haiku-20240307');
+        break;
+      case 'openai':
+      default:
+        const customOpenAI = createOpenAI({ apiKey });
+        modelInstance = customOpenAI(finalAiModel || 'gpt-5.4');
+        break;
     }
 
     const promptMessages: any[] = [];
@@ -114,7 +121,7 @@ export async function POST(request: Request) {
         confidence: z.number().min(0).max(1),
         reason: z.string()
       }),
-      temperature: 0.1,
+      temperature: finalAiModel === 'gpt-5.4-pro' ? undefined : 0.1,
     });
 
     return NextResponse.json(result.object);

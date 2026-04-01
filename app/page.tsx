@@ -20,7 +20,7 @@ const AI_MODELS: Record<string, { id: string, name: string }[]> = {
   ],
   gemini: [
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
-    { id: 'gemini-3.1-flash-preview', name: 'Gemini 3.1 Flash' },
+    { id: 'gemini-3.1-flash-image-preview', name: 'Gemini 3.1 Flash' },
     { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash-Lite' }
   ],
   anthropic: [
@@ -206,15 +206,21 @@ export default function Home() {
   useEffect(() => {
     // 1. 누적 사용량 로드 (무료/유료 통합)
     const saved = localStorage.getItem('alo_total_ai_usage');
-    const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
+    // 날짜 포맷 차이로 인한 버그를 방지하기 위해 가장 안정적인 en-CA 포맷(YYYY-MM-DD) 사용
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
     let used = 0;
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.date === today) {
           used = parsed.used || 0;
+        } else {
+          // 날짜가 일치하지 않거나(과거 데이터) date 필드가 없는 경우 로컬 스토리지도 확실히 초기화해야 함
+          localStorage.setItem('alo_total_ai_usage', JSON.stringify({ date: today, used: 0 }));
         }
-      } catch (e) { }
+      } catch (e) {
+        localStorage.setItem('alo_total_ai_usage', JSON.stringify({ date: today, used: 0 }));
+      }
     } else {
       localStorage.setItem('alo_total_ai_usage', JSON.stringify({ date: today, used: 0 }));
     }
@@ -902,8 +908,9 @@ export default function Home() {
 
                 // 전체 AI 사용량 무조건 1 증가
                 const savedUsage = JSON.parse(localStorage.getItem('alo_total_ai_usage') || '{"used": 0}');
-                const newUsed = savedUsage.used + 1;
-                localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, used: newUsed }));
+                const newUsed = (savedUsage.used || 0) + 1;
+                const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, date: todayStr, used: newUsed }));
                 setTotalAiUsageCount(newUsed);
 
                 // Dexie 로컬 영구 DB에도 오늘 날짜로 기록 동기화
@@ -1056,19 +1063,28 @@ export default function Home() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content: '', imageUrl: data.url, provider: selectedProvider, byokKey, aiModel: selectedAiModel })
               });
+              
+              let aiAnalysisResult;
               if (aiRes.ok) {
-                const aiAnalysisResult = await aiRes.json();
-                await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
-                if (socket) {
-                  socket.emit('update_message', {
-                    roomId: currentRoom?.id || 'global',
-                    messageId: msgId,
-                    aiAnalysis: aiAnalysisResult
-                  });
-                }
+                aiAnalysisResult = await aiRes.json();
+              } else {
+                console.error('Image fact-check APi error');
+                aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 서버 에러 (크레딧 부족 또는 용량 초과)' };
+              }
+              
+              await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+              if (socket) {
+                socket.emit('update_message', {
+                  roomId: currentRoom?.id || 'global',
+                  messageId: msgId,
+                  aiAnalysis: aiAnalysisResult
+                });
               }
             } catch (err) {
               console.warn('AI Vision Analysis failed (skipped):', err);
+              const aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 연결 실패' };
+              await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+              if (socket) socket.emit('update_message', { roomId: currentRoom?.id || 'global', messageId: msgId, aiAnalysis: aiAnalysisResult });
             }
           })();
         }
@@ -1187,8 +1203,9 @@ export default function Home() {
 
           // 전체 AI 사용량 1 증가 (팩트체크 요청)
           const savedUsage = JSON.parse(localStorage.getItem('alo_total_ai_usage') || '{"used": 0}');
-          const newUsed = savedUsage.used + 1;
-          localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, used: newUsed }));
+          const newUsed = (savedUsage.used || 0) + 1;
+          const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+          localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, date: todayStr, used: newUsed }));
           setTotalAiUsageCount(newUsed);
           db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error(e));
 
@@ -2713,7 +2730,8 @@ export default function Home() {
                     const isFakeOld = msg.aiAnalysis.is_fake; // 구버전 호환용
 
                     // 팩트체크가 불필요한 일상 대화('PASS', 'NORMAL')는 이전 디자인 기획처럼 배지를 숨겨서 사용자 피로도를 줄임
-                    if (cat === 'NORMAL' || cat === 'PASS') {
+                    // 단, 사용자의 요청에 의해 이미지 타입('IMAGE') 메시지는 사진 검증 결과를 무조건 렌더링하도록 조건 변경
+                    if ((cat === 'NORMAL' || cat === 'PASS') && msg.messageType !== 'IMAGE') {
                       // Do not render tag
                     } else if (cat === 'PENDING') {
                       aiTag = (
@@ -2727,7 +2745,8 @@ export default function Home() {
                       if (cat === 'FAKE' || isFakeOld === true) config = { icon: '🚨', color: 'text-rose-400', bg: 'bg-rose-500/20' };
                       else if (cat === 'AI_GENERATED') config = { icon: '🤖', color: 'text-primary text-glow-purple', bg: 'bg-purple-500/20' };
                       else if (cat === 'SUSPICIOUS') config = { icon: '⚠️', color: 'text-amber-400', bg: 'bg-amber-500/20' };
-                      else if (cat === 'VERIFIED' || isFakeOld === false) config = { icon: '✅', color: 'text-emerald-400', bg: 'bg-emerald-500/20' };
+                      else if (cat === 'VERIFIED' || cat === 'NORMAL' || cat === 'PASS' || isFakeOld === false) config = { icon: '✅', color: 'text-emerald-400', bg: 'bg-emerald-500/20' };
+                      else if (cat === 'ERROR') config = { icon: '🛑', color: 'text-red-300', bg: 'bg-red-500/10 border-red-500/30' };
 
                       const reasonText = msg.aiAnalysis.reason || '특이사항 없음';
 
