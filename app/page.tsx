@@ -365,8 +365,8 @@ export default function Home() {
     const handleNewMessage = (e: any) => {
       const msg = e.detail;
 
-      // 송금 메시지 수신 시 잔액 즉시 동기화
-      if (msg.content && msg.content.includes('[송금 알림]')) {
+      // 송금 메시지 또는 스폰서 AI 메시지 수신 시 잔액 즉시 동기화 (실시간 차감/증가 표시용)
+      if ((msg.content && msg.content.includes('[송금 알림]')) || (msg.aiAnalysis?.isSponsored && msg.aiAnalysis?.sponsorPrice > 0)) {
         fetch(`/api/users/profile?userId=${parsedUser.id}`)
           .then(res => res.json())
           .then(data => {
