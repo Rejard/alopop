@@ -4,19 +4,41 @@ import { search } from 'duck-duck-scrape';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { prisma } from '@/lib/prisma';
+import { decryptKey } from '@/lib/crypto';
 
 export async function POST(request: Request) {
   try {
-    const { provider, byokKey, aiModel, systemPrompt, content } = await request.json();
+    const { provider, byokKey, aiModel, systemPrompt, content, isDelegate, sponsorId } = await request.json();
 
     if (!content) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
     }
 
+    const currentProvider = provider || 'openai';
     let apiKey = byokKey;
+
+    // [신규] 고스트 임시 방장이 대리 연산 중인 경우, 방장의 API Key를 DB에서 꺼내 씁니다.
+    if (isDelegate && sponsorId) {
+      const hostUser = await prisma.user.findUnique({ where: { id: sponsorId } });
+      if (hostUser) {
+        let rawEncryptedKey = null;
+        if (currentProvider.startsWith('gpt') || currentProvider === 'openai') {
+          rawEncryptedKey = hostUser.openaiKey;
+        } else if (currentProvider.includes('gemini')) {
+          rawEncryptedKey = hostUser.geminiKey;
+        } else if (currentProvider.includes('claude') || currentProvider === 'anthropic') {
+          rawEncryptedKey = hostUser.anthropicKey;
+        }
+        if (rawEncryptedKey) {
+           apiKey = decryptKey(rawEncryptedKey);
+        }
+      }
+    }
+
     if (!apiKey) {
-      if (provider === 'gemini' || provider === 'gemini-free') apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-      else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
+      if (currentProvider === 'gemini' || currentProvider === 'gemini-free') apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      else if (currentProvider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
       else apiKey = process.env.OPENAI_API_KEY;
     }
 
@@ -25,7 +47,6 @@ export async function POST(request: Request) {
     }
 
     let modelInstance;
-    const currentProvider = provider || 'openai';
 
     switch (currentProvider) {
       case 'gemini-free':

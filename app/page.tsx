@@ -122,6 +122,9 @@ export default function Home() {
   // AI 자율 응답 작성 중(Typing...) 상태
   const [typingAIs, setTypingAIs] = useState<Record<string, { aiId: string, aiName: string }[]>>({});
 
+  // 현재 방에 접속 중인 유저 명단 (스텔스 고스트 임시 방장용)
+  const [activeRoomUsers, setActiveRoomUsers] = useState<string[]>([]);
+
   // 리얼 유저(사람) 타이핑 상태
   const [humanTyping, setHumanTyping] = useState<Record<string, { userId: string, userName: string }[]>>({});
 
@@ -550,6 +553,12 @@ export default function Home() {
       }
     };
 
+    const handleRoomPresenceUpdate = (e: any) => {
+      const { roomId, activeUsers } = e.detail;
+      // 현재 보고 있는 방이면 접속자 명단 동기화
+      setActiveRoomUsers(activeUsers);
+    };
+
     window.addEventListener('new_chat_message', handleNewMessage);
     window.addEventListener('room_read_update', handleReadUpdateEvent);
     window.addEventListener('room_name_updated', handleRoomNameUpdated as EventListener);
@@ -558,6 +567,7 @@ export default function Home() {
     window.addEventListener('message_updated', handleMessageUpdated as EventListener);
     window.addEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
     window.addEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
+    window.addEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
 
     return () => {
       window.removeEventListener('new_chat_message', handleNewMessage);
@@ -570,6 +580,7 @@ export default function Home() {
       window.removeEventListener('message_updated', handleMessageUpdated as EventListener);
       window.removeEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
       window.removeEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
+      window.removeEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
 
       // 언마운트 시엔 연결 끊기
       chatStore.disconnectSocket();
@@ -756,17 +767,24 @@ export default function Home() {
     // [중요 로직 보완] 이 방이 '스폰서 락' 상태인지 확인 (단톡, 1:1 무관하게 오직 방장(isHost)의 설정만 따름)
     let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
     const amISponsor = sponsorMember?.userId === user?.id;
+
+    // [고스트 임시 방장 선출 알고리즘]
+    const isHostOnline = activeRoomUsers.includes(sponsorMember?.userId);
+    const sortedOnlineUsers = [...activeRoomUsers].sort();
+    const delegateUserId = isHostOnline ? null : sortedOnlineUsers[0];
+    const amIDelegate = delegateUserId === user?.id;
+    
     const isGuestInSponsorRoom = !amISponsor && currentRoom.sponsorMode;
 
     // 현재 방 멤버 중, 내 클라이언트(이 브라우저)가 연산을 책임질 AI 발라내기
     const activeAIs = currentRoom.members.filter((m: any) => {
       if (!m.user?.isAi) return false; // 사람이면 제외
 
-      // 스폰서 모드일 경우: 내가 방장(스폰서)이므로, 내 소유 여부와 무관하게 모든 AI를 내가 연산해 줌!
-      if (isSponsorMode) return true;
+      // 스폰서 모드일 경우: 내가 진짜 방장이거나, 스텔스 임시 방장으로 뽑혔다면 모든 AI 연산을 떠맡음!
+      if (isSponsorMode && (amISponsor || amIDelegate)) return true;
 
-      // 반대로, 내가 '스폰서 방에 들어온 게스트'라면, 내가 만든 AI라도 내가 연산하면 안 됨! (호스트가 대신 연산해 주므로 중복 방지)
-      if (isGuestInSponsorRoom) return false;
+      // 반대로, 내가 스폰서 방에 들어왔는데, 방장도 아니고 임시 방장도 아니라면 절대 연산 금지!
+      if (isGuestInSponsorRoom && !amIDelegate) return false;
 
       // 일반 모드일 경우: 내가 직접 창조한(내 로컬 기기에 본적이 있는) AI만 연산
       return m.user?.aiOwnerId === user.id;
@@ -884,31 +902,34 @@ export default function Home() {
                 // Dexie 로컬 영구 DB에도 오늘 날짜로 기록 동기화
                 db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error("aiStats put 에러", e));
 
-                // [신규] 스폰서 방이고, 현재 이 AI 모델이 내(Sponsor) 소유가 아니라 다른 게스트 소유라면 과금 처리!
+                // [신규] 스폰서 방이고, 현재 이 AI 모델이 실제 진짜 방장의 소유가 아니라 (게스트 소유)라면 과금 처리!
+                // (대리 연산자가 연산하더라도 수익은 무조건 원래 방장에게 귀속)
                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
                 
                 // 결제를 진행하는 프로미스 체인
                 let paymentPromise = Promise.resolve();
-                if (isSponsorMode && aiUser.aiOwnerId !== user?.id && hostSponsorPrice > 0) {
+                if (isSponsorMode && aiUser.aiOwnerId !== sponsorMember?.userId && hostSponsorPrice > 0) {
                   paymentPromise = fetch('/api/wallet/send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       senderId: aiUser.aiOwnerId, // 이 AI의 본주인(게스트)
-                      receiverId: user?.id, // 스폰서 방장(나 자신)
+                      receiverId: sponsorMember?.userId, // 돈은 오직 진짜 방장에게 넣어야 함 (대리 연산자용 은닉)
                       amount: hostSponsorPrice,
-                      reason: `[AI 대화 요금] 방장 스폰서 연산 (${aiUser.username})`
+                      reason: `[AI 대화 요금] 방장 스폰서 연산 (${aiUser.username})` // 임시 방장이 했다는 사실 은폐
                     })
                   }).then(async paymentRes => {
                     if (!paymentRes.ok) {
                       const errData = await paymentRes.json();
                       throw new Error(`PAY_FAIL:${errData.error || '잔액 부족'}`);
                     }
-                    // 결제 성공 시 스폰서 본인 지갑 최신화
-                    fetch(`/api/users/profile?userId=${user?.id}`)
-                      .then(r => r.json())
-                      .then(d => { if (d.user) setUser(d.user); })
-                      .catch(console.error);
+                    // 결제 성공 시 당사자(방장 본인이거나 게스트 본인일 때만) 내 지갑 렌더링 최신화
+                    if (sponsorMember?.userId === user?.id || aiUser.aiOwnerId === user?.id) {
+                      fetch(`/api/users/profile?userId=${user?.id}`)
+                        .then(r => r.json())
+                        .then(d => { if (d.user) setUser(d.user); })
+                        .catch(console.error);
+                    }
                   });
                 }
 
@@ -922,6 +943,8 @@ export default function Home() {
                       byokKey: realByokKey,
                       aiModel: isSponsorMode ? currentRoom.sponsorModel : localStorage.getItem('alo_ai_model') || '',
                       systemPrompt: aiUser.aiPrompt,
+                      isDelegate: amIDelegate,
+                      sponsorId: sponsorMember?.userId,
                       content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
                     })
                   });

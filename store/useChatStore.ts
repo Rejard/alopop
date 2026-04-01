@@ -91,6 +91,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       window.dispatchEvent(new CustomEvent('room_read_update', { detail: payload }));
     });
 
+    socket.on('room_presence_update', (payload) => {
+      window.dispatchEvent(new CustomEvent('room_presence_update', { detail: payload }));
+    });
+
     socket.on('room_name_updated', (payload) => {
       window.dispatchEvent(new CustomEvent('room_name_updated', { detail: payload }));
     });

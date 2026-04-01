@@ -18,6 +18,7 @@ const handle = app.getRequestHandler();
 // 오프라인 메시지 큐 (메모리(RAM)에 임시 저장, 서버가 꺼지면 증발)
 // 구조: Map<receiverId, Array<Message>>
 const offlineQueue = new Map();
+const roomPresence = new Map();
 
 app.prepare().then(() => {
   const expressApp = express();
@@ -92,6 +93,7 @@ app.prepare().then(() => {
     
     // 1. 유저 인증 완료 시, 자신의 ID로 된 방(room)에 조인 (개인 DM 또는 알림 수신용)
     socket.on('register', (userId) => {
+      socket.userId = userId;
       socket.join(userId);
       console.log(`👤 User ${userId} registered and joined their personal room`);
 
@@ -109,7 +111,29 @@ app.prepare().then(() => {
     // 2. 다중 채팅방(Room) 입장 처리
     socket.on('join_room', (roomId) => {
       socket.join(roomId);
-      console.log(`🚪 Socket ${socket.id} joined room ${roomId}`);
+      socket.currentRoom = roomId;
+      
+      if (!roomPresence.has(roomId)) {
+        roomPresence.set(roomId, new Set());
+      }
+      if (socket.userId) {
+        roomPresence.get(roomId).add(socket.userId);
+        const activeUsers = Array.from(roomPresence.get(roomId));
+        io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
+      }
+      console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) joined room ${roomId}`);
+    });
+
+    socket.on('leave_room', (roomId) => {
+      socket.leave(roomId);
+      socket.currentRoom = null;
+      
+      if (socket.userId && roomPresence.has(roomId)) {
+        roomPresence.get(roomId).delete(socket.userId);
+        const activeUsers = Array.from(roomPresence.get(roomId));
+        io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
+      }
+      console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) left room ${roomId}`);
     });
 
     // 3. 채팅방 이름 실시간 변경 브로드캐스트
@@ -331,7 +355,13 @@ app.prepare().then(() => {
     });
 
     socket.on('disconnect', () => {
-      console.log('🔴 User disconnected:', socket.id);
+      console.log('🔴 User disconnected:', socket.id, socket.userId);
+      if (socket.currentRoom && socket.userId && roomPresence.has(socket.currentRoom)) {
+        const rId = socket.currentRoom;
+        roomPresence.get(rId).delete(socket.userId);
+        const activeUsers = Array.from(roomPresence.get(rId));
+        io.to(rId).emit('room_presence_update', { roomId: rId, activeUsers });
+      }
     });
   });
 
