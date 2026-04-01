@@ -20,7 +20,10 @@ export async function POST(request: Request) {
     });
 
     if (!requester || !requester.isHost) {
-      return NextResponse.json({ error: 'Permission denied: Not a host' }, { status: 403 });
+      const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+      if (!targetUser || !targetUser.isAi || targetUser.aiOwnerId !== requesterId) {
+        return NextResponse.json({ error: 'Permission denied: Not a host or AI owner' }, { status: 403 });
+      }
     }
 
     // 2. 강퇴할 타겟 멤버 삭제

@@ -1055,7 +1055,7 @@ export default function Home() {
         // 스폰서 락(isSponsorLocked) 상태 계산
         let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
         const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
-        const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
+        const isSponsorLocked = currentRoom && !amISponsor && currentRoom.sponsorMode;
 
         const msgId = uuidv4();
         const newMessage: ChatMessage = {
@@ -1190,7 +1190,7 @@ export default function Home() {
     // 스폰서 락(isSponsorLocked) 상태라면 내 설정을 무시하고 방장(스폰서)의 대리연산으로 전적으로 위임해야 함!
     let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
     const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
-    const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
+    const isSponsorLocked = currentRoom && !amISponsor && currentRoom.sponsorMode;
 
     const msgId = uuidv4();
     const newMessage: ChatMessage = {
@@ -3151,10 +3151,10 @@ export default function Home() {
                                 </button>
                               )}
 
-                              {/* 방장 전용 메뉴: 권한 인계, 강퇴 */}
-                              {currentRoom.isHost && (
+                              {/* 방장 전용 메뉴 또는 자신의 AI 친구 관리 메뉴 */}
+                              {(currentRoom.isHost || (member.user?.isAi && member.user?.aiOwnerId === user?.id)) && (
                                 <>
-                                  {!member.user?.isAi && (
+                                  {currentRoom.isHost && !member.user?.isAi && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleDelegateHost(member.userId); }}
                                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-md transition-colors"
