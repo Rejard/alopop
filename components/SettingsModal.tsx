@@ -41,34 +41,38 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
     }
   }, [isOpen, activeTab, apiKeys, hostSponsorLocked.isLocked]);
 
+  const userStr = typeof window !== 'undefined' ? localStorage.getItem('alo_user') : null;
+  const parsedUser = userStr ? JSON.parse(userStr) : null;
+  const isAmIHost = currentRoom?.members?.find((m: any) => m.userId === parsedUser?.id)?.isHost;
+
   useEffect(() => {
     if (isOpen) {
       setActiveLayerTab('ai');
       loadSettings();
-      const savedPolicy = localStorage.getItem('alo_room_policy');
-      if (savedPolicy) setRoomPolicy(savedPolicy as any);
       
-      const savedPrice = localStorage.getItem('alo_sponsor_price');
-      if (savedPrice) setSponsorPrice(Number(savedPrice));
+      // 개별 방 정책 적용: 모달이 열린 방의 현재 스폰서 설정을 불러옵니다.
+      if (currentRoom) {
+        setRoomPolicy(currentRoom.sponsorMode ? 'sponsor' : 'individual');
+        setSponsorPrice(currentRoom.sponsorPrice || 0);
+      } else {
+        setRoomPolicy('individual');
+        setSponsorPrice(0);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, currentRoom]);
 
   useEffect(() => {
     if (isOpen) {
       // 내가 게스트로 방에 들어가있고 방장이 스폰서 모드를 켰다면? 그 모델로 탭을 강제고정!
       let locked = false;
-      const userStr = localStorage.getItem('alo_user');
-      const parsedUser = userStr ? JSON.parse(userStr) : null;
       if (currentRoom && parsedUser) {
-        const myMemberInfo = currentRoom.members?.find((m: any) => m.userId === parsedUser.id);
         let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
-
-        const amISponsor = sponsorMember?.userId === parsedUser.id;
         
-        if (sponsorMember && !amISponsor && sponsorMember.user?.sponsorMode) {
+        // 현재 내가 게스트이면서, 방의 sponsorMode가 켜져 있다면
+        if (!isAmIHost && currentRoom.sponsorMode) {
           locked = true;
-          setHostSponsorLocked({ isLocked: true, modelName: sponsorMember.user.sponsorModel || 'openai' });
-          setActiveTab((sponsorMember.user.sponsorModel || 'openai') as AIProvider);
+          setHostSponsorLocked({ isLocked: true, modelName: currentRoom.sponsorModel || 'openai' });
+          setActiveTab((currentRoom.sponsorModel || 'openai') as AIProvider);
         }
       }
 
@@ -165,24 +169,19 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
       setApiKey(activeTab, inputValue.trim());
     }
 
-    const oldPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
+    const oldPrice = currentRoom?.sponsorPrice || 0;
     const newPrice = roomPolicy === 'sponsor' ? Number(sponsorPrice) || 0 : 0;
     const isPriceChanged = oldPrice !== newPrice;
 
-    // (선택 사항) 로컬 스토리지에 방 정책도 함께 저장
-    localStorage.setItem('alo_room_policy', roomPolicy);
-    localStorage.setItem('alo_sponsor_price', (Number(sponsorPrice) || 0).toString());
-
-    // DB에 스폰서 모드 동기화 (방장일 때 남들에게 보여주기 위함)
-    const userStr = localStorage.getItem('alo_user');
-    if (userStr) {
-      const parsedUser = JSON.parse(userStr);
+    // DB에 스폰서 모드 동기화 (방별 개별 적용 설정)
+    if (parsedUser && currentRoom && isAmIHost) {
       try {
-        await fetch('/api/user/sponsor', {
+        await fetch('/api/rooms/sponsor', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             userId: parsedUser.id,
+            roomId: currentRoom.id,
             sponsorMode: roomPolicy === 'sponsor',
             sponsorModel: !hostSponsorLocked.isLocked ? activeTab : (selectedProvider || 'openai'),
             sponsorPrice: newPrice
@@ -192,12 +191,13 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
         // [신규] 게스트에게 실시간으로 갱신내용을 브로드캐스트하기 위한 이벤트를 발생시킵니다.
         window.dispatchEvent(new CustomEvent('host_sponsor_settings_saved', {
           detail: {
-            roomId: currentRoom?.id,
+            roomId: currentRoom.id,
             sponsorId: parsedUser.id,
             sponsorPrice: newPrice,
             sponsorMode: roomPolicy === 'sponsor',
             sponsorModel: !hostSponsorLocked.isLocked ? activeTab : (selectedProvider || 'openai'),
             isPriceChanged // 요금이 변동되었는지 여부를 전달
+
           }
         }));
       } catch (err) {
@@ -227,7 +227,8 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
           <X size={20} />
         </button>
 
-        {/* 탭 컨테이너 (모바일에서 X 버튼 영역 침범 방지를 위해 pr-10, 넘치면 가로 스크롤 허용) */}
+        {/* 탭 컨테이너 (로비에서만 노출) */}
+        {!currentRoom && (
         <div className="flex gap-3 sm:gap-4 mb-8 pb-1 pr-10 overflow-x-auto whitespace-nowrap" style={{ scrollbarWidth: 'none' }}>
           <button
             onClick={() => setActiveLayerTab('ai')}
@@ -244,6 +245,7 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
             {activeLayerTab === 'friends' && <div className="absolute bottom-[-1px] left-0 right-0 h-[2px] bg-primary rounded-t-full shadow-[0_0_8px_rgba(204,151,255,0.8)]" />}
           </button>
         </div>
+        )}
 
         {activeLayerTab === 'ai' && (
           <div className="animate-in fade-in slide-in-from-left-2 duration-300">
@@ -252,13 +254,15 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                 <Bot size={20} />
               </div>
               <div>
-                <h3 className="font-semibold text-zinc-200">AI 및 비용 설정</h3>
-                <p className="text-xs text-zinc-500 mt-0.5">사용할 토큰 제공자와 방 공유 방식을 선택하세요.</p>
+                <h3 className="font-semibold text-zinc-200">{currentRoom ? '방장 스폰서 설정' : 'AI 및 비용 설정'}</h3>
+                <p className="text-xs text-zinc-500 mt-0.5">{currentRoom ? '현재 채팅방의 리소스 공유 방식을 설정합니다.' : '사용할 토큰 제공자와 방 공유 방식을 선택하세요.'}</p>
               </div>
             </div>
 
-            {/* AI 탭 내용 */}
-            <div className="flex bg-surface-container-lowest p-1 rounded-lg border border-outline-variant/15">
+            {/* 전역 AI 설정 (채팅방 외부에서만 노출) */}
+            {!currentRoom && (
+            <>
+              <div className="flex bg-surface-container-lowest p-1 rounded-lg border border-outline-variant/15">
               {providers.map((p) => {
                 const isDisabled = hostSponsorLocked.isLocked && activeTab !== p.id;
                 return (
@@ -310,9 +314,15 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                     className="w-full bg-surface-container-highest border-b-[2px] border-b-transparent text-on-surface px-4 py-3 rounded-t-lg rounded-b-none text-sm focus:border-b-secondary outline-none transition-all font-mono mb-4"
                   />
                 </div>
+              </div>
+            </>
+            )}
 
+            {/* 채팅방 개별 스폰서 설정 (방에서 열었을 때) */}
+            {currentRoom && (
+              isAmIHost ? (
               <div className="bg-surface-container-lowest/50 p-4 rounded-lg border border-outline-variant/15 mb-4 shadow-inner">
-                <label className="block text-xs font-medium text-on-surface-variant mb-3 ml-1">채팅방 AI 리소스 공유 방식 (비용 설정)</label>
+                <label className="block text-xs font-medium text-on-surface-variant mb-3 ml-1">현재 채팅방 AI 리소스 공유 방식 (비용 설정)</label>
                 <div className="space-y-3 mt-2">
 
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -335,14 +345,14 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                       onChange={(e) => setRoomPolicy(e.target.value as any)}
                       className="w-4 h-4 text-primary bg-surface-container-high border-outline-variant focus:ring-primary focus:ring-offset-dark-bg focus:ring-2"
                     />
-                    <span className="text-sm font-medium text-on-surface-variant">방장/스폰서 지원 (공용 키 제공)</span>
+                    <span className="text-sm font-medium text-on-surface-variant">현재 방장 지원 (내 API 로컬 연산 제공)</span>
                   </label>
                 </div>
 
                 {roomPolicy === 'sponsor' && (
                   <div className="mt-4 bg-surface-container-high border border-primary/20 p-4 rounded-lg animate-in slide-in-from-top-2 duration-300">
                     <label className="flex items-center justify-between text-[11px] font-semibold text-primary mb-2">
-                      <span>💡 방장 자율 과금 (AI 1회 이용당)</span>
+                      <span>💡 현재 채팅방 자율 과금 (1회 팩트체크당)</span>
                       <span>단위: 코인</span>
                     </label>
                     <input
@@ -362,8 +372,19 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                   </div>
                 )}
               </div>
+              ) : (
+                <div className="bg-surface-container-lowest/50 p-4 rounded-lg border border-outline-variant/15 mb-4 flex flex-col items-center justify-center py-6 text-center">
+                  <div className="w-10 h-10 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-3">
+                    <UserX size={20} />
+                  </div>
+                  <p className="text-sm font-medium text-zinc-300">방장만 스폰서 설정을 변경할 수 있습니다.</p>
+                  <p className="text-xs text-zinc-500 mt-1">스폰서 체제 변경은 방 개설자 고유 권한입니다.</p>
+                </div>
+              )
+            )}
 
-              <div className="bg-secondary/10 border border-secondary/20 rounded-lg p-3">
+            {/* 나머지 하단 안내 문구 및 버튼 */}
+            <div className="bg-secondary/10 border border-secondary/20 rounded-lg p-3 mb-2 mt-2">
                 <p className="text-[11px] text-secondary/90 leading-relaxed font-mono">
                   * 저장 클릭 시 <strong>[{providers.find(p => p.id === activeTab)?.name}]</strong> 허브가 연결되며, 스폰서 정책이 활성화됩니다.
                 </p>
@@ -377,6 +398,7 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                 >
                   <Key size={16} /> 선택 및 저장
                 </button>
+                {!currentRoom && (
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -384,11 +406,10 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                 >
                   <LogOut size={16} /> 로그아웃
                 </button>
+                )}
               </div>
             </div>
-          </div>
         )}
-
 
         {/* -------------------- [친구 관리] 탭 영역 -------------------- */}
         {activeLayerTab === 'friends' && (

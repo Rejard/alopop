@@ -39,8 +39,8 @@ export default function Home() {
   const [inputText, setInputText] = useState('');
   const [rooms, setRooms] = useState<any[]>([]);
   const [friends, setFriends] = useState<any[]>([]); // 개별 친구 목록 (상태: ACTIVE 대상)
-  const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[] } | null>(null);
-  const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[] } | null>(null);
+  const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
+  const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [latestMessageTimes, setLatestMessageTimes] = useState<Record<string, number>>({});
@@ -389,14 +389,15 @@ export default function Home() {
 
       // [신규] 방장 스폰서 대리 팩트체크 (내가 방장이고 스폰서 모드이며 내 AI기능이 켜져있을 때)
       // 타인이 보낸 텍스트 메시지의 팩트체크가 비어있다면 백그라운드 연산(내 키 소모) 후 소켓 브로드캐스트
-      const roomPolicy = localStorage.getItem('alo_room_policy') || 'personal';
+      const currentRoomData = currentRoomRef.current;
+      const roomPolicy = currentRoomData?.sponsorMode ? 'sponsor' : 'personal';
       const aiEnabledStr = localStorage.getItem('alo_ai_enabled');
       const isMyAiEnabled = aiEnabledStr !== null ? aiEnabledStr === 'true' : true;
 
       // [DEBUG LOG] 방장 스폰서 대리연산 8가지 조건 실시간 평가 현황 출력
       console.log(`\n[SPONSOR CHECK] msg received from ${msg.senderName}`);
-      console.log(`1. currentRoom ID match: ${currentRoomRef.current?.id === msg.receiverId} (${currentRoomRef.current?.id} === ${msg.receiverId})`);
-      console.log(`2. isHost: ${currentRoomRef.current?.isHost}`);
+      console.log(`1. currentRoom ID match: ${currentRoomData?.id === msg.receiverId} (${currentRoomData?.id} === ${msg.receiverId})`);
+      console.log(`2. isHost: ${currentRoomData?.isHost}`);
       console.log(`3. roomPolicy: ${roomPolicy === 'sponsor'} (${roomPolicy})`);
       console.log(`4. isMyAiEnabled: ${isMyAiEnabled}`);
       console.log(`5. isText: ${msg.messageType === 'TEXT'}`);
@@ -405,8 +406,8 @@ export default function Home() {
       console.log(`8. not AI: ${!msg.senderName.includes('AI')}`);
 
       if (
-        currentRoomRef.current?.id === msg.receiverId &&
-        currentRoomRef.current?.isHost &&
+        currentRoomData?.id === msg.receiverId &&
+        currentRoomData?.isHost &&
         roomPolicy === 'sponsor' &&
         msg.aiRequested &&
         msg.messageType !== 'SYSTEM' &&
@@ -418,8 +419,8 @@ export default function Home() {
         (async () => {
           try {
             // [신규] 종량제 결제 검증 (sponsorPrice가 0보다 크면 게스트 지갑에서 선 차감 후 스폰서 지갑으로 이체)
-            // [개선] 1:1 방이든 그룹 방이든, 이 코드를 실행하는 나(방장/스폰서)의 가장 최신 설정된 sponsorPrice를 로컬 스토리지에서 가져옴
-            const hostSponsorPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
+            // [개선] 1:1 방이든 그룹 방이든, 이 코드를 실행하는 나(방장/스폰서)의 현재 방 설정된 sponsorPrice를 가져옴
+            const hostSponsorPrice = Number(currentRoomData?.sponsorPrice || 0);
 
             if (hostSponsorPrice > 0) {
               const paymentRes = await fetch('/api/wallet/send', {
@@ -622,56 +623,45 @@ export default function Home() {
         setIsAiEnabled(false);
       }
       setRooms((prevRooms: any[]) => prevRooms.map((r: any) => {
-        const hasSponsor = r.members?.some((m: any) => m.userId === sponsorId);
-        if (!hasSponsor) return r;
+        if (r.id !== roomId) return r;
         return {
           ...r,
-          members: r.members.map((m: any) => 
-            m.userId === sponsorId 
-              ? { ...m, user: { ...m.user, sponsorPrice: Number(newSponsorPrice), sponsorMode, sponsorModel } } 
-              : m
-          )
+          sponsorMode: sponsorMode,
+          sponsorModel: sponsorModel,
+          sponsorPrice: Number(newSponsorPrice)
         };
       }));
+
       setCurrentRoom(prev => {
-        if (!prev) return prev;
-        const hasSponsor = prev.members?.some((m: any) => m.userId === sponsorId);
-        if (!hasSponsor) return prev;
+        if (!prev || prev.id !== roomId) return prev;
         return {
           ...prev,
-          members: prev.members.map((m: any) => 
-            m.userId === sponsorId 
-              ? { ...m, user: { ...m.user, sponsorPrice: Number(newSponsorPrice), sponsorMode, sponsorModel } } 
-              : m
-          )
-        } as any;
+          sponsorMode: sponsorMode,
+          sponsorModel: sponsorModel,
+          sponsorPrice: Number(newSponsorPrice)
+        };
       });
     };
 
     const handleHostSponsorSettingsSaved = (e: any) => {
       // 1. 방장 본인의 화면 상태 강제 갱신
       handleSponsorSettingsChanged(e);
-      // 2. 서버를 통해 내가 방장인 모든 방의 다른 유저(게스트)들에게 설정 갱신 브로드캐스트
-      setRooms((prevRooms) => {
-        prevRooms.forEach((r: any) => {
-          if (r.members?.some((m: any) => m.userId === e.detail.sponsorId && m.isHost)) {
-            useChatStore.getState().socket?.emit('sponsor_settings_changed', { ...e.detail, roomId: r.id });
-            
-            // 요금이 변경되었을 때만 방장이 시스템 메시지를 전송하여 모두가 인지하도록 함
-            if (e.detail.isPriceChanged) {
-              const sysMsg = e.detail.sponsorPrice > 0 
-                ? `💡 방장님이 AI 자율 요금을 ${e.detail.sponsorPrice}코인으로 변경했습니다.`
-                : `🎉 방장님이 AI 자율 요금을 '무료'로 변경했습니다! 마음껏 이용해 보세요! 🥳`;
-              useChatStore.getState().sendMessage(
-                r.id, 
-                sysMsg, 
-                'SYSTEM', 'SYSTEM', 'SYSTEM'
-              );
-            }
-          }
-        });
-        return prevRooms;
-      });
+      
+      // 2. 서버를 통해 현재 방의 다른 유저(게스트)들에게 설정 갱신 브로드캐스트
+      const { roomId, isPriceChanged, sponsorPrice } = e.detail;
+      useChatStore.getState().socket?.emit('sponsor_settings_changed', e.detail);
+      
+      // 요금이 변경되었을 때만 방장이 시스템 메시지를 전송하여 모두가 인지하도록 함
+      if (isPriceChanged) {
+        const sysMsg = sponsorPrice > 0 
+          ? `💡 방장님이 AI 자율 요금을 ${sponsorPrice}코인으로 변경했습니다.`
+          : `🎉 방장님이 AI 자율 요금을 '무료'로 변경했습니다! 마음껏 이용해 보세요! 🥳`;
+        useChatStore.getState().sendMessage(
+          roomId, 
+          sysMsg, 
+          'SYSTEM', 'SYSTEM', 'SYSTEM'
+        );
+      }
     };
 
     window.addEventListener('new_chat_message', handleNewMessage);
@@ -1635,7 +1625,7 @@ export default function Home() {
         if (res.ok) {
           const newRoom = await res.json();
           setRooms(prev => [newRoom, ...prev]);
-          setCurrentRoom({ id: newRoom.id, name: newRoom.name, isHost: true, members: newRoom.members });
+          setCurrentRoom({ id: newRoom.id, name: newRoom.name, isHost: true, members: newRoom.members, sponsorMode: newRoom.sponsorMode, sponsorPrice: newRoom.sponsorPrice, sponsorModel: newRoom.sponsorModel });
           chatStore.joinRoom(newRoom.id);
           setIsInviteModalOpen(false);
           alert('새로운 그룹 채팅방이 생성되었습니다.');
@@ -2058,7 +2048,7 @@ export default function Home() {
       className="fixed top-0 left-0 w-full bg-dark-bg flex justify-center items-center text-on-surface p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       style={{ height: 'var(--vh, 100%)' }}
     >
-      <SettingsModal />
+      <SettingsModal currentRoom={currentRoom} />
 
       {/* 가이드(사용법) 모달창 */}
       {isGuideOpen && (
@@ -2542,7 +2532,7 @@ export default function Home() {
                           key={room.id}
                           onClick={() => {
                             const myMemberInfo = room.members.find((m: any) => m.userId === user?.id);
-                            setCurrentRoom({ id: room.id, name: room.name, isHost: !!myMemberInfo?.isHost, members: room.members });
+                            setCurrentRoom({ id: room.id, name: room.name, isHost: !!myMemberInfo?.isHost, members: room.members, sponsorMode: room.sponsorMode, sponsorPrice: room.sponsorPrice, sponsorModel: room.sponsorModel });
                             chatStore.joinRoom(room.id);
 
                             // 방 입장 시 해당 방의 안읽은 메시지 수 초기화
@@ -2567,13 +2557,13 @@ export default function Home() {
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 {(() => {
-                                  // 방장 스폰서 모드가 활성화된 멤버 찾기
-                                  const sponsorMember = room.members.find((m: any) => m.user?.sponsorMode === true);
-                                  if (sponsorMember) {
-                                    const price = sponsorMember.user?.sponsorPrice || 0;
+                                  // 채팅방 자체에 방장 스폰서 모드가 활성화되어 있는지 확인
+                                  if (room.sponsorMode) {
+                                    const price = room.sponsorPrice || 0;
+                                    const isMeHost = room.members.find((m: any) => m.userId === user?.id)?.isHost;
                                     return (
                                       <span className="shrink-0 px-2 py-0.5 text-[10px] font-extrabold bg-gradient-to-r from-primary/20 to-secondary/10 text-primary border border-primary/30 rounded-full flex items-center shadow-sm">
-                                        👑 방장지원 ({price === 0 ? '무료' : `${price}코인`})
+                                        {isMeHost ? '👑 내 스폰서 방' : '👑 방장지원'} ({price === 0 ? '무료' : `${price}코인`})
                                       </span>
                                     );
                                   }
