@@ -29,13 +29,14 @@ In today's hyper-connected society, messengers have become the fastest conduits 
 
 Alopop provides a robust, highly customizable ecosystem built on top of our fact-checking core engine.
 
-### 1. Unlimited API Key Routing (BYOK & Sponsored)
+### 1. Server-Side Autonomous Sponsored AI Economy (BYOK)
 
 ![BYOK Architecture](./public/feature-byok.svg)
 
-You do not need to pay the platform to run the heavy fact-checking inference. Alopop returns the sovereignty of LLM cost management entirely to the user.
-- **BYOK (Bring Your Own Key)**: Users can directly input their own API keys (OpenAI, Gemini, Anthropic) into the system and enjoy unlimited access to the core engine.
-- **Sponsored Key Routing**: If a room host or developer provisions a shared API key on the server, regular guest users without keys can seamlessly tap into premium AI features without any restrictions.
+You do not need to pay the platform to run heavy fact-checking inference. Alopop returns the sovereignty of LLM infrastructure and monetization entirely to the user.
+- **BYOK (Bring Your Own Key)**: Users can directly input their own API keys (OpenAI, Gemini, Anthropic) into the system and enjoy unlimited access to the core engine with zero platform markup.
+- **24/7 Autonomous AI Revenue (Pay-Per-Use)**: Chatroom hosts can register their AI persona and API key to the DB. Regardless of whether the host's app is open or closed, the **Node.js server seamlessly processes all guest fact-check requests in the background 24/7, automatically charging guests in-app coins and depositing them into the host's wallet**. A massive Web3-style passive income paradigm.
+- **Military-Grade DB Encryption**: External API keys submitted by users are NEVER stored as plain text. They are heavily encrypted using an **AES-256-CBC cypher** coupled with randomized initialization vectors, shielding high-limit commercial keys from any potential master DB breach.
 
 ### 2. Hyper-Personalized AI Persona (MBTI Engine)
 
@@ -45,13 +46,16 @@ Going far beyond a generic chatbot, Alopop allows you to engineer a highly perso
 - **Precision MBTI Injection**: Customize your unique conversation partner by defining their **16-personality MBTI type, age, gender, occupation, and specific tone of voice (e.g., sarcastic, empathetic)** via system prompts.
 - This bespoke AI friend resides in your chat room, seamlessly fact-checking ongoing conversations while blending perfectly into the context—offering witty comebacks or deep empathy exactly according to their defined persona.
 
-### 3. P2P AI Token Pooling Economy
+### 3. P2P Smart Coin Economy & Real-Time Remittance
 
 ![Coin Pooling](./public/feature-pooling.svg)
 
-Why should the room host bear the entire cost of API inference? Alopop introduces granular cost-sharing policies directly within the chatroom.
-- **P2P Coin Pooling**: Integrated with a virtual in-app 'Coin' wallet system, chat participants can chip in (crowdfund) their tokens to collectively fund heavy AI context requests. A truly unique, Web3-inspired sustainable ecosystem.
-- **Unprecedented Flexibility**: Supports seamless toggling between "Individual Billing (BYOK)" and "Sponsored Mode", catering to any economic use case.
+Why should the room host bear the entire cost of API inference? Alopop introduces granular cost-sharing policies directly within the chatroom utilizing its internal virtual coin ledger.
+- **Zero-Fee Peer-to-Peer Transfers**: Integrated with a virtual in-app 'Coin' wallet system, chat participants can send tips, pay for information, or fund AI requests with zero transaction fees via web sockets.
+- **Unprecedented Billing Flexibility**: Chatrooms can operate in distinct economic modes: 
+   1) **Individual Routing**: Everyone uses their standalone keys.
+   2) **Pay-Per-Use Sponsored Mode**: Guests automatically pay a host-defined 'coin toll' to use the host's AI engine.
+   3) **P2P Coin Pooling**: Participants crowdfund tokens via split-billing to collectively fund heavy multimodality requests.
 
 ### 4. Local-First Architecture & Optimistic UI ⚡
 

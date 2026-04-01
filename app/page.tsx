@@ -2036,8 +2036,8 @@ export default function Home() {
                     방장이 채팅방을 개설할 때, AI의 대답 비용을 누가 부담할지 결정해야 합니다:
                     <ul className="list-disc pl-5 mt-1 space-y-1 marker:text-teal-500/50">
                       <li><strong>각자 부담 (기본)</strong>: 참여자 각자가 본인 설정에 등록해둔 API 키를 소모합니다.</li>
-                      <li><strong>스폰서 모드 (방장 부담)</strong>: 방장의 API 키로 모든 대화 비용을 처리합니다. (옵션: 게스트에게 AI 대답 1회당 일정량의 알로팝 코인을 징수할 수도 있습니다.)</li>
-                      <li><strong>P2P 코인 풀링 (예정)</strong>: 참여자들이 코인을 공동으로 모아 AI 비용을 지불하는 시스템입니다.</li>
+                      <li><strong>스폰서 모드 (방장 부담)</strong>: <strong>[NEW]</strong> 방장의 API 키로 모든 AI 요금을 대신 지불합니다. <strong>(방장의 API 키는 마스터 서버에 군사급 AES-256 암호화로 안전하게 보관되며, 방장이 오프라인이어도 24시간 서버 백그라운드에서 AI가 자동 응답합니다!)</strong> 게스트에게 AI 응답 1회당 일정량의 알로팝 코인을 자동 징수하여 수익을 창출할 수도 있습니다.</li>
+                      <li><strong>P2P 코인 풀링 경제망</strong>: 참여자들이 코인을 공동으로 모아 AI 비용을 지불하는 독창적인 웹3(Web3) 스타일 생태계입니다.</li>
                     </ul>
                   </div>
                 </div>
