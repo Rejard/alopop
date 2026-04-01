@@ -885,7 +885,7 @@ export default function Home() {
                 db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error("aiStats put 에러", e));
 
                 // [신규] 스폰서 방이고, 현재 이 AI 모델이 내(Sponsor) 소유가 아니라 다른 게스트 소유라면 과금 처리!
-                const hostSponsorPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
+                const hostSponsorPrice = currentRoom.sponsorPrice || 0;
                 
                 // 결제를 진행하는 프로미스 체인
                 let paymentPromise = Promise.resolve();
@@ -920,7 +920,7 @@ export default function Home() {
                     body: JSON.stringify({
                       provider: realProvider,
                       byokKey: realByokKey,
-                      aiModel: localStorage.getItem('alo_ai_model') || '',
+                      aiModel: isSponsorMode ? currentRoom.sponsorModel : localStorage.getItem('alo_ai_model') || '',
                       systemPrompt: aiUser.aiPrompt,
                       content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
                     })
@@ -943,11 +943,10 @@ export default function Home() {
                   
                   // 스폰서가 결제해준 AI 메시지라면 팩트체크와 동일한 💸 결제 꼬리표 배지 부착!
                   let extraAnalysis = undefined;
-                  const hostSponsorPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
+                  const hostSponsorPrice = currentRoom.sponsorPrice || 0;
                   
                   if (isSponsorMode && aiUser.aiOwnerId !== user?.id && hostSponsorPrice > 0) {
-                    const realProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-                    const aiModelStr = localStorage.getItem('alo_ai_model') || realProvider;
+                    const aiModelStr = currentRoom.sponsorModel || 'AI 모델';
                     
                     extraAnalysis = {
                       category: 'AI_GENERATED', // AI 배지로 항상 출력되도록 설정
