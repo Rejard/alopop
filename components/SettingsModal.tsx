@@ -34,6 +34,22 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
   // [신규] 게스트 입장 시 방장이 걸어놓은 스폰서 세팅 락온(잠금) 상태
   const [hostSponsorLocked, setHostSponsorLocked] = useState<{ isLocked: boolean; modelName?: string }>({ isLocked: false });
   const [sponsorPrice, setSponsorPrice] = useState<number | string>(0);
+  const [sponsorModelId, setSponsorModelId] = useState<string>('');
+  const [aiModels, setAiModels] = useState<Record<string, { id: string, name: string }[]>>({});
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/models').then(r => r.json()).then(setAiModels).catch(console.error);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (roomPolicy === 'sponsor' && aiModels[activeTab]?.length > 0) {
+      if (!sponsorModelId || !aiModels[activeTab].some(m => m.id === sponsorModelId)) {
+        setSponsorModelId(aiModels[activeTab][0].id);
+      }
+    }
+  }, [activeTab, aiModels, roomPolicy, sponsorModelId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,6 +72,7 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
       if (currentRoom) {
         setRoomPolicy(currentRoom.sponsorMode ? 'sponsor' : 'individual');
         setSponsorPrice(currentRoom.sponsorPrice || 0);
+        setSponsorModelId(currentRoom.sponsorModel || '');
       } else {
         setRoomPolicy('individual');
         setSponsorPrice(0);
@@ -211,6 +228,10 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
     const newPrice = roomPolicy === 'sponsor' ? Number(sponsorPrice) || 0 : 0;
     const isPriceChanged = oldPrice !== newPrice;
 
+    const oldModel = currentRoom?.sponsorModel || 'openai';
+    const newModel = roomPolicy === 'sponsor' ? sponsorModelId : oldModel;
+    const isModelChanged = oldModel !== newModel;
+
     // DB에 스폰서 모드 동기화 (방별 개별 적용 설정)
     if (parsedUser && currentRoom && isAmIHost) {
       try {
@@ -221,10 +242,12 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
             userId: parsedUser.id,
             roomId: currentRoom.id,
             sponsorMode: roomPolicy === 'sponsor',
-            sponsorModel: !hostSponsorLocked.isLocked ? activeTab : (selectedProvider || 'openai'),
+            sponsorModel: newModel,
             sponsorPrice: newPrice
           })
         });
+
+        const newModelName = aiModels[activeTab]?.find((m: any) => m.id === newModel)?.name || newModel;
 
         // [신규] 게스트에게 실시간으로 갱신내용을 브로드캐스트하기 위한 이벤트를 발생시킵니다.
         window.dispatchEvent(new CustomEvent('host_sponsor_settings_saved', {
@@ -233,9 +256,10 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
             sponsorId: parsedUser.id,
             sponsorPrice: newPrice,
             sponsorMode: roomPolicy === 'sponsor',
-            sponsorModel: !hostSponsorLocked.isLocked ? activeTab : (selectedProvider || 'openai'),
-            isPriceChanged // 요금이 변동되었는지 여부를 전달
-
+            sponsorModel: newModel,
+            sponsorModelName: newModelName,
+            isPriceChanged, // 요금이 변동되었는지 여부를 전달
+            isModelChanged // 모델 변동 여부 전달
           }
         }));
       } catch (err) {
@@ -375,32 +399,34 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                 <label className="block text-xs font-medium text-on-surface-variant mb-3 ml-1">현재 채팅방 AI 리소스 공유 방식 (비용 설정)</label>
                 <div className="space-y-3 mt-2">
 
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex items-center gap-2 cursor-pointer p-3 bg-surface-container-high/50 rounded-lg border border-outline-variant/30 hover:bg-surface-container-high transition-colors">
                     <input
-                      type="radio"
-                      name="roomPolicy"
-                      value="individual"
-                      checked={roomPolicy === 'individual'}
-                      onChange={(e) => setRoomPolicy(e.target.value as any)}
-                      className="w-4 h-4 text-primary bg-surface-container-high border-outline-variant focus:ring-primary focus:ring-offset-dark-bg focus:ring-2"
-                    />
-                    <span className="text-sm font-medium text-on-surface-variant">각자 부담 (개인 키 사용)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="roomPolicy"
-                      value="sponsor"
+                      type="checkbox"
                       checked={roomPolicy === 'sponsor'}
-                      onChange={(e) => setRoomPolicy(e.target.value as any)}
-                      className="w-4 h-4 text-primary bg-surface-container-high border-outline-variant focus:ring-primary focus:ring-offset-dark-bg focus:ring-2"
+                      onChange={(e) => setRoomPolicy(e.target.checked ? 'sponsor' : 'individual')}
+                      className="w-4 h-4 rounded text-primary bg-surface-container-highest border-outline focus:ring-primary focus:ring-offset-dark-bg focus:ring-2 cursor-pointer"
                     />
-                    <span className="text-sm font-medium text-on-surface-variant">현재 방장 지원 (내 API 로컬 연산 제공)</span>
+                    <span className="text-sm font-bold text-on-surface">현재 방장 지원 활성화 (내 API 연산 공유)</span>
                   </label>
                 </div>
 
                 {roomPolicy === 'sponsor' && (
                   <div className="mt-4 bg-surface-container-high border border-primary/20 p-4 rounded-lg animate-in slide-in-from-top-2 duration-300">
+                    <label className="flex items-center justify-between text-[11px] font-semibold text-primary mb-2">
+                      <span>⚙️ 상세 제공 모델</span>
+                    </label>
+                    <select
+                      value={sponsorModelId}
+                      onChange={(e) => setSponsorModelId(e.target.value)}
+                      className="w-full bg-dark-bg border border-outline-variant/30 text-secondary px-3 py-2 rounded-lg text-xs focus:border-primary outline-none mb-4"
+                    >
+                      {aiModels[activeTab]?.map(model => (
+                        <option key={model.id} value={model.id}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+
                     <label className="flex items-center justify-between text-[11px] font-semibold text-primary mb-2">
                       <span>💡 현재 채팅방 자율 과금 (1회 팩트체크당)</span>
                       <span>단위: 코인</span>

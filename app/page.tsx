@@ -11,23 +11,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { SettingsModal } from '@/components/SettingsModal';
 import { v4 as uuidv4 } from 'uuid';
 
-const AI_MODELS: Record<string, { id: string, name: string }[]> = {
-  openai: [
-    { id: 'gpt-5.4', name: 'GPT-5.4 (범용/기본)' },
-    { id: 'gpt-5.4-pro', name: 'GPT-5.4-Pro (추론)' },
-    { id: 'gpt-5.4-mini', name: 'GPT-5.4-Mini (빠른 속도)' },
-    { id: 'gpt-5.4-nano', name: 'GPT-5.4-Nano (초경량)' }
-  ],
-  gemini: [
-    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
-    { id: 'gemini-3.1-flash-image-preview', name: 'Gemini 3.1 Flash' },
-    { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash-Lite' }
-  ],
-  anthropic: [
-    { id: 'claude-3-5-sonnet-20240620', name: 'Claude 3.5 Sonnet' },
-    { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku' }
-  ]
-};
+// AI MODELS loaded dynamically
 
 export default function Home() {
   const router = useRouter();
@@ -166,6 +150,23 @@ export default function Home() {
   const [isAiModelDropdownOpen, setIsAiModelDropdownOpen] = useState(false);
   const [isAiEnabled, setIsAiEnabled] = useState(false);
 
+  // [NEW] Dynamic AI Models state
+  const [aiModels, setAiModels] = useState<Record<string, { id: string, name: string }[]>>({});
+  const [aiModelsLoaded, setAiModelsLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/models')
+      .then(res => res.json())
+      .then(data => {
+        setAiModels(data);
+        setAiModelsLoaded(true);
+      })
+      .catch(err => {
+        console.error('Failed to load AI models:', err);
+        setAiModelsLoaded(true);
+      });
+  }, []);
+
   // AI 켜짐/꺼짐 상태 로컬스토리지 동기화 (방장 팩트체크용)
   useEffect(() => {
     localStorage.setItem('alo_ai_enabled', isAiEnabled.toString());
@@ -248,13 +249,19 @@ export default function Home() {
   }, [currentRoom?.id]);
 
   useEffect(() => {
-    const list = AI_MODELS[selectedProvider || 'openai'] || [];
-    if (selectedAiModel && !list.some(m => m.id === selectedAiModel)) {
-      const defaultModel = selectedProvider === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (selectedProvider === 'openai' ? 'gpt-5.4-mini' : list[0]?.id || 'gpt-5.4');
+    if (!aiModelsLoaded) return;
+    const providerValue = selectedProvider || 'openai';
+    const list = aiModels[providerValue] || [];
+    const savedModel = localStorage.getItem('alo_ai_model') || selectedAiModel;
+    
+    if (!savedModel || !list.some(m => m.id === savedModel)) {
+      const defaultModel = providerValue === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (providerValue === 'openai' ? 'gpt-5.4-mini' : list[0]?.id || 'gpt-5.4');
       setSelectedAiModel(defaultModel);
       localStorage.setItem('alo_ai_model', defaultModel);
+    } else if (selectedAiModel !== savedModel) {
+      setSelectedAiModel(savedModel);
     }
-  }, [selectedProvider, selectedAiModel]);
+  }, [selectedProvider, selectedAiModel, aiModels, aiModelsLoaded]);
 
   // 로컬 스토리지에서 인증 정보 확인
   useEffect(() => {
@@ -276,14 +283,6 @@ export default function Home() {
     }
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
-
-    const providerValue = localStorage.getItem('alo_ai_provider') || 'openai';
-    const savedModel = localStorage.getItem('alo_ai_model');
-    if (savedModel && AI_MODELS[providerValue]?.some(m => m.id === savedModel)) {
-      setSelectedAiModel(savedModel);
-    } else {
-      setSelectedAiModel(providerValue === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (providerValue === 'openai' ? 'gpt-5.4-mini' : AI_MODELS[providerValue]?.[0]?.id || 'gpt-5.4'));
-    }
 
     const savedAiEnabled = localStorage.getItem('alo_ai_enabled');
     if (savedAiEnabled !== null) {
@@ -522,7 +521,7 @@ export default function Home() {
       handleSponsorSettingsChanged(e);
       
       // 2. 서버를 통해 현재 방의 다른 유저(게스트)들에게 설정 갱신 브로드캐스트
-      const { roomId, isPriceChanged, sponsorPrice } = e.detail;
+      const { roomId, isPriceChanged, sponsorPrice, isModelChanged, sponsorModelName } = e.detail;
       useChatStore.getState().socket?.emit('sponsor_settings_changed', e.detail);
       
       // 요금이 변경되었을 때만 방장이 시스템 메시지를 전송하여 모두가 인지하도록 함
@@ -535,6 +534,19 @@ export default function Home() {
           sysMsg, 
           'SYSTEM', 'SYSTEM', 'SYSTEM'
         );
+      }
+
+      // 모델이 변경되었을 때 시스템 메시지 전송
+      if (isModelChanged) {
+        const sysMsg = `🎁 [방장 스폰서 AI 설정 변경] 방장이 팩트체크용 AI 모델을 [${sponsorModelName}]으로 선택했습니다.`;
+        // 방금 요금 메시지를 보냈을 수 있으므로 충돌 회피를 위해 약간 지연
+        setTimeout(() => {
+          useChatStore.getState().sendMessage(
+            roomId, 
+            sysMsg, 
+            'SYSTEM', 'SYSTEM', 'SYSTEM'
+          );
+        }, 100);
       }
     };
 
@@ -1905,17 +1917,19 @@ export default function Home() {
   };
 
   // --- [스폰서 UI Lock 상태 계산] ---
-  let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
-  const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
-  const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
-  const sponsorPrice = sponsorMember?.user?.sponsorPrice || 0;
-  const lockedProvider = sponsorMember?.user?.sponsorModel || 'openai';
-  const lockedModelDisplayNames: Record<string, string> = {
-    'openai': 'OpenAI (스폰서)',
-    'gemini': 'Gemini (스폰서)',
-    'anthropic': 'Anthropic (스폰서)'
-  };
-  const lockedModelName = `🔒 ${lockedModelDisplayNames[lockedProvider] || '스폰서 제공'}`;
+  const isSponsorLocked = currentRoom && currentRoom.sponsorMode;
+  const sponsorPrice = currentRoom?.sponsorPrice || 0;
+  
+  const lockedModelId = currentRoom?.sponsorModel || 'openai';
+  let foundModelName = '스폰서 제공';
+  for (const provider of Object.keys(aiModels)) {
+    const model = aiModels[provider]?.find(m => m.id === lockedModelId);
+    if (model) {
+      foundModelName = model.name;
+      break;
+    }
+  }
+  const lockedModelName = `🔒 ${foundModelName}`;
 
   return (
     <div
@@ -2033,11 +2047,11 @@ export default function Home() {
                   </div>
                   <div>
                     <strong className="text-zinc-100 mb-1 block">💳 채팅방 API 과금(결제) 방식 설정</strong>
-                    방장이 채팅방을 개설할 때, AI의 대답 비용을 누가 부담할지 결정해야 합니다:
+                    방장이 채팅방을 개설할 때, 방의 AI 지원 모드를 설정할 수 있습니다:
                     <ul className="list-disc pl-5 mt-1 space-y-1 marker:text-teal-500/50">
-                      <li><strong>각자 부담 (기본)</strong>: 참여자 각자가 본인 설정에 등록해둔 API 키를 소모합니다.</li>
-                      <li><strong>스폰서 모드 (방장 부담)</strong>: <strong>[NEW]</strong> 방장의 API 키로 모든 AI 요금을 대신 지불합니다. <strong>(방장의 API 키는 마스터 서버에 군사급 AES-256 암호화로 안전하게 보관되며, 방장이 오프라인이어도 24시간 서버 백그라운드에서 AI가 자동 응답합니다!)</strong> 게스트에게 AI 응답 1회당 일정량의 알로팝 코인을 자동 징수하여 수익을 창출할 수도 있습니다.</li>
-                      <li><strong>P2P 코인 풀링 경제망</strong>: 참여자들이 코인을 공동으로 모아 AI 비용을 지불하는 독창적인 웹3(Web3) 스타일 생태계입니다.</li>
+                      <li><strong>비활성화 시 (기본)</strong>: 참여자 각자가 가입 시 등록해둔 개인의 API 키를 소모하여 작동합니다.</li>
+                      <li><strong>방장 지원 활성화</strong>: <strong>[NEW]</strong> 방장의 API 키로 채팅방의 모든 AI 연산 비용을 대신 지불합니다. <strong>(방장의 API 키는 마스터 서버에 군사급 AES-256 암호화로 안전하게 보관되며, 방장이 오프라인이어도 24시간 백그라운드로 AI가 자동 응답합니다!)</strong> 또한 게스트에게 1회 응답당 알로팝 코인을 자동 징수해 수익을 낼 수 있습니다.</li>
+                      <li><strong>P2P 코인 생태계</strong>: 알로팝은 중앙 서버에 요금을 지불하는 대신 유저 간 자율적으로 코인을 주고받으며 초저지연 AI를 활용하는 웹3 스타일의 경제 구조입니다.</li>
                     </ul>
                   </div>
                 </div>
@@ -2191,7 +2205,7 @@ export default function Home() {
                         : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
                         }`}
                     >
-                      <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                      <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
                       {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
                     </button>
                     <button
@@ -2212,7 +2226,7 @@ export default function Home() {
                     </button>
                     {isAiModelDropdownOpen && (
                       <div className="absolute top-full left-0 mt-1.5 w-40 bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100">
-                        {AI_MODELS[selectedProvider]?.map(model => (
+                        {aiModels[selectedProvider]?.map(model => (
                           <button
                             key={model.id}
                             onClick={() => {
@@ -2249,7 +2263,7 @@ export default function Home() {
                       : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
                       }`}
                   >
-                    <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (AI_MODELS[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                    <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
                     {!isSponsorLocked && <ChevronDown size={12} className="opacity-70" />}
                   </button>
                   <button
@@ -2270,7 +2284,7 @@ export default function Home() {
                   </button>
                   {isAiModelDropdownOpen && (
                     <div className="absolute top-full right-0 mt-1.5 w-44 bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100">
-                      {AI_MODELS[selectedProvider]?.map(model => (
+                      {aiModels[selectedProvider]?.map(model => (
                         <button
                           key={model.id}
                           onClick={() => {

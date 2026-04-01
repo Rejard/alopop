@@ -1,0 +1,48 @@
+{
+  "openai": [
+    {
+      "id": "gpt-5.4",
+      "name": "GPT-5.4"
+    },
+    {
+      "id": "gpt-5.4-pro",
+      "name": "GPT-5.4 Pro"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "name": "GPT-5.4 Mini"
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "name": "GPT-5.4 Nano"
+    }
+  ],
+  "gemini": [
+    {
+      "id": "gemini-3.1-pro-preview",
+      "name": "Gemini 3.1 Pro"
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash"
+    },
+    {
+      "id": "gemini-3.1-flash-lite-preview",
+      "name": "Gemini 3.1 Flash-Lite"
+    }
+  ],
+  "anthropic": [
+    {
+      "id": "claude-4-6-opus-latest",
+      "name": "Claude 4.6 Opus"
+    },
+    {
+      "id": "claude-4-6-sonnet-latest",
+      "name": "Claude 4.6 Sonnet"
+    },
+    {
+      "id": "claude-4-5-haiku-latest",
+      "name": "Claude 4.5 Haiku"
+    }
+  ]
+}
