@@ -228,6 +228,49 @@ app.prepare().then(() => {
               sendWebPush(targetId, message);
             }
           });
+
+          // [신규] 100% 서버사이드 백그라운드 AI 팩트체크 대리 연산 (방장이 꺼져있어도 동작)
+          if (room.sponsorMode && message.messageType !== 'SYSTEM') {
+            const hostMember = room.members.find(m => m.isHost);
+            // 발송자가 방장 본인이 아니면 스폰서 연산 트리거
+            if (hostMember && hostMember.userId !== message.senderId) {
+              console.log(`[DEBUG] 🧠 Triggering Background Server AI check for msg ${message.messageId}`);
+              
+              fetch(`http://127.0.0.1:${port}/api/chat/sponsor`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roomId: receiverId, message })
+              })
+              .then(res => res.json())
+              .then(data => {
+                if (data.success && data.aiAnalysis) {
+                  const updatePayload = {
+                    roomId: receiverId,
+                    messageId: message.messageId,
+                    aiAnalysis: data.aiAnalysis
+                  };
+                  // AI 처리 결과 브로드캐스트
+                  room.members.forEach((member) => {
+                    const targetId = member.userId;
+                    const rSet = io.sockets.adapter.rooms.get(targetId);
+                    if (rSet && rSet.size > 0 && targetId !== message.senderId) {
+                      io.to(targetId).emit('message_updated', updatePayload);
+                    }
+                  });
+                  // 발신 당사자에게도 결과 리턴
+                  const senderRoom = io.sockets.adapter.rooms.get(message.senderId);
+                  if (senderRoom && senderRoom.size > 0) {
+                    io.to(message.senderId).emit('message_updated', updatePayload);
+                  }
+                } else if (data.skipped) {
+                  console.log(`[DEBUG] AI check skipped: ${data.reason}`);
+                } else {
+                  console.error('[DEBUG] AI check failed:', data.error);
+                }
+              })
+              .catch(err => console.error('Background AI POST Error:', err));
+            }
+          }
         } else {
           // 2. 방이 아니라면 (1:1 개인톡 단일 타겟팅인 경우)
           if (receiverId === message.senderId) return;

@@ -19,6 +19,11 @@ model User {
   isAi          Boolean  @default(false) // Phase 13: AI 유저 여부
   aiOwnerId     String?  // Phase 13: AI를 창조한 주인의 ID
   aiPrompt      String?  // Phase 13: 이 AI의 성격/페르소나 시스템 프롬프트
+  
+  // AI 연동용 API Key (Sponsor 모드 - 평문 저장)
+  openaiKey     String?
+  geminiKey     String?
+  anthropicKey  String?
   createdAt     DateTime @default(now())
 
   sentTransactions     Transaction[] @relation("SentTransactions")

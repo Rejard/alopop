@@ -16,6 +16,8 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
   // 친구 관리 탭
   const [hiddenBlockedFriends, setHiddenBlockedFriends] = useState<any[]>([]);
   const [isFriendsLoading, setIsFriendsLoading] = useState(false);
+  // 신규: 커스텀 토스트 알림 상태
+  const [toastMessage, setToastMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
 
   const router = useRouter();
 
@@ -167,6 +169,42 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
     if (!hostSponsorLocked.isLocked) {
       setSelectedProvider(activeTab);
       setApiKey(activeTab, inputValue.trim());
+
+      // [신규] 로비에서 저장하는 경우 서버 DB에 API 키 동기화 (오프라인 상시 연동)
+      if (!currentRoom && parsedUser) {
+        try {
+          const keyResponse = await fetch('/api/users/keys', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: parsedUser.id,
+              provider: activeTab,
+              apiKey: inputValue.trim()
+            })
+          });
+
+          if (keyResponse.ok) {
+            const isDeleted = inputValue.trim() === '';
+            setToastMessage({
+              text: isDeleted 
+                ? 'API 키 연동이 해제되어 마스터 DB에서 영구 삭제되었습니다.' 
+                : '안전하게 특수 암호화(AES-256) 처리되어 마스터 DB에 저장되었습니다!\n앱이 꺼져도 게스트들이 알아서 코인을 보내며 AI를 사용하게 됩니다.',
+              type: 'success'
+            });
+            setTimeout(() => {
+              setToastMessage(null);
+              setIsOpen(false);
+            }, 3000);
+            return; // 3초 대기하며 모달 닫기를 스킵
+          } else {
+            setToastMessage({ text: '키값 저장 중 서버 오류가 발생했습니다. 다시 시도해주세요.', type: 'error' });
+            setTimeout(() => setToastMessage(null), 3000);
+            return;
+          }
+        } catch (err) {
+          console.warn('Failed to sync API key to server', err);
+        }
+      }
     }
 
     const oldPrice = currentRoom?.sponsorPrice || 0;
@@ -222,10 +260,22 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
 
         <button
           onClick={() => setIsOpen(false)}
-          className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white transition-colors rounded-full hover:bg-zinc-800"
+          className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white transition-colors rounded-full hover:bg-zinc-800 z-50"
         >
           <X size={20} />
         </button>
+
+        {/* 신규: 결과 토스트 메시지 */}
+        {toastMessage && (
+          <div className={`absolute top-4 left-4 right-14 p-3 rounded-lg shadow-2xl z-50 flex items-start gap-2 animate-in slide-in-from-top-2 fade-in duration-300 ${toastMessage.type === 'success' ? 'bg-green-600/95 text-white' : 'bg-red-600/95 text-white'}`}>
+            <div className="mt-0.5 shrink-0">
+              {toastMessage.type === 'success' ? <Check size={18} /> : <X size={18} />}
+            </div>
+            <div className="text-[13px] font-medium whitespace-pre-line leading-snug">
+              {toastMessage.text}
+            </div>
+          </div>
+        )}
 
         {/* 탭 컨테이너 (로비에서만 노출) */}
         {!currentRoom && (

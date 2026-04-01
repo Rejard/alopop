@@ -20,7 +20,10 @@ export async function GET(request: Request) {
         username: true,
         avatar_url: true,
         statusMessage: true,
-        walletBalance: true
+        walletBalance: true,
+        openaiKey: true,
+        geminiKey: true,
+        anthropicKey: true,
       }
     });
 
@@ -28,7 +31,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, user });
+    // 보안상 실제 키 문자열은 제거하고 존재 여부만 반환
+    const safeUser = {
+      ...user,
+      hasOpenAiKey: !!user.openaiKey,
+      hasGeminiKey: !!user.geminiKey,
+      hasAnthropicKey: !!user.anthropicKey,
+    };
+    delete (safeUser as any).openaiKey;
+    delete (safeUser as any).geminiKey;
+    delete (safeUser as any).anthropicKey;
+
+    return NextResponse.json({ success: true, user: safeUser });
   } catch (error) {
     console.error('Fetch profile error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
