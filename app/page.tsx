@@ -744,22 +744,19 @@ export default function Home() {
     // 텍스트 메시지가 아니면 (사진/파일/시스템메시지) 무시
     if (lastMsg.messageType !== 'TEXT') return;
 
-    // 내 환경의 AI 통합 설정 확인 (API 키가 있어야만 내 AI들이 작동)
+    // 내 환경의 AI 통합 설정 확인 (API 키가 없어도 서버 무료 제공량으로 작동 가능)
     const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
     const keysStr = localStorage.getItem('alo_api_keys');
     const apiKeys = keysStr ? JSON.parse(keysStr) : {};
     const byokKey = apiKeys[selectedProvider];
 
-    if (!byokKey) return;
-
     // [신규] 방장 스폰서 옵션 체크
-    const roomPolicy = localStorage.getItem('alo_room_policy') || 'personal';
-    const isSponsorMode = currentRoom.isHost && roomPolicy === 'sponsor';
+    const isSponsorMode = currentRoom.isHost && currentRoom.sponsorMode;
 
     // [중요 로직 보완] 이 방이 '스폰서 락' 상태인지 확인 (단톡, 1:1 무관하게 오직 방장(isHost)의 설정만 따름)
     let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
     const amISponsor = sponsorMember?.userId === user?.id;
-    const isGuestInSponsorRoom = !amISponsor && sponsorMember?.user?.sponsorMode;
+    const isGuestInSponsorRoom = !amISponsor && currentRoom.sponsorMode;
 
     // 현재 방 멤버 중, 내 클라이언트(이 브라우저)가 연산을 책임질 AI 발라내기
     const activeAIs = currentRoom.members.filter((m: any) => {
