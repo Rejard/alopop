@@ -27,24 +27,31 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
 
 
   // 방 자원 공유 정책 상태 (Early Return 전에 호스팅되어야 함)
-  const [roomPolicy, setRoomPolicy] = useState<'individual' | 'sponsor' | 'pool' | 'free'>('individual');
+  const [roomPolicy, setRoomPolicy] = useState<'individual' | 'sponsor' | 'free'>('individual');
 
   // [신규] 게스트 입장 시 방장이 걸어놓은 스폰서 세팅 락온(잠금) 상태
   const [hostSponsorLocked, setHostSponsorLocked] = useState<{ isLocked: boolean; modelName?: string }>({ isLocked: false });
-  const [sponsorPrice, setSponsorPrice] = useState<number>(0);
+  const [sponsorPrice, setSponsorPrice] = useState<number | string>(0);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (!hostSponsorLocked.isLocked) {
+        setInputValue(apiKeys[activeTab] || '');
+      }
+    }
+  }, [isOpen, activeTab, apiKeys, hostSponsorLocked.isLocked]);
 
   useEffect(() => {
     if (isOpen) {
       setActiveLayerTab('ai');
       loadSettings();
-
-      const savedPolicy = localStorage.getItem('alo_room_policy') as any;
-      if (savedPolicy) setRoomPolicy(savedPolicy);
-
+      const savedPolicy = localStorage.getItem('alo_room_policy');
+      if (savedPolicy) setRoomPolicy(savedPolicy as any);
+      
       const savedPrice = localStorage.getItem('alo_sponsor_price');
       if (savedPrice) setSponsorPrice(Number(savedPrice));
     }
-  }, [isOpen]); // 모달이 켜질 때만 초기화
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -55,11 +62,6 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
       if (currentRoom && parsedUser) {
         const myMemberInfo = currentRoom.members?.find((m: any) => m.userId === parsedUser.id);
         let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
-        
-        // 1:1 채팅방(isGroup=false)인 경우, 스폰서는 방장이 아닌 '상대방'으로 간주
-        if (currentRoom && !currentRoom.isGroup) {
-          sponsorMember = currentRoom.members?.find((m: any) => m.userId !== parsedUser.id);
-        }
 
         const amISponsor = sponsorMember?.userId === parsedUser.id;
         
@@ -163,9 +165,13 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
       setApiKey(activeTab, inputValue.trim());
     }
 
+    const oldPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
+    const newPrice = roomPolicy === 'sponsor' ? Number(sponsorPrice) || 0 : 0;
+    const isPriceChanged = oldPrice !== newPrice;
+
     // (선택 사항) 로컬 스토리지에 방 정책도 함께 저장
     localStorage.setItem('alo_room_policy', roomPolicy);
-    localStorage.setItem('alo_sponsor_price', sponsorPrice.toString());
+    localStorage.setItem('alo_sponsor_price', (Number(sponsorPrice) || 0).toString());
 
     // DB에 스폰서 모드 동기화 (방장일 때 남들에게 보여주기 위함)
     const userStr = localStorage.getItem('alo_user');
@@ -179,9 +185,21 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
             userId: parsedUser.id,
             sponsorMode: roomPolicy === 'sponsor',
             sponsorModel: !hostSponsorLocked.isLocked ? activeTab : (selectedProvider || 'openai'),
-            sponsorPrice: roomPolicy === 'sponsor' ? sponsorPrice : 0
+            sponsorPrice: newPrice
           })
         });
+
+        // [신규] 게스트에게 실시간으로 갱신내용을 브로드캐스트하기 위한 이벤트를 발생시킵니다.
+        window.dispatchEvent(new CustomEvent('host_sponsor_settings_saved', {
+          detail: {
+            roomId: currentRoom?.id,
+            sponsorId: parsedUser.id,
+            sponsorPrice: newPrice,
+            sponsorMode: roomPolicy === 'sponsor',
+            sponsorModel: !hostSponsorLocked.isLocked ? activeTab : (selectedProvider || 'openai'),
+            isPriceChanged // 요금이 변동되었는지 여부를 전달
+          }
+        }));
       } catch (err) {
         console.warn('Sponsor DB sync failed', err);
       }
@@ -319,35 +337,27 @@ export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
                     />
                     <span className="text-sm font-medium text-on-surface-variant">방장/스폰서 지원 (공용 키 제공)</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="roomPolicy"
-                      value="pool"
-                      checked={roomPolicy === 'pool'}
-                      onChange={(e) => setRoomPolicy(e.target.value as any)}
-                      className="w-4 h-4 text-primary bg-surface-container-high border-outline-variant focus:ring-primary focus:ring-offset-dark-bg focus:ring-2"
-                    />
-                    <span className="text-sm font-medium text-on-surface-variant">P2P 코인 풀링 (참여자 공동 부담)</span>
-                  </label>
                 </div>
 
                 {roomPolicy === 'sponsor' && (
                   <div className="mt-4 bg-surface-container-high border border-primary/20 p-4 rounded-lg animate-in slide-in-from-top-2 duration-300">
                     <label className="flex items-center justify-between text-[11px] font-semibold text-primary mb-2">
-                      <span>💡 방장 자율 과금 (1회 팩트체크당)</span>
+                      <span>💡 방장 자율 과금 (AI 1회 이용당)</span>
                       <span>단위: 코인</span>
                     </label>
                     <input
                       type="number"
                       min="0"
                       value={sponsorPrice}
-                      onChange={(e) => setSponsorPrice(Number(e.target.value))}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSponsorPrice(val === '' ? '' : Math.max(0, Number(val)));
+                      }}
                       className="w-full bg-dark-bg border-b-[2px] border-transparent text-secondary px-3 py-2 rounded-t-lg rounded-b-none text-xs focus:border-b-secondary outline-none font-mono font-bold"
                     />
                     <p className="text-[10px] text-on-surface-variant mt-3 leading-relaxed opacity-80">
                       0코인 입력 시 무료 모델로 작동합니다.<br />
-                      게스트가 팩트체크를 요청할 때마다 해당 금액이 게스트 지갑에서 스폰서(<strong className="text-secondary font-mono">나</strong>)의 지갑으로 자동 입금됩니다.
+                      게스트가 스폰서 연산(팩트체크 등)을 사용할 때마다 해당 금액이 게스트 지갑에서 스폰서(<strong className="text-secondary font-mono">나</strong>)의 지갑으로 자동 입금됩니다.
                     </p>
                   </div>
                 )}

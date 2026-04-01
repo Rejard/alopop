@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -24,7 +26,7 @@ export async function GET(request: Request) {
         members: {
           include: {
             user: {
-              select: { id: true, username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true }
+              select: { id: true, username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true, sponsorPrice: true }
             }
           }
         }

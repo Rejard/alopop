@@ -310,7 +310,10 @@ export default function Home() {
 
           const readTimesDict: Record<string, Record<string, number>> = {};
           if (Array.isArray(roomsData)) {
-            roomsData.forEach(r => {
+            roomsData.forEach((r: any) => {
+              // 백그라운드에서도 내가 속한 모든 방의 실시간 이벤트(가격 변경, 타이핑 등)를 수신하기 위해 소켓 조인
+              chatStore.joinRoom(r.id);
+              
               readTimesDict[r.id] = {};
               r.members?.forEach((m: any) => {
                 readTimesDict[r.id][m.userId] = new Date(m.lastReadAt || m.joinedAt).getTime();
@@ -403,10 +406,10 @@ export default function Home() {
 
       if (
         currentRoomRef.current?.id === msg.receiverId &&
-        (currentRoomRef.current?.isHost || !currentRoomRef.current?.isGroup) &&
+        currentRoomRef.current?.isHost &&
         roomPolicy === 'sponsor' &&
         msg.aiRequested &&
-        msg.messageType === 'TEXT' &&
+        msg.messageType !== 'SYSTEM' &&
         (!msg.aiAnalysis || msg.aiAnalysis.category === 'PENDING') &&
         msg.senderId !== parsedUser.id &&
         !msg.senderName.includes('AI')
@@ -415,9 +418,8 @@ export default function Home() {
         (async () => {
           try {
             // [신규] 종량제 결제 검증 (sponsorPrice가 0보다 크면 게스트 지갑에서 선 차감 후 스폰서 지갑으로 이체)
-            // 1:1 방이든 그룹 방이든, 이 코드를 실행하는 나(parsedUser.id)가 스폰서이므로 내 정보를 찾습니다.
-            const myMemberFromRef = currentRoomRef.current?.members?.find((m: any) => m.userId === parsedUser.id);
-            const hostSponsorPrice = myMemberFromRef?.user?.sponsorPrice || 0;
+            // [개선] 1:1 방이든 그룹 방이든, 이 코드를 실행하는 나(방장/스폰서)의 가장 최신 설정된 sponsorPrice를 로컬 스토리지에서 가져옴
+            const hostSponsorPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
 
             if (hostSponsorPrice > 0) {
               const paymentRes = await fetch('/api/wallet/send', {
@@ -457,7 +459,17 @@ export default function Home() {
                 // 팩트체크 연산 스킵!
                 return;
               }
+
+              // 결제 성공 시 방 전체에 별도의 시스템 메시지를 발송하지 않고, 팩트체크 결과에 가격 정보를 담아 전파함
+              // 또한 방장(스폰서) 자신의 지갑 잔액 갱신을 위해 즉시 profile 패치
+              fetch(`/api/users/profile?userId=${parsedUser.id}`)
+                .then(res => res.json())
+                .then(data => {
+                  setUser((prev: any) => prev ? { ...prev, walletBalance: data.user.walletBalance } : null);
+                  setMyProfile((prev: any) => prev ? { ...prev, walletBalance: data.user.walletBalance } : null);
+                }).catch(console.error);
             }
+
 
             const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
             const keysStr = localStorage.getItem('alo_api_keys');
@@ -473,7 +485,8 @@ export default function Home() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                content: msg.content,
+                content: msg.content || '',
+                imageUrl: msg.fileUrl,
                 provider: selectedProvider,
                 byokKey,
                 aiModel: aiModelStr
@@ -486,6 +499,7 @@ export default function Home() {
               // 방장이 연산한 것임을 모든 유저가 알 수 있도록 명시적 표식 삽입
               checkResult.isSponsored = true;
               checkResult.sponsorModel = aiModelStr || selectedProvider;
+              checkResult.sponsorPrice = hostSponsorPrice || 0;
 
               // [중대 버그 수정] Dexie update()는 PK(++id)를 인자로 받으므로 messageId(UUID)를 넣으면 실패함! where.modify()를 써야함!
               await db.messages.where('messageId').equals(msg.messageId).modify({ aiAnalysis: checkResult });
@@ -582,20 +596,104 @@ export default function Home() {
       });
     };
 
+    const handleMessageUpdated = (e: any) => {
+      const payload = e.detail;
+      // 팩트체크 결제 결과가 담겨 돌아왔다면 잔액 동기화 (게스트 화면용)
+      if (payload.aiAnalysis?.isSponsored && payload.aiAnalysis?.sponsorPrice > 0) {
+        fetch(`/api/users/profile?userId=${parsedUser.id}`)
+          .then(res => res.json())
+          .then(data => {
+            setUser((prev: any) => prev ? { ...prev, walletBalance: data.user.walletBalance } : null);
+            setMyProfile((prev: any) => prev ? { ...prev, walletBalance: data.user.walletBalance } : null);
+          }).catch(console.error);
+      }
+    };
+
+    const handleSponsorSettingsChanged = (e: any) => {
+      const { sponsorId, sponsorPrice: newSponsorPrice, sponsorMode, sponsorModel, isPriceChanged, roomId } = e.detail;
+
+      // 내가 방장이 아니고, 현재 보고 있는 방의 요금이 변경된 실시간 이벤트를 받았을 때
+      if (isPriceChanged && sponsorId !== parsedUser.id && currentRoomRef.current?.id === roomId) {
+        if (newSponsorPrice > 0) {
+          alert(`💡 방장님이 AI 자율 요금을 ${newSponsorPrice}코인으로 변경했습니다.\n\n새로운 과금 정책 확인을 위해 AI 스위치가 자동으로 꺼집니다.`);
+        } else {
+          alert(`🎉 방장님이 AI 자율 요금을 '무료'로 변경했습니다!\n\n부담 없이 AI 서비스를 마음껏 즐겨보세요! 🥳\n(안전을 위해 일시 차단된 AI 스위치를 다시 켜주세요)`);
+        }
+        setIsAiEnabled(false);
+      }
+      setRooms((prevRooms: any[]) => prevRooms.map((r: any) => {
+        const hasSponsor = r.members?.some((m: any) => m.userId === sponsorId);
+        if (!hasSponsor) return r;
+        return {
+          ...r,
+          members: r.members.map((m: any) => 
+            m.userId === sponsorId 
+              ? { ...m, user: { ...m.user, sponsorPrice: Number(newSponsorPrice), sponsorMode, sponsorModel } } 
+              : m
+          )
+        };
+      }));
+      setCurrentRoom(prev => {
+        if (!prev) return prev;
+        const hasSponsor = prev.members?.some((m: any) => m.userId === sponsorId);
+        if (!hasSponsor) return prev;
+        return {
+          ...prev,
+          members: prev.members.map((m: any) => 
+            m.userId === sponsorId 
+              ? { ...m, user: { ...m.user, sponsorPrice: Number(newSponsorPrice), sponsorMode, sponsorModel } } 
+              : m
+          )
+        } as any;
+      });
+    };
+
+    const handleHostSponsorSettingsSaved = (e: any) => {
+      // 1. 방장 본인의 화면 상태 강제 갱신
+      handleSponsorSettingsChanged(e);
+      // 2. 서버를 통해 내가 방장인 모든 방의 다른 유저(게스트)들에게 설정 갱신 브로드캐스트
+      setRooms((prevRooms) => {
+        prevRooms.forEach((r: any) => {
+          if (r.members?.some((m: any) => m.userId === e.detail.sponsorId && m.isHost)) {
+            useChatStore.getState().socket?.emit('sponsor_settings_changed', { ...e.detail, roomId: r.id });
+            
+            // 요금이 변경되었을 때만 방장이 시스템 메시지를 전송하여 모두가 인지하도록 함
+            if (e.detail.isPriceChanged) {
+              const sysMsg = e.detail.sponsorPrice > 0 
+                ? `💡 방장님이 AI 자율 요금을 ${e.detail.sponsorPrice}코인으로 변경했습니다.`
+                : `🎉 방장님이 AI 자율 요금을 '무료'로 변경했습니다! 마음껏 이용해 보세요! 🥳`;
+              useChatStore.getState().sendMessage(
+                r.id, 
+                sysMsg, 
+                'SYSTEM', 'SYSTEM', 'SYSTEM'
+              );
+            }
+          }
+        });
+        return prevRooms;
+      });
+    };
+
     window.addEventListener('new_chat_message', handleNewMessage);
     window.addEventListener('room_read_update', handleReadUpdateEvent);
-    window.addEventListener('room_name_updated', handleRoomNameUpdated);
-    window.addEventListener('typing_start', handleHumanTypingStart);
-    window.addEventListener('typing_end', handleHumanTypingEnd);
+    window.addEventListener('room_name_updated', handleRoomNameUpdated as EventListener);
+    window.addEventListener('typing_start', handleHumanTypingStart as EventListener);
+    window.addEventListener('typing_end', handleHumanTypingEnd as EventListener);
+    window.addEventListener('message_updated', handleMessageUpdated as EventListener);
+    window.addEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
+    window.addEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
 
     return () => {
       window.removeEventListener('new_chat_message', handleNewMessage);
       window.removeEventListener('room_read_update', handleReadUpdateEvent);
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
       window.visualViewport?.removeEventListener('scroll', handleViewportResize);
-      window.removeEventListener('room_name_updated', handleRoomNameUpdated);
-      window.removeEventListener('typing_start', handleHumanTypingStart);
-      window.removeEventListener('typing_end', handleHumanTypingEnd);
+      window.removeEventListener('room_name_updated', handleRoomNameUpdated as EventListener);
+      window.removeEventListener('typing_start', handleHumanTypingStart as EventListener);
+      window.removeEventListener('typing_end', handleHumanTypingEnd as EventListener);
+      window.removeEventListener('message_updated', handleMessageUpdated as EventListener);
+      window.removeEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
+      window.removeEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
 
       // 언마운트 시엔 연결 끊기
       chatStore.disconnectSocket();
@@ -780,13 +878,10 @@ export default function Home() {
 
     // [신규] 방장 스폰서 옵션 체크
     const roomPolicy = localStorage.getItem('alo_room_policy') || 'personal';
-    const isSponsorMode = (currentRoom.isHost || !currentRoom.isGroup) && roomPolicy === 'sponsor';
+    const isSponsorMode = currentRoom.isHost && roomPolicy === 'sponsor';
 
-    // [중요 로직 보완] 이 방이 '스폰서 락' 상태(내가 호스트가 아닌데 호스트가 스폰서 모드를 켠 경우)인지 확인
+    // [중요 로직 보완] 이 방이 '스폰서 락' 상태인지 확인 (단톡, 1:1 무관하게 오직 방장(isHost)의 설정만 따름)
     let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
-    if (!currentRoom.isGroup) {
-      sponsorMember = currentRoom.members?.find((m: any) => m.userId !== user?.id);
-    }
     const amISponsor = sponsorMember?.userId === user?.id;
     const isGuestInSponsorRoom = !amISponsor && sponsorMember?.user?.sponsorMode;
 
@@ -916,17 +1011,47 @@ export default function Home() {
                 // Dexie 로컬 영구 DB에도 오늘 날짜로 기록 동기화
                 db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error("aiStats put 에러", e));
 
-                return fetch('/api/chat/friend', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  signal: controller.signal,
-                  body: JSON.stringify({
-                    provider: realProvider,
-                    byokKey: realByokKey,
-                    aiModel: localStorage.getItem('alo_ai_model') || '',
-                    systemPrompt: aiUser.aiPrompt,
-                    content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
-                  })
+                // [신규] 스폰서 방이고, 현재 이 AI 모델이 내(Sponsor) 소유가 아니라 다른 게스트 소유라면 과금 처리!
+                const hostSponsorPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
+                
+                // 결제를 진행하는 프로미스 체인
+                let paymentPromise = Promise.resolve();
+                if (isSponsorMode && aiUser.aiOwnerId !== user?.id && hostSponsorPrice > 0) {
+                  paymentPromise = fetch('/api/wallet/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      senderId: aiUser.aiOwnerId, // 이 AI의 본주인(게스트)
+                      receiverId: user?.id, // 스폰서 방장(나 자신)
+                      amount: hostSponsorPrice,
+                      reason: `[AI 대화 요금] 방장 스폰서 연산 (${aiUser.username})`
+                    })
+                  }).then(async paymentRes => {
+                    if (!paymentRes.ok) {
+                      const errData = await paymentRes.json();
+                      throw new Error(`PAY_FAIL:${errData.error || '잔액 부족'}`);
+                    }
+                    // 결제 성공 시 스폰서 본인 지갑 최신화
+                    fetch(`/api/users/profile?userId=${user?.id}`)
+                      .then(r => r.json())
+                      .then(d => { if (d.user) setUser(d.user); })
+                      .catch(console.error);
+                  });
+                }
+
+                return paymentPromise.then(() => {
+                  return fetch('/api/chat/friend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                      provider: realProvider,
+                      byokKey: realByokKey,
+                      aiModel: localStorage.getItem('alo_ai_model') || '',
+                      systemPrompt: aiUser.aiPrompt,
+                      content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
+                    })
+                  });
                 });
               })
               .then((aiResponse: any) => {
@@ -942,12 +1067,33 @@ export default function Home() {
               .then((resData: any) => {
                 if (resData && resData.reply) {
                   const aiReplyContent = resData.reply;
-                  chatStore.sendMessage(currentRoom.id, aiReplyContent, aiUser.id, aiUser.username, 'TEXT');
+                  
+                  // 스폰서가 결제해준 AI 메시지라면 팩트체크와 동일한 💸 결제 꼬리표 배지 부착!
+                  let extraAnalysis = undefined;
+                  const hostSponsorPrice = Number(localStorage.getItem('alo_sponsor_price') || '0');
+                  
+                  if (isSponsorMode && aiUser.aiOwnerId !== user?.id && hostSponsorPrice > 0) {
+                    const realProvider = localStorage.getItem('alo_ai_provider') || 'openai';
+                    const aiModelStr = localStorage.getItem('alo_ai_model') || realProvider;
+                    
+                    extraAnalysis = {
+                      category: 'AI_GENERATED', // AI 배지로 항상 출력되도록 설정
+                      confidence: 1,
+                      reason: 'AI 친구 챗봇 자율 응답',
+                      isSponsored: true,
+                      sponsorModel: aiModelStr,
+                      sponsorPrice: hostSponsorPrice
+                    };
+                  }
+                  chatStore.sendMessage(currentRoom.id, aiReplyContent, aiUser.id, aiUser.username, 'TEXT', extraAnalysis);
                 }
               })
               .catch((e: any) => {
                 if (e.name === 'AbortError') {
                   console.log(`[DEBUG] AI ${aiUser.username} 응답이 사용자의 타이핑으로 인해 차단됨(Aborted)`);
+                } else if (e.message && e.message.startsWith('PAY_FAIL:')) {
+                  const errorDesc = e.message.replace('PAY_FAIL:', '');
+                  chatStore.sendMessage(currentRoom.id, `⚠️ [결제 실패] ${aiUser.username}의 코인 부족(${errorDesc})으로 대화가 중단되었습니다.`, 'system', 'System', 'SYSTEM');
                 } else {
                   console.error("AI 자율 응답 트리거 에러:", e);
                 }
@@ -973,8 +1119,8 @@ export default function Home() {
       };
 
       if (isMentioned || randomTrigger) {
-        // 즉시 개입 처리 (단톡방 1.5~3.5초, 1:1 방은 1~2.5초)
-        const delayMs = isOneOnOne ? Math.floor(Math.random() * 1500) + 1000 : Math.floor(Math.random() * 2000) + 1500;
+        // 즉시 개입 처리 (단톡방 1.5~3.5초, 1:1 방은 0.3~0.8초로 매우 반응성 향상)
+        const delayMs = isOneOnOne ? Math.floor(Math.random() * 500) + 300 : Math.floor(Math.random() * 2000) + 1500;
         executeAiReply(delayMs);
       } else {
         // [신규] 어색한 침묵 깨기 (단톡방 전용)
@@ -1030,6 +1176,11 @@ export default function Home() {
         const { socket } = chatStore;
         if (!socket) return;
 
+        // 스폰서 락(isSponsorLocked) 상태 계산
+        let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
+        const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
+        const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
+
         const msgId = uuidv4();
         const newMessage: ChatMessage = {
           messageId: msgId,
@@ -1041,10 +1192,11 @@ export default function Home() {
           fileUrl: data.url,
           fileName: data.name,
           aiAnalysis: (data.type === 'IMAGE' && isAiEnabled) ? { category: 'PENDING' } : undefined,
+          aiRequested: isAiEnabled,
           createdAt: Date.now()
         };
 
-        // 낙관적 UI: 로컬 DB 즉시 추가 및 소켓 发送
+        // 낙관적 UI: 로컬 DB 즉시 추가 및 소켓 전송
         await db.messages.add(newMessage);
         setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
         const emitMessage = { ...newMessage } as any;
@@ -1052,7 +1204,7 @@ export default function Home() {
         socket.emit('send_message', { receiverId: currentRoom.id, message: emitMessage });
 
         // 백그라운드 AI 비전 스레드 (비동기)
-        if (data.type === 'IMAGE' && isAiEnabled) {
+        if (data.type === 'IMAGE' && isAiEnabled && !isSponsorLocked) {
           (async () => {
             try {
               const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
@@ -1159,11 +1311,8 @@ export default function Home() {
     }
 
     // --- 2. 일반 메시지 전송 및 Optimistic UI (병렬 처리) ---
-    // 스폰서 락(isSponsorLocked) 상태라면 내 설정을 무시하고 상대방(스폰서)의 대리연산으로 전적으로 위임해야 함!
+    // 스폰서 락(isSponsorLocked) 상태라면 내 설정을 무시하고 방장(스폰서)의 대리연산으로 전적으로 위임해야 함!
     let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
-    if (currentRoom && !currentRoom.isGroup) {
-      sponsorMember = currentRoom.members?.find((m: any) => m.userId !== user?.id);
-    }
     const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
     const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
 
@@ -1893,9 +2042,6 @@ export default function Home() {
 
   // --- [스폰서 UI Lock 상태 계산] ---
   let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
-  if (currentRoom && !currentRoom.isGroup) {
-    sponsorMember = currentRoom.members?.find((m: any) => m.userId !== user?.id);
-  }
   const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
   const isSponsorLocked = currentRoom && !amISponsor && sponsorMember?.user?.sponsorMode;
   const sponsorPrice = sponsorMember?.user?.sponsorPrice || 0;
@@ -2189,7 +2335,7 @@ export default function Home() {
                         e.stopPropagation();
                         const nextState = !isAiEnabled;
                         if (nextState && isSponsorLocked && sponsorPrice > 0) {
-                          if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, 팩트체크 1회당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
+                          if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, AI 1회 이용당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
                         }
                         setIsAiEnabled(nextState);
                       }}
@@ -2247,7 +2393,7 @@ export default function Home() {
                       e.stopPropagation();
                       const nextState = !isAiEnabled;
                       if (nextState && isSponsorLocked && sponsorPrice > 0) {
-                        if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, 팩트체크 1회당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
+                        if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, AI 1회 이용당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
                       }
                       setIsAiEnabled(nextState);
                     }}
@@ -2416,11 +2562,26 @@ export default function Home() {
                               )}
                             </div>
                             <div className="flex-1 overflow-hidden">
-                              <div className="font-semibold text-[15px] text-zinc-100 truncate">
+                              <div className="font-semibold text-[15px] text-zinc-100 truncate mb-1">
                                 {getRoomName(room, user?.id)}
                               </div>
-                              <div className="text-[13px] text-on-surface-variant truncate mt-0.5 flex items-center gap-1.5 hidden sm:flex font-mono">
-                                <Users size={12} /> 참여자 {room.members.length}명
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {(() => {
+                                  // 방장 스폰서 모드가 활성화된 멤버 찾기
+                                  const sponsorMember = room.members.find((m: any) => m.user?.sponsorMode === true);
+                                  if (sponsorMember) {
+                                    const price = sponsorMember.user?.sponsorPrice || 0;
+                                    return (
+                                      <span className="shrink-0 px-2 py-0.5 text-[10px] font-extrabold bg-gradient-to-r from-primary/20 to-secondary/10 text-primary border border-primary/30 rounded-full flex items-center shadow-sm">
+                                        👑 방장지원 ({price === 0 ? '무료' : `${price}코인`})
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                                <div className="text-[13px] text-on-surface-variant truncate flex items-center gap-1.5 hidden sm:flex font-mono">
+                                  <Users size={12} /> 참여자 {room.members.length}명
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -2764,6 +2925,30 @@ export default function Home() {
                         >
                           <span className="-ml-0.5 drop-shadow-md">{config.icon}</span>
                           <span className="opacity-80 flex items-center justify-center w-3.5 h-3.5 text-[10px] rounded-full bg-black/30 font-bold ml-1 font-mono">(?)</span>
+                          {msg.aiAnalysis.isSponsored && msg.aiAnalysis.sponsorPrice > 0 && (
+                            (() => {
+                              const hostId = currentRoom?.members?.find((m: any) => m.isHost)?.userId;
+                              let sign = '-';
+                              let color = 'text-yellow-500 bg-yellow-900/40';
+                              
+                              if (user?.id === hostId) {
+                                sign = '+'; // 방장이면 돈을 딴것이니 + 처리
+                                color = 'text-emerald-400 bg-emerald-900/40';
+                              } else if (user?.id === msg.senderId) {
+                                sign = '-'; // 돈을 지불한 게스트 본인이면 명확한 - 처리 (레드)
+                                color = 'text-rose-400 bg-rose-900/40';
+                              } else {
+                                sign = '-'; // 제3자에겐 보낸 사람이 돈 썼다는 의미로 - 처리 (흑백)
+                                color = 'text-zinc-400 bg-zinc-800/60';
+                              }
+                              
+                              return (
+                                <span className={`ml-1 text-[11px] font-bold px-1.5 py-0.5 rounded-sm drop-shadow-sm tracking-tighter ${color}`}>
+                                  💸{sign}{msg.aiAnalysis.sponsorPrice}
+                                </span>
+                              );
+                            })()
+                          )}
                         </div>
                       );
                     }
@@ -3078,23 +3263,27 @@ export default function Home() {
                           {/* 사용자를 클릭했을 때 펼쳐지는 메뉴 영역 (자신 제외) */}
                           {isSelected && !isMe && (
                             <div className="flex justify-end gap-2 px-3 pb-2 pt-1 border-t border-zinc-800/50 mt-1 bg-zinc-800/40">
-                              {/* 공통 메뉴: 송금하기 */}
-                              <button
-                                onClick={(e) => { e.stopPropagation(); promptTransfer(member.userId, member.user.username); }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors"
-                              >
-                                <Coins size={14} /> 송금
-                              </button>
+                              {/* 공통 메뉴: 송금하기 (AI 제외) */}
+                              {!member.user?.isAi && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); promptTransfer(member.userId, member.user.username); }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors"
+                                >
+                                  <Coins size={14} /> 송금
+                                </button>
+                              )}
 
                               {/* 방장 전용 메뉴: 권한 인계, 강퇴 */}
                               {currentRoom.isHost && (
                                 <>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleDelegateHost(member.userId); }}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-md transition-colors"
-                                  >
-                                    <Crown size={14} /> 방장 양도
-                                  </button>
+                                  {!member.user?.isAi && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleDelegateHost(member.userId); }}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-yellow-500 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-md transition-colors"
+                                    >
+                                      <Crown size={14} /> 방장 양도
+                                    </button>
+                                  )}
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleKickMember(member.userId); }}
                                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-md transition-colors"

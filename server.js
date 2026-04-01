@@ -154,6 +154,13 @@ app.prepare().then(() => {
       socket.to(payload.roomId).emit('typing_end', payload);
     });
 
+    socket.on('sponsor_settings_changed', (payload) => {
+      // payload: { roomId: string, sponsorId: string, sponsorPrice: number, sponsorMode: boolean, sponsorModel: string }
+      if (payload.roomId) {
+        socket.to(payload.roomId).emit('sponsor_settings_changed', payload);
+      }
+    });
+
     // 4. No-Log Relay 메시지 전송 로직 (방/개인 공통)
     // 3. No-Log Relay 메시지 전송 로직 (방/개인 공통)
     socket.on('send_message', async (payload) => {

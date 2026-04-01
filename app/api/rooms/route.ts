@@ -27,7 +27,7 @@ export async function POST(request: Request) {
         include: {
           members: {
             include: {
-              user: { select: { username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true } }
+              user: { select: { username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true, sponsorPrice: true } }
             }
           }
         }
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
         members: {
           include: {
             user: {
-              select: { username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true }
+              select: { username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true, sponsorMode: true, sponsorModel: true, sponsorPrice: true }
             }
           }
         }

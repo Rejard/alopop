@@ -8,7 +8,7 @@ interface ChatStore {
   isConnected: boolean;
   connectSocket: (userId: string) => void;
   disconnectSocket: () => void;
-  sendMessage: (receiverId: string, content: string, senderId: string, senderName: string, messageType?: 'TEXT' | 'SYSTEM' | 'IMAGE' | 'FILE' | 'VIDEO') => Promise<void>;
+  sendMessage: (receiverId: string, content: string, senderId: string, senderName: string, messageType?: 'TEXT' | 'SYSTEM' | 'IMAGE' | 'FILE' | 'VIDEO', aiAnalysis?: any) => Promise<void>;
   joinRoom: (roomId: string) => void;
 }
 
@@ -115,6 +115,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       window.dispatchEvent(new CustomEvent('typing_end', { detail: payload }));
     });
 
+    socket.on('sponsor_settings_changed', (payload) => {
+      window.dispatchEvent(new CustomEvent('sponsor_settings_changed', { detail: payload }));
+    });
+
     // 오프라인 상태에서 밀린 큐 메시지 뭉치 수신 이벤트
     socket.on('receive_offline_messages', async (messages: ChatMessage[]) => {
       console.log(`Received offline messages: ${messages.length}`);
@@ -145,11 +149,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  sendMessage: async (receiverId, content, senderId, senderName, messageType = 'TEXT') => {
+  sendMessage: async (receiverId, content, senderId, senderName, messageType = 'TEXT', aiAnalysis?: any) => {
     const { socket } = get();
     if (!socket) return;
 
-    const newMessage = {
+    const newMessage: ChatMessage = {
       messageId: uuidv4(),
       senderId,
       senderName,
@@ -157,6 +161,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content,
       messageType,
       createdAt: Date.now(),
+      ...(aiAnalysis && { aiAnalysis })
     };
 
     // 1. 내가 보낸 메시지: 내 로컬 IndexedDB에 즉시 저장 (Optimistic UI)
