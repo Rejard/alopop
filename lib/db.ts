@@ -5,6 +5,17 @@ export interface AiUsageStat {
   count: number;
 }
 
+export interface LocalTransaction {
+  id?: number;
+  type: 'SPEND' | 'RECEIVE' | 'EARN';
+  category: 'AI_CHAT' | 'FACT_CHECK' | 'P2P_TRANSFER' | 'SPONSOR_REVENUE';
+  amount: number;
+  counterpartyId?: string;
+  counterpartyName?: string;
+  createdAt: number;
+  description: string;
+}
+
 export interface ChatMessage {
   id?: number; // IndexedDB 자동 생성 기본키 (숫자)
   messageId: string; // 고유 메시지 ID (UUID)
@@ -29,6 +40,10 @@ const db = new Dexie('AloPopDatabase') as Dexie & {
     AiUsageStat,
     'date' // pk
   >;
+  walletTx: EntityTable<
+    LocalTransaction,
+    'id' // pk
+  >;
 };
 
 // 스키마 버전 1
@@ -41,6 +56,13 @@ db.version(1).stores({
 db.version(2).stores({
   messages: '++id, messageId, receiverId, createdAt',
   aiStats: 'date' // date 필드를 Primary Key로 사용
+});
+
+// 스키마 버전 3 (walletTx 테이블 추가 - 로컬 거래내역)
+db.version(3).stores({
+  messages: '++id, messageId, receiverId, createdAt',
+  aiStats: 'date',
+  walletTx: '++id, type, category, createdAt'
 });
 
 export { db };

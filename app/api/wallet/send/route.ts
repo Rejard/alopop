@@ -27,7 +27,7 @@ export async function POST(request: Request) {
        return NextResponse.json({ error: 'Receiver not found' }, { status: 404 });
     }
 
-    // 트랜잭션 기록 및 잔고 증감
+    // 트랜잭션 기록 및 잔고 증감 (유저 요청: 거래내역 서버 기록 중단, 로컬에만 보관)
     await prisma.$transaction([
       prisma.user.update({
         where: { id: senderId },
@@ -36,14 +36,6 @@ export async function POST(request: Request) {
       prisma.user.update({
         where: { id: receiverId },
         data: { walletBalance: receiver.walletBalance + amount }
-      }),
-      prisma.transaction.create({
-        data: {
-          amount,
-          reason: reason || '송금',
-          senderId,
-          receiverId, 
-        }
       })
     ]);
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2 } from 'lucide-react';
+import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ChatMessage } from '@/lib/db';
@@ -12,6 +12,62 @@ import { SettingsModal } from '@/components/SettingsModal';
 import { v4 as uuidv4 } from 'uuid';
 
 // AI MODELS loaded dynamically
+
+function WalletTransactionList() {
+  const [activeTxTab, setActiveTxTab] = useState<'USAGE' | 'TRANSFER'>('USAGE');
+  const allTransactions = useLiveQuery(() => db.walletTx?.orderBy('createdAt').reverse().toArray());
+
+  if (!allTransactions) return <div className="text-zinc-500 text-xs text-center py-4 flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />로컬 장부를 불러오는 중...</div>;
+
+  const transactions = allTransactions.filter(tx => 
+    activeTxTab === 'TRANSFER' ? tx.category === 'P2P_TRANSFER' : tx.category !== 'P2P_TRANSFER'
+  );
+
+  return (
+    <div className="space-y-4 mb-20 flex flex-col h-full">
+      {/* 탭 버튼들 */}
+      <div className="flex bg-surface-container rounded-lg p-1">
+        <button 
+          onClick={() => setActiveTxTab('USAGE')}
+          className={`flex-1 py-1.5 text-[11px] font-bold tracking-wider rounded-md transition-all ${activeTxTab === 'USAGE' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-white'}`}
+        >
+          AI 이용 내역
+        </button>
+        <button 
+          onClick={() => setActiveTxTab('TRANSFER')}
+          className={`flex-1 py-1.5 text-[11px] font-bold tracking-wider rounded-md transition-all ${activeTxTab === 'TRANSFER' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-white'}`}
+        >
+          P2P 송금 내역
+        </button>
+      </div>
+
+      {transactions.length === 0 ? (
+        <div className="text-zinc-500 text-xs text-center py-8 bg-surface-container-low rounded-xl border border-dashed border-outline-variant/30">
+          해당 카테고리의 기록된 💸 거래 내역이 없습니다.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {transactions.map(tx => (
+            <div key={tx.id} className="bg-surface-container-low p-3.5 rounded-xl flex items-center justify-between border border-outline-variant/20 shadow-sm transition-all hover:bg-surface-variant">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center shadow-inner ${tx.type === 'SPEND' ? 'bg-error/10 text-error border border-error/20' : 'bg-tertiary/10 text-tertiary border border-tertiary/20'}`}>
+                  {tx.type === 'SPEND' ? <LogOut size={14} className="" /> : <Send size={14} className="rotate-180" />}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[13px] font-bold text-on-surface tracking-tight">{tx.description}</span>
+                  <span className="text-[10px] text-on-surface-variant">{new Date(tx.createdAt).toLocaleString('ko-KR')}</span>
+                </div>
+              </div>
+              <div className={`font-mono font-bold text-sm tracking-tighter ${tx.type === 'SPEND' ? 'text-error' : 'text-tertiary'}`}>
+                {tx.type === 'SPEND' ? '-' : '+'} {tx.amount.toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const router = useRouter();
@@ -39,7 +95,7 @@ export default function Home() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
-  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats'>('chats'); // 좌측 LNB 탭 상태
+  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet'>('chats'); // 좌측 LNB 탭 상태
 
   // 친구 목록 컨텍스트 메뉴 상태
   const [activeFriendMenuId, setActiveFriendMenuId] = useState<string | null>(null);
@@ -925,9 +981,42 @@ export default function Home() {
                     }
                     // 결제 성공 시 당사자(방장 본인이거나 게스트 본인일 때만) 내 지갑 렌더링 최신화
                     if (sponsorMember?.userId === user?.id || aiUser.aiOwnerId === user?.id) {
+                      // 내(현재 브라우저 사용자)가 돈을 내는 측(게스트)인지, 받는 측(방장)인지 판별
+                      const isSpender = aiUser.aiOwnerId === user?.id; 
+                      const isEarner = sponsorMember?.userId === user?.id; 
+                      
+                      if (isSpender) {
+                        db.walletTx?.add({
+                          type: 'SPEND',
+                          category: 'SPONSOR_REVENUE',
+                          amount: hostSponsorPrice,
+                          counterpartyId: sponsorMember?.userId,
+                          counterpartyName: '방장',
+                          createdAt: Date.now(),
+                          description: `AI(${aiUser.username}) 방장 스폰서망 연산`
+                        }).catch(console.error);
+                      }
+                      
+                      if (isEarner) {
+                        db.walletTx?.add({
+                          type: 'EARN',
+                          category: 'SPONSOR_REVENUE',
+                          amount: hostSponsorPrice,
+                          counterpartyId: aiUser.aiOwnerId,
+                          counterpartyName: aiUser.username,
+                          createdAt: Date.now(),
+                          description: `AI(${aiUser.username}) 대리연산 스폰서 수익`
+                        }).catch(console.error);
+                      }
+
                       fetch(`/api/users/profile?userId=${user?.id}`)
                         .then(r => r.json())
-                        .then(d => { if (d.user) setUser(d.user); })
+                        .then(d => { 
+                          if (d.user) {
+                            setUser(d.user); 
+                            setMyProfile(d.user);
+                          }
+                        })
                         .catch(console.error);
                     }
                   });
@@ -1200,7 +1289,18 @@ export default function Home() {
         setUser(prev => prev ? { ...prev, walletBalance: data.balance } : null);
         setMyProfile(prev => prev ? { ...prev, walletBalance: data.balance } : null);
 
-        const msgStr = `💸 [송금 알림] ${user.username}님이 ${targetName}님에게 ${amount} 코인을 송금했습니다.`;
+        // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
+        await db.walletTx?.add({
+          type: 'SPEND',
+          category: 'P2P_TRANSFER',
+          amount,
+          counterpartyId: receiverId,
+          counterpartyName: targetName,
+          createdAt: Date.now(),
+          description: reason || `${targetName}님에게 금액 송금`
+        }).catch(err => console.error("로컬 장부 기록 실패:", err));
+
+        const msgStr = `💸 [송금 알림] ${user.username}님이 ${targetName}님에게 ${amount} 원을 송금했습니다.`;
         await chatStore.sendMessage(currentRoom?.id || 'global', msgStr, user.id, user.username);
       } catch (err) {
         console.error('송금 중 오류 발생:', err);
@@ -1904,7 +2004,7 @@ export default function Home() {
 
   const promptTransfer = async (receiverId: string, receiverName: string) => {
     if (!user) return;
-    const amountStr = window.prompt(`${receiverName}님에게 송금할 코인 금액을 입력하세요:`, '100');
+    const amountStr = window.prompt(`${receiverName}님에게 송금할 금액을 입력하세요 (원):`, '100');
     if (amountStr) {
       const amount = parseInt(amountStr, 10);
       if (!isNaN(amount) && amount > 0) {
@@ -1918,10 +2018,21 @@ export default function Home() {
             const data = await res.json();
             setUser(prev => prev ? { ...prev, walletBalance: data.balance } : null);
             setMyProfile(prev => prev ? { ...prev, walletBalance: data.balance } : null);
-            alert(`성공적으로 ${amount} 코인을 ${receiverName}님에게 송금했습니다. 잔액: ${data.balance} 코인`);
+            alert(`성공적으로 ${amount} 원을 ${receiverName}님에게 송금했습니다. 잔액: ${data.balance} 원`);
+
+            // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
+            await db.walletTx?.add({
+              type: 'SPEND',
+              category: 'P2P_TRANSFER',
+              amount,
+              counterpartyId: receiverId,
+              counterpartyName: receiverName,
+              createdAt: Date.now(),
+              description: `${receiverName}님에게 통장 송금`
+            }).catch(err => console.error("로컬 장부 기록 실패:", err));
 
             // 송금 완료 후 채팅방(현재 룸)에 시스템 메시지 전송
-            const msgStr = `💸 [송금 알림] ${user.username}님이 ${receiverName}님에게 ${amount} 코인을 송금했습니다.`;
+            const msgStr = `💸 [송금 알림] ${user.username}님이 ${receiverName}님에게 ${amount} 원을 송금했습니다.`;
             await chatStore.sendMessage(currentRoom?.id || 'global', msgStr, user.id, user.username);
           } else {
             const err = await res.json();
@@ -2376,6 +2487,15 @@ export default function Home() {
                 >
                   <Users size={24} strokeWidth={currentTab === 'friends' ? 2.5 : 2} />
                 </button>
+
+                {/* 지갑 탭 */}
+                <button
+                  onClick={() => setCurrentTab('wallet')}
+                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'wallet' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  title="내 지갑 / 로컬 장부"
+                >
+                  <Wallet size={24} strokeWidth={currentTab === 'wallet' ? 2.5 : 2} />
+                </button>
               </div>
 
               {/* LNB 하단: 알림, 디지털 번호판 및 내 프로필 */}
@@ -2723,6 +2843,43 @@ export default function Home() {
                         </div>
                       ))
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* 지갑(Wallet) 탭 */}
+              {currentTab === 'wallet' && (
+                <div className="p-4 space-y-4">
+                  {/* 지갑 카드 UI */}
+                  <div className="w-full h-48 rounded-3xl p-6 flex flex-col justify-between shadow-ambient relative overflow-hidden group bg-surface-container-high border border-outline-variant/30">
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-secondary/5 rounded-full blur-2xl -ml-5 -mb-5 pointer-events-none"></div>
+                    <h2 className="text-on-surface-variant font-bold tracking-wider text-[13px] z-10 flex items-center gap-2">
+                       <Wallet size={16} className="text-primary" />
+                       TOTAL BALANCE
+                    </h2>
+                    <div className="z-10 flex items-baseline gap-2">
+                      <span className="text-5xl font-black text-on-surface drop-shadow-sm font-mono tracking-tighter">
+                        {(myProfile?.walletBalance ?? user?.walletBalance ?? 0).toLocaleString()}
+                      </span>
+                      <span className="text-on-surface-variant font-bold tracking-widest text-lg ml-1">원</span>
+                    </div>
+                  </div>
+
+                  {/* 거래 내역 (로컬 장부) */}
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-4 px-1">
+                      <h3 className="text-[13px] font-bold text-zinc-300 tracking-wide flex items-center gap-2">
+                        <File size={16} className="text-zinc-400" />
+                        로컬 장부 타임라인
+                      </h3>
+                      <span className="text-[9px] text-zinc-500 px-2.5 py-1 bg-zinc-800/80 rounded-full border border-zinc-700/50 flex items-center gap-1">
+                        <ShieldAlert size={10} />
+                        기기에만 암호화 보관됨
+                      </span>
+                    </div>
+                    {/* dexie livequery 로 로컬 walletTx 불러오기 */}
+                    <WalletTransactionList />
                   </div>
                 </div>
               )}
