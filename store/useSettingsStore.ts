@@ -4,9 +4,10 @@ export type AIProvider = 'gemini-free' | 'openai' | 'gemini' | 'anthropic';
 
 interface SettingsStore {
   isOpen: boolean;
+  forceGlobal: boolean;
   selectedProvider: AIProvider;
   apiKeys: Record<AIProvider, string>;
-  setIsOpen: (isOpen: boolean) => void;
+  setIsOpen: (isOpen: boolean, forceGlobal?: boolean) => void;
   setSelectedProvider: (provider: AIProvider) => void;
   setApiKey: (provider: AIProvider, key: string) => void;
   loadSettings: () => void;
@@ -14,6 +15,7 @@ interface SettingsStore {
 
 export const useSettingsStore = create<SettingsStore>((set) => ({
   isOpen: false,
+  forceGlobal: false,
   selectedProvider: 'gemini-free',
   apiKeys: {
     'gemini-free': '',
@@ -21,7 +23,7 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     gemini: '',
     anthropic: '',
   },
-  setIsOpen: (isOpen) => set({ isOpen }),
+  setIsOpen: (isOpen, forceGlobal = false) => set({ isOpen, forceGlobal }),
   setSelectedProvider: (provider) => {
     localStorage.setItem('alo_ai_provider', provider);
     set({ selectedProvider: provider });

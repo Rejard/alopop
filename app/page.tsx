@@ -2052,6 +2052,8 @@ export default function Home() {
   // --- [스폰서 UI Lock 상태 계산] ---
   const isSponsorLocked = currentRoom && currentRoom.sponsorMode;
   const sponsorPrice = currentRoom?.sponsorPrice || 0;
+  const hasSetupAi = Object.values(apiKeys).some(key => key.trim().length > 0);
+  const showAiWarning = !isSponsorLocked && !hasSetupAi;
   
   const lockedModelId = currentRoom?.sponsorModel || 'openai';
   let foundModelName = '스폰서 제공';
@@ -2328,36 +2330,61 @@ export default function Home() {
                 </span>
                 {currentRoom && (
                   <div className="relative z-50 flex items-center gap-1.5 block md:hidden lg:block">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen);
-                      }}
-                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border shrink-0 shadow-sm ${isSponsorLocked
-                        ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
-                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
-                        }`}
-                    >
-                      <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
-                      {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const nextState = !isAiEnabled;
-                        if (nextState && isSponsorLocked && sponsorPrice > 0) {
-                          if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, AI 1회 이용당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
-                        }
-                        setIsAiEnabled(nextState);
-                      }}
-                      className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
-                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
-                        : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-medium'
-                        }`}
-                    >
-                      {isAiEnabled ? 'AI 🟢' : 'AI 🔘'}
-                    </button>
-                    {isAiModelDropdownOpen && (
+                    {showAiWarning ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSettingsOpen(true, true); // forceGlobal을 true로 주어 전역 설정이 뜨도록 함
+                        }}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/50 shadow-sm transition-colors text-[10px] font-bold"
+                      >
+                        🤖 AI 연결 필요
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen);
+                        }}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border shrink-0 shadow-sm ${isSponsorLocked
+                          ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                          }`}
+                      >
+                        <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                        {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
+                      </button>
+                    )}
+                    
+                    {showAiWarning ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          alert('❗ AI 기능을 사용하려면 먼저 설정에서 본인의 API 키를 등록해주세요.');
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-0.5 rounded-full shadow-sm border bg-zinc-800/80 text-zinc-600 border-zinc-700/50 cursor-not-allowed shrink-0 transition-all font-medium"
+                      >
+                        🔒 AI 🔘
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const nextState = !isAiEnabled;
+                          if (nextState && isSponsorLocked && sponsorPrice > 0) {
+                            if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, AI 1회 이용당 ${sponsorPrice} 원이 차감됩니다. 동의하십니까?`)) return;
+                          }
+                          setIsAiEnabled(nextState);
+                        }}
+                        className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-medium'
+                          }`}
+                      >
+                        {isAiEnabled ? 'AI 🟢' : 'AI 🔘'}
+                      </button>
+                    )}
+                    {isAiModelDropdownOpen && !showAiWarning && (
                       <div className="absolute top-full left-0 mt-1.5 w-40 bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100">
                         {aiModels[selectedProvider]?.map(model => (
                           <button
@@ -2386,36 +2413,61 @@ export default function Home() {
             {currentRoom && (
               <>
                 <div className="relative z-50 hidden md:block lg:hidden mr-1 flex items-center gap-1.5">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen);
-                    }}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors border shrink-0 shadow-sm ${isSponsorLocked
-                      ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
-                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
-                      }`}
-                  >
-                    <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
-                    {!isSponsorLocked && <ChevronDown size={12} className="opacity-70" />}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const nextState = !isAiEnabled;
-                      if (nextState && isSponsorLocked && sponsorPrice > 0) {
-                        if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, AI 1회 이용당 ${sponsorPrice}코인이 차감됩니다. 동의하십니까?`)) return;
-                      }
-                      setIsAiEnabled(nextState);
-                    }}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
-                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
-                      : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-semibold'
-                      }`}
-                  >
-                    {isAiEnabled ? 'AI 🟢' : 'AI 🔘'}
-                  </button>
-                  {isAiModelDropdownOpen && (
+                  {showAiWarning ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSettingsOpen(true, true); // forceGlobal을 true로 주어 전역 설정이 뜨도록 함
+                      }}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/50 shadow-sm transition-colors text-xs font-bold shrink-0"
+                    >
+                      🤖 AI 연결 필요
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen);
+                      }}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors border shrink-0 shadow-sm ${isSponsorLocked
+                        ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
+                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                        }`}
+                    >
+                      <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                      {!isSponsorLocked && <ChevronDown size={12} className="opacity-70" />}
+                    </button>
+                  )}
+
+                  {showAiWarning ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        alert('❗ AI 기능을 사용하려면 먼저 설정에서 본인의 API 키를 등록해주세요.');
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-full shadow-sm border bg-zinc-800/80 text-zinc-600 border-zinc-700/50 cursor-not-allowed shrink-0 transition-all font-semibold text-xs"
+                    >
+                      🔒 AI 🔘
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const nextState = !isAiEnabled;
+                        if (nextState && isSponsorLocked && sponsorPrice > 0) {
+                          if (!confirm(`💡 이 채팅방은 방장 스폰서 모드로 운영되며, AI 1회 이용당 ${sponsorPrice} 원이 차감됩니다. 동의하십니까?`)) return;
+                        }
+                        setIsAiEnabled(nextState);
+                      }}
+                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
+                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
+                        : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-semibold'
+                        }`}
+                    >
+                      {isAiEnabled ? 'AI 🟢' : 'AI 🔘'}
+                    </button>
+                  )}
+                  {isAiModelDropdownOpen && !showAiWarning && (
                     <div className="absolute top-full right-0 mt-1.5 w-44 bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100">
                       {aiModels[selectedProvider]?.map(model => (
                         <button

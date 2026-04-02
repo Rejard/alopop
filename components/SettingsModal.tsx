@@ -5,8 +5,12 @@ import { X, Key, Bot, LogOut, Users, EyeOff, UserX, Trash2, RefreshCw, Check } f
 import { useSettingsStore, AIProvider } from '@/store/useSettingsStore';
 import { useRouter } from 'next/navigation';
 
-export function SettingsModal({ currentRoom }: { currentRoom?: any }) {
-  const { isOpen, setIsOpen, selectedProvider, apiKeys, setSelectedProvider, setApiKey, loadSettings } = useSettingsStore();
+export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: any }) {
+  const { isOpen, setIsOpen, forceGlobal, selectedProvider, apiKeys, setSelectedProvider, setApiKey, loadSettings } = useSettingsStore();
+  
+  // [신규] forceGlobal이 true라면, 방 안에 있어도 전역 설정 모드를 강제합니다.
+  const currentRoom = forceGlobal ? null : propCurrentRoom;
+
   const [activeLayerTab, setActiveLayerTab] = useState<'ai' | 'friends'>('ai'); // 모달 최상단 탭 (AI / 친구관리)
 
   // AI 설정 탭
