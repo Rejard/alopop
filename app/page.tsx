@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2 } from 'lucide-react';
+import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ChatMessage } from '@/lib/db';
@@ -12,6 +12,28 @@ import { SettingsModal } from '@/components/SettingsModal';
 import { v4 as uuidv4 } from 'uuid';
 
 // AI MODELS loaded dynamically
+
+const GAME_LIST = [
+  { id: '1', name: '애니팡', port: 3001, icon: '🐾' },
+  { id: '2', name: '블록 블라스트', port: 3002, icon: '🟪' },
+  { id: '3', name: '버블 슈터', port: 3008, icon: '🫧' },
+  { id: '4', name: '캔디 크러시', port: 3003, icon: '🍬' },
+  { id: '5', name: '헥사 게임', port: 3004, icon: '💠' },
+  { id: '6', name: '뿌요뿌요', port: 3005, icon: '🎮' },
+  { id: '7', name: '테트리스', port: 3006, icon: '🧱' },
+  { id: '8', name: '솔리테어 워드', port: 3009, icon: '🃏' },
+  { id: '9', name: '2048', port: 3007, icon: '🔢' },
+  { id: '10', name: '버블 매치 러시', port: 3010, icon: '🔵' },
+  { id: '11', name: '빌드 어 브릿지', port: 3011, icon: '🌉' },
+  { id: '12', name: '스쿱 타워', port: 3012, icon: '🍦' },
+  { id: '13', name: '케이크 스태커', port: 3013, icon: '🍰' },
+  { id: '14', name: '프룻 닌자', port: 3014, icon: '🍉' },
+  { id: '15', name: '사과 10 게임', port: 3015, icon: '🍎' },
+  { id: '16', name: '컬러 타일', port: 3016, icon: '🟦' },
+  { id: '17', name: '메시 보드', port: 3017, icon: '🧩' },
+  { id: '18', name: 'L자 별자리', port: 3018, icon: '✨' },
+  { id: '19', name: '블록 드롭', port: 3019, icon: '⏬' },
+];
 
 function WalletTransactionList() {
   const [activeTxTab, setActiveTxTab] = useState<'USAGE' | 'TRANSFER'>('USAGE');
@@ -95,7 +117,8 @@ export default function Home() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
-  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet'>('chats'); // 좌측 LNB 탭 상태
+  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games'>('chats'); // 좌측 LNB 탭 상태
+  const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
 
   // 친구 목록 컨텍스트 메뉴 상태
   const [activeFriendMenuId, setActiveFriendMenuId] = useState<string | null>(null);
@@ -2071,6 +2094,31 @@ export default function Home() {
       className="fixed top-0 left-0 w-full bg-dark-bg flex justify-center items-center text-on-surface p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       style={{ height: 'var(--vh, 100%)' }}
     >
+      {activeGameUrl && (
+        <div className="fixed inset-0 z-[999] bg-[#0f0a14] flex flex-col">
+          <div className="h-12 bg-[#150f1d] shrink-0 border-b border-white/10 flex items-center justify-between px-4">
+            <div className="flex items-center gap-2 text-primary font-bold">
+              <Gamepad2 size={18} />
+              <span>게임 플레이 중</span>
+            </div>
+            <button
+              onClick={() => setActiveGameUrl(null)}
+              className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors shadow-sm"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 w-full bg-black overflow-hidden relative">
+            <button 
+              onClick={() => setActiveGameUrl(null)}
+              className="absolute top-4 right-4 z-[1000] bg-black/60 hover:bg-red-500/80 text-white p-2 rounded-full backdrop-blur-md transition-colors"
+            >
+               <X size={24} />
+            </button>
+            <iframe src={activeGameUrl} className="w-full h-full border-none" allowFullScreen />
+          </div>
+        </div>
+      )}
       <SettingsModal currentRoom={currentRoom} />
 
       {/* 가이드(사용법) 모달창 */}
@@ -2516,7 +2564,7 @@ export default function Home() {
                   className="absolute left-0 w-1 bg-gradient-to-b from-primary to-primary-dim shadow-[0_0_10px_rgba(204,151,255,0.8)] rounded-r-lg transition-all duration-300 ease-in-out"
                   style={{
                     height: '24px',
-                    top: currentTab === 'chats' ? '32px' : '96px' // 6 * 4 (py-6) + 8 = 32px (첫번 요소 초기위치 얼추 매칭), 차이 64px 계산
+                    top: currentTab === 'chats' ? '32px' : currentTab === 'friends' ? '96px' : currentTab === 'wallet' ? '160px' : currentTab === 'games' ? '224px' : '96px'
                   }}
                 />
 
@@ -2547,6 +2595,15 @@ export default function Home() {
                   title="내 지갑 / 로컬 장부"
                 >
                   <Wallet size={24} strokeWidth={currentTab === 'wallet' ? 2.5 : 2} />
+                </button>
+
+                {/* 게임 탭 */}
+                <button
+                  onClick={() => setCurrentTab('games')}
+                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'games' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  title="게임 구역"
+                >
+                  <Gamepad2 size={24} strokeWidth={currentTab === 'games' ? 2.5 : 2} />
                 </button>
               </div>
 
@@ -2932,6 +2989,44 @@ export default function Home() {
                     </div>
                     {/* dexie livequery 로 로컬 walletTx 불러오기 */}
                     <WalletTransactionList />
+                  </div>
+                </div>
+              )}
+
+              {/* 게임(Games) 탭 */}
+              {currentTab === 'games' && (
+                <div className="p-4 space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Gamepad2 className="text-secondary" size={24} />
+                    <h2 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-secondary to-primary drop-shadow-sm flex-1">
+                      아케이드 게임 센터
+                    </h2>
+                  </div>
+                  <div className="space-y-2.5">
+                    {GAME_LIST.map((game) => (
+                      <div
+                        key={game.id}
+                        onClick={() => {
+                          setActiveGameUrl(`/game-proxy/${game.port}/index.html`);
+                        }}
+                        className="relative flex items-center justify-between p-4 bg-[#150f1d] hover:bg-[#1f172b] border border-white/5 rounded-[16px] transition-colors cursor-pointer group shadow-sm"
+                      >
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
+                          <div className="relative w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0 bg-surface-container border-[1.5px] border-purple-900/60 overflow-hidden shadow-inner">
+                            <span>{game.icon}</span>
+                          </div>
+                          <div className="flex flex-col min-w-0 pr-2">
+                            <span className="font-extrabold text-[16px] text-white truncate">{game.name}</span>
+                            <span className="text-[11px] text-zinc-400 truncate mt-0.5 font-mono">Port: {game.port}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 pl-2">
+                          <span className="text-xs font-bold bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-3 py-1.5 rounded-lg transition-colors">
+                            플레이
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

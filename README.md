@@ -72,7 +72,12 @@ Why should the room host bear the entire cost of API inference? Alopop introduce
 - We completely dismantled the registration barrier. Upon initial access, users enter as **"Guests (Anonymous)"**, allowing them to freely experience all features, including chat and coin wallets, with zero friction.
 - Whenever they are ready, they can use the "Hybrid Account Binding" feature in the settings to permanently migrate and bind their anonymous local state to a registered user account.
 
-### 7. Ghost Delegate: Hybrid P2P Edge & Serverless Architecture ♾️
+### 7. Integrated 19-Mini-Game Portal Ecosystem 🎮
+- Beyond just messaging, Alopop fully embeds a portal containing **19 high-quality HTML5 mini-games (e.g., Block Blast, Tetris, 2048)** to enjoy seamlessly with friends during chats.
+- **Next.js Reverse Proxy Architecture**: Each game runs securely isolated as an independent PM2 process (Ports 3001-3019) and perfectly fuses into the Alopop ecosystem via Next.js proxy network (`/game-proxy/:port`) without CORS or Mixed Content errors.
+- Features auto-correction for absolute path collisions and bundler (`Vite`, `Webpack`) rendering errors, ensuring an uninterrupted and pristine gaming experience.
+
+### 8. Ghost Delegate: Hybrid P2P Edge & Serverless Architecture ♾️
 To architecturally support massive scale (millions of Concurrent Users - CCU) with virtually zero server overload, Alopop transparently combines proven industry-standard networking with our own world-first native innovations.
 
 #### 💡 Built on Proven Industry Standards
