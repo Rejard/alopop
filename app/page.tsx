@@ -2608,11 +2608,11 @@ export default function Home() {
 
                 {/* AI 스튜디오 탭 */}
                 <button
-                  onClick={() => setActiveGameUrl('https://aistudio.alonics.com/')}
-                  className="relative p-3 rounded-xl transition-all text-on-surface-variant hover:text-white hover:bg-surface-container-low"
+                  onClick={() => setCurrentTab('aistudio')}
+                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'aistudio' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="Alopop AI Studio"
                 >
-                  <Bot size={24} strokeWidth={2} />
+                  <Bot size={24} strokeWidth={currentTab === 'aistudio' ? 2.5 : 2} />
                 </button>
               </div>
 
