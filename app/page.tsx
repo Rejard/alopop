@@ -2098,8 +2098,8 @@ export default function Home() {
         <div className="fixed inset-0 z-[999] bg-[#0f0a14] flex flex-col">
           <div className="h-12 bg-[#150f1d] shrink-0 border-b border-white/10 flex items-center justify-between px-4">
             <div className="flex items-center gap-2 text-primary font-bold">
-              <Gamepad2 size={18} />
-              <span>게임 플레이 중</span>
+              {activeGameUrl === 'https://aistudio.alonics.com/' ? <Bot size={18} /> : <Gamepad2 size={18} />}
+              <span>{activeGameUrl === 'https://aistudio.alonics.com/' ? 'Alopop AI Studio' : '게임 플레이 중'}</span>
             </div>
             <button
               onClick={() => setActiveGameUrl(null)}
@@ -2605,6 +2605,15 @@ export default function Home() {
                 >
                   <Gamepad2 size={24} strokeWidth={currentTab === 'games' ? 2.5 : 2} />
                 </button>
+
+                {/* AI 스튜디오 탭 */}
+                <button
+                  onClick={() => setActiveGameUrl('https://aistudio.alonics.com/')}
+                  className="relative p-3 rounded-xl transition-all text-on-surface-variant hover:text-white hover:bg-surface-container-low"
+                  title="Alopop AI Studio"
+                >
+                  <Bot size={24} strokeWidth={2} />
+                </button>
               </div>
 
               {/* LNB 하단: 알림, 디지털 번호판 및 내 프로필 */}
@@ -3030,6 +3039,8 @@ export default function Home() {
                   </div>
                 </div>
               )}
+
+
 
             </div>
           </div>

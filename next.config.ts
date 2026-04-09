@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
         source: '/add',
         destination: '/release.html',
       },
+      {
+        source: '/game-proxy/3090/:path*',
+        destination: 'http://127.0.0.1:3090/:path*'
+      },
       ...gameRewrites
     ];
   },
