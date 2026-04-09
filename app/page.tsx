@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2 } from 'lucide-react';
+import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Terminal, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ChatMessage } from '@/lib/db';
@@ -2612,7 +2612,7 @@ export default function Home() {
                   className={`relative p-3 rounded-xl transition-all ${currentTab === 'aistudio' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="Alopop AI Studio"
                 >
-                  <Bot size={24} strokeWidth={currentTab === 'aistudio' ? 2.5 : 2} />
+                  <Building2 size={24} strokeWidth={currentTab === 'aistudio' ? 2.5 : 2} />
                 </button>
               </div>
 
