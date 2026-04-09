@@ -117,7 +117,7 @@ export default function Home() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
-  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games'>('chats'); // 좌측 LNB 탭 상태
+  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
 
   // 친구 목록 컨텍스트 메뉴 상태
@@ -2564,7 +2564,7 @@ export default function Home() {
                   className="absolute left-0 w-1 bg-gradient-to-b from-primary to-primary-dim shadow-[0_0_10px_rgba(204,151,255,0.8)] rounded-r-lg transition-all duration-300 ease-in-out"
                   style={{
                     height: '24px',
-                    top: currentTab === 'chats' ? '32px' : currentTab === 'friends' ? '96px' : currentTab === 'wallet' ? '160px' : currentTab === 'games' ? '224px' : '96px'
+                    top: currentTab === 'chats' ? '32px' : currentTab === 'friends' ? '96px' : currentTab === 'wallet' ? '160px' : currentTab === 'games' ? '224px' : currentTab === 'aistudio' ? '288px' : '96px'
                   }}
                 />
 
@@ -3003,7 +3003,13 @@ export default function Home() {
               )}
 
               {/* 게임(Games) 탭 */}
-              {currentTab === 'games' && (
+              {currentTab === 'aistudio' && (
+                  <div className="flex-1 w-full h-full flex flex-col relative bg-black">
+                    <iframe src="https://aistudio.alonics.com/" className="absolute inset-0 w-full h-full border-none" allowFullScreen />
+                  </div>
+                )}
+  
+                {currentTab === 'games' && (
                 <div className="p-4 space-y-4">
                   <div className="flex items-center gap-2 mb-4">
                     <Gamepad2 className="text-secondary" size={24} />
