@@ -1,5 +1,5 @@
 ---
-name: Feature Request ✨
+name: Feature Request 🌠
 about: Suggest an idea for this project
 title: "feat: [Short description of the feature]"
 labels: "enhancement"
@@ -9,7 +9,7 @@ assignees: ""
 ## 🚀 Is your feature request related to a problem? Please describe.
 A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
 
-## ✨ Describe the solution you'd like
+## 🌠 Describe the solution you'd like
 A clear and concise description of what you want to happen. For example, adding Claude 3 Haiku support to the BYOK feature.
 
 ## 🎨 Describe alternatives you've considered

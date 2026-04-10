@@ -30,8 +30,8 @@ const GAME_LIST = [
   { id: '14', name: '프룻 닌자', port: 3014, icon: '🍉' },
   { id: '15', name: '사과 10 게임', port: 3015, icon: '🍎' },
   { id: '16', name: '컬러 타일', port: 3016, icon: '🟦' },
-  { id: '17', name: '메시 보드', port: 3017, icon: '🧩' },
-  { id: '18', name: 'L자 별자리', port: 3018, icon: '✨' },
+  { id: '17', name: '메시 보드', port: 3017, icon: '🚦' },
+  { id: '18', name: 'L자 별자리', port: 3018, icon: '🌠' },
   { id: '19', name: '블록 드롭', port: 3019, icon: '⏬' },
 ];
 
@@ -41,7 +41,7 @@ function WalletTransactionList() {
 
   if (!allTransactions) return <div className="text-zinc-500 text-xs text-center py-4 flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />로컬 장부를 불러오는 중...</div>;
 
-  const transactions = allTransactions.filter(tx => 
+  const transactions = allTransactions.filter(tx =>
     activeTxTab === 'TRANSFER' ? tx.category === 'P2P_TRANSFER' : tx.category !== 'P2P_TRANSFER'
   );
 
@@ -49,13 +49,13 @@ function WalletTransactionList() {
     <div className="space-y-4 mb-20 flex flex-col h-full">
       {/* 탭 버튼들 */}
       <div className="flex bg-surface-container rounded-lg p-1">
-        <button 
+        <button
           onClick={() => setActiveTxTab('USAGE')}
           className={`flex-1 py-1.5 text-[11px] font-bold tracking-wider rounded-md transition-all ${activeTxTab === 'USAGE' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-white'}`}
         >
           AI 이용 내역
         </button>
-        <button 
+        <button
           onClick={() => setActiveTxTab('TRANSFER')}
           className={`flex-1 py-1.5 text-[11px] font-bold tracking-wider rounded-md transition-all ${activeTxTab === 'TRANSFER' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:text-white'}`}
         >
@@ -335,7 +335,7 @@ export default function Home() {
     const providerValue = selectedProvider || 'openai';
     const list = aiModels[providerValue] || [];
     const savedModel = localStorage.getItem('alo_ai_model') || selectedAiModel;
-    
+
     if (!savedModel || !list.some(m => m.id === savedModel)) {
       const defaultModel = providerValue === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (providerValue === 'openai' ? 'gpt-5.4-mini' : list[0]?.id || 'gpt-5.4');
       setSelectedAiModel(defaultModel);
@@ -394,7 +394,7 @@ export default function Home() {
             roomsData.forEach((r: any) => {
               // 백그라운드에서도 내가 속한 모든 방의 실시간 이벤트(가격 변경, 타이핑 등)를 수신하기 위해 소켓 조인
               chatStore.joinRoom(r.id);
-              
+
               readTimesDict[r.id] = {};
               r.members?.forEach((m: any) => {
                 readTimesDict[r.id][m.userId] = new Date(m.lastReadAt || m.joinedAt).getTime();
@@ -601,19 +601,19 @@ export default function Home() {
     const handleHostSponsorSettingsSaved = (e: any) => {
       // 1. 방장 본인의 화면 상태 강제 갱신
       handleSponsorSettingsChanged(e);
-      
+
       // 2. 서버를 통해 현재 방의 다른 유저(게스트)들에게 설정 갱신 브로드캐스트
       const { roomId, isPriceChanged, sponsorPrice, isModelChanged, sponsorModelName } = e.detail;
       useChatStore.getState().socket?.emit('sponsor_settings_changed', e.detail);
-      
+
       // 요금이 변경되었을 때만 방장이 시스템 메시지를 전송하여 모두가 인지하도록 함
       if (isPriceChanged) {
-        const sysMsg = sponsorPrice > 0 
+        const sysMsg = sponsorPrice > 0
           ? `💡 방장님이 AI 자율 요금을 ${sponsorPrice}코인으로 변경했습니다.`
           : `🎉 방장님이 AI 자율 요금을 '무료'로 변경했습니다! 마음껏 이용해 보세요! 🥳`;
         useChatStore.getState().sendMessage(
-          roomId, 
-          sysMsg, 
+          roomId,
+          sysMsg,
           'SYSTEM', 'SYSTEM', 'SYSTEM'
         );
       }
@@ -624,8 +624,8 @@ export default function Home() {
         // 방금 요금 메시지를 보냈을 수 있으므로 충돌 회피를 위해 약간 지연
         setTimeout(() => {
           useChatStore.getState().sendMessage(
-            roomId, 
-            sysMsg, 
+            roomId,
+            sysMsg,
             'SYSTEM', 'SYSTEM', 'SYSTEM'
           );
         }, 100);
@@ -852,7 +852,7 @@ export default function Home() {
     const sortedOnlineUsers = [...activeRoomUsers].sort();
     const delegateUserId = isHostOnline ? null : sortedOnlineUsers[0];
     const amIDelegate = delegateUserId === user?.id;
-    
+
     const isGuestInSponsorRoom = !amISponsor && currentRoom.sponsorMode;
 
     // 현재 방 멤버 중, 내 클라이언트(이 브라우저)가 연산을 책임질 AI 발라내기
@@ -984,7 +984,7 @@ export default function Home() {
                 // [신규] 스폰서 방이고, 현재 이 AI 모델이 실제 진짜 방장의 소유가 아니라 (게스트 소유)라면 과금 처리!
                 // (대리 연산자가 연산하더라도 수익은 무조건 원래 방장에게 귀속)
                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
-                
+
                 // 결제를 진행하는 프로미스 체인
                 let paymentPromise = Promise.resolve();
                 if (isSponsorMode && aiUser.aiOwnerId !== sponsorMember?.userId && hostSponsorPrice > 0) {
@@ -1005,9 +1005,9 @@ export default function Home() {
                     // 결제 성공 시 당사자(방장 본인이거나 게스트 본인일 때만) 내 지갑 렌더링 최신화
                     if (sponsorMember?.userId === user?.id || aiUser.aiOwnerId === user?.id) {
                       // 내(현재 브라우저 사용자)가 돈을 내는 측(게스트)인지, 받는 측(방장)인지 판별
-                      const isSpender = aiUser.aiOwnerId === user?.id; 
-                      const isEarner = sponsorMember?.userId === user?.id; 
-                      
+                      const isSpender = aiUser.aiOwnerId === user?.id;
+                      const isEarner = sponsorMember?.userId === user?.id;
+
                       if (isSpender) {
                         db.walletTx?.add({
                           type: 'SPEND',
@@ -1019,7 +1019,7 @@ export default function Home() {
                           description: `AI(${aiUser.username}) 방장 스폰서망 연산`
                         }).catch(console.error);
                       }
-                      
+
                       if (isEarner) {
                         db.walletTx?.add({
                           type: 'EARN',
@@ -1034,9 +1034,9 @@ export default function Home() {
 
                       fetch(`/api/users/profile?userId=${user?.id}`)
                         .then(r => r.json())
-                        .then(d => { 
+                        .then(d => {
                           if (d.user) {
-                            setUser(d.user); 
+                            setUser(d.user);
                             setMyProfile(d.user);
                           }
                         })
@@ -1051,7 +1051,7 @@ export default function Home() {
                     headers: { 'Content-Type': 'application/json' },
                     signal: controller.signal,
                     body: JSON.stringify({
-                      provider: isSponsorMode 
+                      provider: isSponsorMode
                         ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
                         : realProvider,
                       byokKey: realByokKey,
@@ -1077,15 +1077,15 @@ export default function Home() {
               .then((resData: any) => {
                 if (resData && resData.reply) {
                   const aiReplyContent = resData.reply;
-                  
+
                   // 스폰서가 결제해준 AI 메시지라면 팩트체크와 동일한 💸 결제 꼬리표 배지 부착!
                   let extraAnalysis = undefined;
                   const hostSponsorPrice = currentRoom.sponsorPrice || 0;
-                  
+
                   // 임시 방장이 화면을 보고 있든 아니든, 찐방장의 AI가 아니라면 무조건 뱃지를 달고 결제 내역을 띄움
                   if (isSponsorMode && aiUser.aiOwnerId !== sponsorMember?.userId && hostSponsorPrice > 0) {
                     const aiModelStr = currentRoom.sponsorModel || 'AI 모델';
-                    
+
                     extraAnalysis = {
                       category: 'AI_GENERATED', // AI 배지로 항상 출력되도록 설정
                       confidence: 1,
@@ -1225,7 +1225,7 @@ export default function Home() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content: '', imageUrl: data.url, provider: selectedProvider, byokKey, aiModel: selectedAiModel })
               });
-              
+
               let aiAnalysisResult;
               if (aiRes.ok) {
                 aiAnalysisResult = await aiRes.json();
@@ -1233,7 +1233,7 @@ export default function Home() {
                 console.error('Image fact-check APi error');
                 aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 서버 에러 (크레딧 부족 또는 용량 초과)' };
               }
-              
+
               await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
               if (socket) {
                 socket.emit('update_message', {
@@ -2077,7 +2077,7 @@ export default function Home() {
   const sponsorPrice = currentRoom?.sponsorPrice || 0;
   const hasSetupAi = Object.values(apiKeys).some(key => key.trim().length > 0);
   const showAiWarning = !isSponsorLocked && !hasSetupAi;
-  
+
   const lockedModelId = currentRoom?.sponsorModel || 'openai';
   let foundModelName = '스폰서 제공';
   for (const provider of Object.keys(aiModels)) {
@@ -2109,12 +2109,6 @@ export default function Home() {
             </button>
           </div>
           <div className="flex-1 w-full bg-black overflow-hidden relative">
-            <button 
-              onClick={() => setActiveGameUrl(null)}
-              className="absolute top-4 right-4 z-[1000] bg-black/60 hover:bg-red-500/80 text-white p-2 rounded-full backdrop-blur-md transition-colors"
-            >
-               <X size={24} />
-            </button>
             <iframe src={activeGameUrl} className="w-full h-full border-none" allowFullScreen />
           </div>
         </div>
@@ -2403,7 +2397,7 @@ export default function Home() {
                         {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
                       </button>
                     )}
-                    
+
                     {showAiWarning ? (
                       <button
                         onClick={(e) => {
@@ -2973,8 +2967,8 @@ export default function Home() {
                     <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                     <div className="absolute bottom-0 left-0 w-32 h-32 bg-secondary/5 rounded-full blur-2xl -ml-5 -mb-5 pointer-events-none"></div>
                     <h2 className="text-on-surface-variant font-bold tracking-wider text-[13px] z-10 flex items-center gap-2">
-                       <Wallet size={16} className="text-primary" />
-                       TOTAL BALANCE
+                      <Wallet size={16} className="text-primary" />
+                      TOTAL BALANCE
                     </h2>
                     <div className="z-10 flex items-baseline gap-2">
                       <span className="text-5xl font-black text-on-surface drop-shadow-sm font-mono tracking-tighter">
@@ -3004,12 +2998,12 @@ export default function Home() {
 
               {/* 게임(Games) 탭 */}
               {currentTab === 'aistudio' && (
-                  <div className="flex-1 w-full h-full flex flex-col relative bg-black">
-                    <iframe src="https://aistudio.alonics.com/" className="absolute inset-0 w-full h-full border-none" allowFullScreen />
-                  </div>
-                )}
-  
-                {currentTab === 'games' && (
+                <div className="flex-1 w-full h-full flex flex-col relative bg-black">
+                  <iframe src="https://aistudio.alonics.com/" className="absolute inset-0 w-full h-full border-none" allowFullScreen />
+                </div>
+              )}
+
+              {currentTab === 'games' && (
                 <div className="p-4 space-y-4">
                   <div className="flex items-center gap-2 mb-4">
                     <Gamepad2 className="text-secondary" size={24} />
@@ -3151,7 +3145,7 @@ export default function Home() {
                               const hostId = currentRoom?.members?.find((m: any) => m.isHost)?.userId;
                               let sign = '-';
                               let color = 'text-yellow-500 bg-yellow-900/40';
-                              
+
                               if (user?.id === hostId) {
                                 sign = '+'; // 방장이면 돈을 딴것이니 + 처리
                                 color = 'text-emerald-400 bg-emerald-900/40';
@@ -3162,7 +3156,7 @@ export default function Home() {
                                 sign = '-'; // 제3자에겐 보낸 사람이 돈 썼다는 의미로 - 처리 (흑백)
                                 color = 'text-zinc-400 bg-zinc-800/60';
                               }
-                              
+
                               return (
                                 <span className={`ml-1 text-[11px] font-bold px-1.5 py-0.5 rounded-sm drop-shadow-sm tracking-tighter ${color}`}>
                                   💸{sign}{msg.aiAnalysis.sponsorPrice}

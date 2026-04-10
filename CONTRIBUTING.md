@@ -55,7 +55,7 @@ Alopop relies on Next.js, Prisma SQLite (for dev), and a custom Express WebSocke
 2. **Database Schema:** `npx prisma db push`
 3. **Run Dev Server:** `npm run dev` (This spins up `server.js` matching port 3099 by default).
 
-## ✨ Code Style & Architecture
+## 🌠 Code Style & Architecture
 - **State Management:** We heavily rely on `Zustand`. Avoid deeply nested React contexts where unnecessary.
 - **Local-first Data:** We use `Dexie.js` for optimistic UI. Ensure your data mutations hit Dexie before hitting Socket.io.
 - **Fact-checking Engine:** Any changes to the core prompt should be thoroughly tested to avoid regressions in AI hallucinations.
