@@ -33,6 +33,8 @@ const GAME_LIST = [
   { id: '17', name: '메시 보드', port: 3017, icon: '🚦' },
   { id: '18', name: 'L자 별자리', port: 3018, icon: '🌠' },
   { id: '19', name: '블록 드롭', port: 3019, icon: '⏬' },
+  { id: '20', name: '쓰리 컬러 볼스', port: 3020, icon: '🎱' },
+  { id: '21', name: '세임 엔즈', port: 3021, icon: '🎯' },
 ];
 
 function WalletTransactionList() {
