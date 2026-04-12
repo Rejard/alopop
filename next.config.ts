@@ -3,11 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   async rewrites() {
-    const gameRewrites = Array.from({ length: 21 }, (_, i) => ({
-      source: `/game-proxy/${3001 + i}/:path*`,
-      destination: `http://127.0.0.1:${3001 + i}/:path*`
-    }));
-
     return [
       {
         source: '/add',
@@ -17,7 +12,10 @@ const nextConfig: NextConfig = {
         source: '/game-proxy/3090/:path*',
         destination: 'http://127.0.0.1:3090/:path*'
       },
-      ...gameRewrites
+      {
+        source: '/game-proxy/3000/:path*',
+        destination: 'http://127.0.0.1:3000/:path*'
+      }
     ];
   },
 };

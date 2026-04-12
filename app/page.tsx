@@ -13,29 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 // AI MODELS loaded dynamically
 
-const GAME_LIST = [
-  { id: '1', name: '애니팡', port: 3001, icon: '🐾' },
-  { id: '2', name: '블록 블라스트', port: 3002, icon: '🟪' },
-  { id: '3', name: '버블 슈터', port: 3008, icon: '🫧' },
-  { id: '4', name: '캔디 크러시', port: 3003, icon: '🍬' },
-  { id: '5', name: '헥사 게임', port: 3004, icon: '💠' },
-  { id: '6', name: '뿌요뿌요', port: 3005, icon: '🎮' },
-  { id: '7', name: '테트리스', port: 3006, icon: '🧱' },
-  { id: '8', name: '솔리테어 워드', port: 3009, icon: '🃏' },
-  { id: '9', name: '2048', port: 3007, icon: '🔢' },
-  { id: '10', name: '버블 매치 러시', port: 3010, icon: '🔵' },
-  { id: '11', name: '빌드 어 브릿지', port: 3011, icon: '🌉' },
-  { id: '12', name: '스쿱 타워', port: 3012, icon: '🍦' },
-  { id: '13', name: '케이크 스태커', port: 3013, icon: '🍰' },
-  { id: '14', name: '프룻 닌자', port: 3014, icon: '🍉' },
-  { id: '15', name: '사과 10 게임', port: 3015, icon: '🍎' },
-  { id: '16', name: '컬러 타일', port: 3016, icon: '🟦' },
-  { id: '17', name: '메시 보드', port: 3017, icon: '🚦' },
-  { id: '18', name: 'L자 별자리', port: 3018, icon: '🌠' },
-  { id: '19', name: '블록 드롭', port: 3019, icon: '⏬' },
-  { id: '20', name: '쓰리 컬러 볼스', port: 3020, icon: '🎱' },
-  { id: '21', name: '세임 엔즈', port: 3021, icon: '🎯' },
-];
+// GAME_LIST is dynamically fetched from game portal
 
 function WalletTransactionList() {
   const [activeTxTab, setActiveTxTab] = useState<'USAGE' | 'TRANSFER'>('USAGE');
@@ -102,6 +80,18 @@ export default function Home() {
 
   const [inputText, setInputText] = useState('');
   const [rooms, setRooms] = useState<any[]>([]);
+  const [gameList, setGameList] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/game-proxy/3000/api/games')
+      .then(res => res.json())
+      .then(data => {
+        if(Array.isArray(data)) {
+          setGameList(data);
+        }
+      })
+      .catch(err => console.error("Failed to fetch game list:", err));
+  }, []);
   const [friends, setFriends] = useState<any[]>([]); // 개별 친구 목록 (상태: ACTIVE 대상)
   const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
   const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
@@ -3014,11 +3004,12 @@ export default function Home() {
                     </h2>
                   </div>
                   <div className="space-y-2.5">
-                    {GAME_LIST.map((game) => (
+                    {gameList.length === 0 && <div className="text-zinc-500 text-sm text-center py-4">게임 목록을 불러오는 중입니다...</div>}
+                    {gameList.map((game) => (
                       <div
                         key={game.id}
                         onClick={() => {
-                          setActiveGameUrl(`/game-proxy/${game.port}/index.html`);
+                          setActiveGameUrl(`/game-proxy/3000/games/${game.path}/index.html`);
                         }}
                         className="relative flex items-center justify-between p-4 bg-[#150f1d] hover:bg-[#1f172b] border border-white/5 rounded-[16px] transition-colors cursor-pointer group shadow-sm"
                       >
@@ -3028,7 +3019,9 @@ export default function Home() {
                           </div>
                           <div className="flex flex-col min-w-0 pr-2">
                             <span className="font-extrabold text-[16px] text-white truncate">{game.name}</span>
-                            <span className="text-[11px] text-zinc-400 truncate mt-0.5 font-mono">Port: {game.port}</span>
+                            <span className="text-[11px] text-zinc-400 truncate mt-0.5 font-mono flex items-center gap-1">
+                              <Crown size={10} className="text-yellow-500" /> 서버 최고 점수: 0
+                            </span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0 pl-2">
