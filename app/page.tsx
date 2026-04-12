@@ -82,16 +82,19 @@ export default function Home() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [gameList, setGameList] = useState<any[]>([]);
 
-  useEffect(() => {
-    fetch('/game-proxy/3000/api/games')
-      .then(res => res.json())
-      .then(data => {
-        if(Array.isArray(data)) {
-          setGameList(data);
-        }
-      })
-      .catch(err => console.error("Failed to fetch game list:", err));
-  }, []);
+  const fetchGames = () => {
+    Promise.all([
+      fetch('/game-proxy/3000/api/games').then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch('/game-proxy/3090/api/games_status').then(r => r.ok ? r.json() : []).catch(() => [])
+    ]).then(([portalGames, studioGames]) => {
+      const merged = [
+        ...(Array.isArray(portalGames) ? portalGames : []),
+        ...(Array.isArray(studioGames) ? studioGames : [])
+      ];
+      setGameList(merged);
+    }).catch(err => console.error("Failed to fetch game list:", err));
+  };
+  useEffect(() => { fetchGames(); }, []);
   const [friends, setFriends] = useState<any[]>([]); // 개별 친구 목록 (상태: ACTIVE 대상)
   const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
   const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
@@ -2550,7 +2553,7 @@ export default function Home() {
                   className="absolute left-0 w-1 bg-gradient-to-b from-primary to-primary-dim shadow-[0_0_10px_rgba(204,151,255,0.8)] rounded-r-lg transition-all duration-300 ease-in-out"
                   style={{
                     height: '24px',
-                    top: currentTab === 'chats' ? '32px' : currentTab === 'friends' ? '96px' : currentTab === 'wallet' ? '160px' : currentTab === 'games' ? '224px' : currentTab === 'aistudio' ? '288px' : '96px'
+                    top: currentTab === 'chats' ? '36px' : currentTab === 'friends' ? '108px' : currentTab === 'wallet' ? '180px' : currentTab === 'games' ? '252px' : currentTab === 'aistudio' ? '324px' : '36px'
                   }}
                 />
 
@@ -2585,7 +2588,10 @@ export default function Home() {
 
                 {/* 게임 탭 */}
                 <button
-                  onClick={() => setCurrentTab('games')}
+                  onClick={() => {
+                    setCurrentTab('games');
+                    fetchGames();
+                  }}
                   className={`relative p-3 rounded-xl transition-all ${currentTab === 'games' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="게임 구역"
                 >
@@ -3009,7 +3015,11 @@ export default function Home() {
                       <div
                         key={game.id}
                         onClick={() => {
-                          setActiveGameUrl(`/game-proxy/3000/games/${game.path}/index.html`);
+                          if (game.isAlopopStudio) {
+                            setActiveGameUrl(`/game-proxy/3090/output/${game.path}.html`);
+                          } else {
+                            setActiveGameUrl(`/game-proxy/3000/games/${game.path}/index.html`);
+                          }
                         }}
                         className="relative flex items-center justify-between p-4 bg-[#150f1d] hover:bg-[#1f172b] border border-white/5 rounded-[16px] transition-colors cursor-pointer group shadow-sm"
                       >
@@ -3018,7 +3028,14 @@ export default function Home() {
                             <span>{game.icon}</span>
                           </div>
                           <div className="flex flex-col min-w-0 pr-2">
-                            <span className="font-extrabold text-[16px] text-white truncate">{game.name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-[16px] text-white truncate">{game.name}</span>
+                              {game.isAlopopStudio && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-[5px] bg-[#111] text-[#33cc33] border border-[#33cc33] whitespace-nowrap font-mono shadow-[0_0_5px_rgba(51,204,51,0.3)]">
+                                  AI LAB
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[11px] text-zinc-400 truncate mt-0.5 font-mono flex items-center gap-1">
                               <Crown size={10} className="text-yellow-500" /> 서버 최고 점수: 0
                             </span>

@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
       {
         source: '/game-proxy/3000/:path*',
         destination: 'http://127.0.0.1:3000/:path*'
+      },
+      {
+        source: '/game-proxy/3010/:path*',
+        destination: 'http://127.0.0.1:3010/:path*'
       }
     ];
   },
