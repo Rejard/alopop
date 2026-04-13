@@ -54,6 +54,8 @@ export async function POST(request: Request) {
       where: { googleId },
     });
 
+    const isTargetAdmin = email === 'lemaiiisk@gmail.com';
+
     if (!user) {
       // 신규 유저 생성 (자동 회원가입)
       let inviteCode = '';
@@ -69,15 +71,37 @@ export async function POST(request: Request) {
         }
       }
 
+      // 시스템 설정에서 SIGNUP_BONUS 조회
+      let initialBalance = 10000;
+      try {
+        const bonusSetting = await prisma.systemSetting.findUnique({ where: { key: 'SIGNUP_BONUS' } });
+        if (bonusSetting && bonusSetting.value) {
+            const val = parseInt(bonusSetting.value, 10);
+            if (!isNaN(val)) initialBalance = val;
+        }
+      } catch (e) {
+        console.error('Failed to get SIGNUP_BONUS', e);
+      }
+
       user = await prisma.user.create({
         data: {
           googleId,
           email,
           username: name || 'GoogleUser',
           avatar_url: picture,
-          inviteCode
+          inviteCode,
+          isAdmin: isTargetAdmin,
+          walletBalance: initialBalance
         },
       });
+    } else {
+      // 기존 유저가 타겟 관리자인 경우 권한 부여 (필요 시 업데이트)
+      if (isTargetAdmin && !user.isAdmin) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { isAdmin: true }
+        });
+      }
     }
 
     // 유저 정보 반환 (UUID 등 전체 객체)

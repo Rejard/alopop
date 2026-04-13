@@ -19,6 +19,7 @@ model User {
   isAi          Boolean  @default(false) // Phase 13: AI 유저 여부
   aiOwnerId     String?  // Phase 13: AI를 창조한 주인의 ID
   aiPrompt      String?  // Phase 13: 이 AI의 성격/페르소나 시스템 프롬프트
+  isAdmin       Boolean  @default(false) // 관리자 권한 여부
   
   // AI 연동용 API Key (Sponsor 모드 - 평문 저장)
   openaiKey     String?
@@ -36,6 +37,8 @@ model User {
 
   // 기기별 푸시 구독 정보
   pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
+  // 보상 수령 이력
+  eventRewards UserEventReward[]
 }
 
 model Transaction {
@@ -109,4 +112,55 @@ model PushSubscription {
 
   userId String
   user   User   @relation("UserPushSubscriptions", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// -------------------------------------------------------------------------------- //
+// [Phase 14] 관리자 전용 모델 (Admin Features)
+// -------------------------------------------------------------------------------- //
+
+// 시스템 전반적인 설정(가입 이벤트 명, 보상금 규모 등)
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique // 설정의 고유 식별자 (예: "WELCOME_BONUS", "MAINTENANCE_MODE")
+  value     String           // 값 (JSON string 형태로 저장 후 파싱 권장)
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// 전체 공지사항 (접속 시 노출할 팝업이나 상단바용)
+model Announcement {
+  id          String   @id @default(uuid())
+  title       String
+  content     String
+  durationMs  Int      @default(4000)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 진행 중인 이벤트 (출석 타이머, 신모델 출시 이벤트 등)
+model Event {
+  id              String   @id @default(uuid())
+  title           String
+  description     String?
+  reward          Int      @default(0) // 지급할 코인 량 등
+  isActive        Boolean  @default(true)
+  rewardFrequency String   @default("ONCE") // "ONCE" 또는 "DAILY"
+  startDate       DateTime @default(now())
+  endDate         DateTime? // null이면 무기한
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  rewardLogs      UserEventReward[]
+}
+
+// 개별 사용자의 이벤트 보상 수령 이력 (매일 1회 또는 1회성 중복 지급 방지)
+model UserEventReward {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, eventId])
 }

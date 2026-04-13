@@ -21,6 +21,7 @@ export async function GET(request: Request) {
         avatar_url: true,
         statusMessage: true,
         walletBalance: true,
+        isAdmin: true,
         openaiKey: true,
         geminiKey: true,
         anthropicKey: true,

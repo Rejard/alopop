@@ -74,7 +74,7 @@ function WalletTransactionList() {
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; username: string; inviteCode?: string; walletBalance?: number } | null>(null);
-  const [myProfile, setMyProfile] = useState<{ id: string; username: string; avatar_url: string | null; statusMessage: string | null; inviteCode?: string; walletBalance: number } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ id: string; username: string; avatar_url: string | null; statusMessage: string | null; inviteCode?: string; walletBalance: number; isAdmin?: boolean } | null>(null);
 
   const [isGuideOpen, setIsGuideOpen] = useState(false); // 가이드 모달 오픈 상태
 
@@ -86,12 +86,29 @@ export default function Home() {
     Promise.all([
       fetch('/game-proxy/3000/api/games').then(r => r.ok ? r.json() : []).catch(() => []),
       fetch('/game-proxy/3090/api/games_status').then(r => r.ok ? r.json() : []).catch(() => [])
-    ]).then(([portalGames, studioGames]) => {
+    ]).then(async ([portalGames, studioGames]) => {
       const merged = [
         ...(Array.isArray(portalGames) ? portalGames : []),
         ...(Array.isArray(studioGames) ? studioGames : [])
       ];
-      setGameList(merged);
+      // 각 게임의 서버 최고 점수를 병렬로 fetch
+      const withScores = await Promise.all(
+        merged.map(async (game: any) => {
+          if (game.isAlopopStudio) return { ...game, serverBest: null };
+          try {
+          const res = await fetch(`/game-proxy/3000/api/highscore/${game.path}?_=${Date.now()}`, {
+              cache: 'no-store'
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const best = data.highScore ?? data.score ?? 0;
+              return { ...game, serverBest: best };
+            }
+          } catch (_) {}
+          return { ...game, serverBest: 0 };
+        })
+      );
+      setGameList(withScores);
     }).catch(err => console.error("Failed to fetch game list:", err));
   };
   useEffect(() => { fetchGames(); }, []);
@@ -115,8 +132,50 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
 
-  // 친구 목록 컨텍스트 메뉴 상태
+  // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
+  useEffect(() => {
+    if (activeGameUrl === null) {
+      fetchGames();
+    }
+  }, [activeGameUrl]);
+
+  // 친구 대상 목록 컨텍스트 메뉴 상태
   const [activeFriendMenuId, setActiveFriendMenuId] = useState<string | null>(null);
+
+  // 글로벌 서버 공지사항 상태 및 롤링 인덱스
+  const [serverAnnouncements, setServerAnnouncements] = useState<any[]>([]);
+  const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
+
+  // 공지사항 상세 모달 상태 및 스와이프 제어
+  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<any>(null);
+  const announceTouchStartXRef = useRef(0);
+  const announceTouchEndXRef = useRef(0);
+  const [globalAnnounceDurationMs, setGlobalAnnounceDurationMs] = useState(4000);
+
+  // 공지사항 자동 롤링 (글로벌 설정된 시간 주기)
+  useEffect(() => {
+    if (serverAnnouncements.length <= 1) return;
+    
+    const timeout = setTimeout(() => {
+      setCurrentAnnounceIndex(prev => (prev + 1) % serverAnnouncements.length);
+    }, globalAnnounceDurationMs);
+    
+    return () => clearTimeout(timeout);
+  }, [serverAnnouncements, currentAnnounceIndex]);
+
+  // 글로벌 서버 이벤트 상태 및 롤링 인덱스
+  const [activeEvents, setActiveEvents] = useState<any[]>([]);
+  const [currentEventIndex, setCurrentEventIndex] = useState(0);
+
+  // 이벤트 롤링
+  useEffect(() => {
+    if (activeEvents.length <= 1) return;
+    const timeout = setTimeout(() => {
+      setCurrentEventIndex(prev => (prev + 1) % activeEvents.length);
+    }, globalAnnounceDurationMs);
+    return () => clearTimeout(timeout);
+  }, [activeEvents, currentEventIndex, globalAnnounceDurationMs]);
 
   // 친구 추가 모달 관련 상태
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
@@ -374,10 +433,13 @@ export default function Home() {
     // 내 방 목록, 친구 목록, 내 프로필 가져오기 함수
     const loadData = async (userId: string) => {
       try {
-        const [roomsRes, friendsRes, profileRes] = await Promise.all([
+        const [roomsRes, friendsRes, profileRes, annRes, sysRes, eventsRes] = await Promise.all([
           fetch(`/api/rooms/user?userId=${userId}`),
-          fetch(`/api/friends?userId=${userId}`), // 내 친구 목록 API 호출
-          fetch(`/api/users/profile?userId=${userId}`) // 내 프로필/상태 조회
+          fetch(`/api/friends?userId=${userId}`), 
+          fetch(`/api/users/profile?userId=${userId}`),
+          fetch(`/api/admin/announcements`),
+          fetch(`/api/admin/system`),
+          fetch(`/api/admin/events`)
         ]);
         if (roomsRes.ok) {
           const roomsData = await roomsRes.json();
@@ -412,6 +474,48 @@ export default function Home() {
           setMyProfile(profileData.user);
           setStatusMsgValue(profileData.user.statusMessage || '');
         }
+        if (annRes.ok) {
+          const annData = await annRes.json();
+          setServerAnnouncements(Array.isArray(annData) ? annData.filter(a => a.isActive) : []);
+        }
+        if (sysRes.ok) {
+          const sysData = await sysRes.json();
+          if (Array.isArray(sysData)) {
+            const durSetting = sysData.find((s: any) => s.key === 'ANNOUNCE_DURATION_SEC');
+            if (durSetting && !isNaN(parseInt(durSetting.value))) {
+               setGlobalAnnounceDurationMs(parseInt(durSetting.value) * 1000);
+            }
+          }
+        }
+        if (eventsRes.ok) {
+          const eventsData = await eventsRes.json();
+          setActiveEvents(Array.isArray(eventsData) ? eventsData.filter(e => e.isActive) : []);
+        }
+
+        // 로그인 직후 자동 이벤트 보상 청구 로직 실행
+        fetch('/api/user/events/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.claimedEvents && data.claimedEvents.length > 0) {
+            let total = 0;
+            let eventNames: string[] = [];
+            data.claimedEvents.forEach((e: any) => {
+              total += e.reward;
+              eventNames.push(e.title);
+            });
+            alert(`🎉 축하합니다! 이벤트 접속 보상 도착!\n\n지급된 코인: ${total} 코인\n지급 사유: ${eventNames.join(', ')}`);
+            // 잔액 업데이트 리프레시
+            fetch(`/api/users/profile?userId=${userId}`)
+              .then(pr => pr.json())
+              .then(pData => setMyProfile(pData.user));
+          }
+        })
+        .catch(err => console.error('Failed to claim events', err));
+
       } catch (e) {
         console.error('Failed to load initial data', e);
       }
@@ -2446,6 +2550,28 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* 활성 이벤트 인디케이터 (중앙 여백 flex-1 활용) */}
+          {activeEvents.length > 0 && !currentRoom && (
+            <div className="flex-1 mx-2 sm:mx-4 flex items-center h-full pointer-events-auto min-w-[100px]">
+              <div className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 flex items-center gap-1.5 sm:gap-2 overflow-hidden shadow-sm hover:bg-surface-container-high transition-colors max-w-md w-full border-dashed border-emerald-500/30">
+                <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold shrink-0 whitespace-nowrap">
+                  🎁 이벤트
+                </span>
+                <div className="flex-1 flex flex-col justify-center animate-in fade-in slide-in-from-bottom-2 duration-500 overflow-hidden" key={`event-${currentEventIndex}`}>
+                  <div className="text-[10px] sm:text-xs font-bold text-zinc-300 truncate cursor-help" title={activeEvents[currentEventIndex]?.description}>
+                    {activeEvents[currentEventIndex]?.title}
+                  </div>
+                  <div className="text-[8px] sm:text-[9px] text-emerald-500/70 truncate font-semibold">
+                    {activeEvents[currentEventIndex]?.startDate ? `${new Date(activeEvents[currentEventIndex].startDate).getMonth() + 1}/${new Date(activeEvents[currentEventIndex].startDate).getDate()}` : '상시'} 
+                    {' ~ '} 
+                    {activeEvents[currentEventIndex]?.endDate ? `${new Date(activeEvents[currentEventIndex].endDate).getMonth() + 1}/${new Date(activeEvents[currentEventIndex].endDate).getDate()}` : '종료 시까지'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
             {currentRoom && (
               <>
@@ -2606,6 +2732,17 @@ export default function Home() {
                 >
                   <Building2 size={24} strokeWidth={currentTab === 'aistudio' ? 2.5 : 2} />
                 </button>
+
+                {/* 👑 관리자 대시보드 버튼 (isAdmin이 true일 때만 렌더링) */}
+                {myProfile?.isAdmin && (
+                  <button
+                    onClick={() => router.push('/admin')}
+                    className="relative p-3 rounded-xl transition-all text-yellow-500 hover:text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/20"
+                    title="👑 관리자 전용 대시보드"
+                  >
+                    <Crown size={24} strokeWidth={2} className="drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+                  </button>
+                )}
               </div>
 
               {/* LNB 하단: 알림, 디지털 번호판 및 내 프로필 */}
@@ -2654,6 +2791,63 @@ export default function Home() {
 
             {/* 오른쪽 주 컨텐츠 영역 */}
             <div className="flex-1 flex flex-col bg-surface-container overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+
+              {/* 글로벌 서버 점검 및 공지사항 배너 (항상 렌더링, 롤링) */}
+              {serverAnnouncements.length > 0 && (
+                <div className="flex flex-col border-b border-primary/20 shrink-0 overflow-hidden relative" style={{ minHeight: '48px' }}>
+                  {(() => {
+                    const ann = serverAnnouncements[currentAnnounceIndex];
+                    if (!ann) return null;
+                    return (
+                      <div 
+                        key={ann.id} 
+                        className="absolute inset-0 bg-gradient-to-r from-primary/10 via-surface-container-high to-secondary/10 pt-2 pb-3 px-4 flex items-center gap-3 animate-in fade-in zoom-in-95 duration-500 cursor-pointer hover:bg-surface-variant/30 transition-colors"
+                        onTouchStart={(e) => {
+                          announceTouchStartXRef.current = e.touches[0].clientX;
+                        }}
+                        onTouchEnd={(e) => {
+                          announceTouchEndXRef.current = e.changedTouches[0].clientX;
+                          const diff = announceTouchStartXRef.current - announceTouchEndXRef.current;
+                          if (diff > 50) {
+                            setCurrentAnnounceIndex(prev => (prev + 1) % serverAnnouncements.length);
+                          } else if (diff < -50) {
+                            setCurrentAnnounceIndex(prev => (prev - 1 + serverAnnouncements.length) % serverAnnouncements.length);
+                          }
+                        }}
+                        onClick={() => {
+                          if (Math.abs(announceTouchStartXRef.current - announceTouchEndXRef.current) < 10) {
+                            setSelectedAnnouncement(ann);
+                            setIsAnnouncementModalOpen(true);
+                          }
+                        }}
+                      >
+                        <span className="bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded shadow-sm text-[10px] font-bold shrink-0">공지</span>
+                        <div className="text-sm font-semibold text-zinc-100 flex-1 truncate flex items-center gap-2">
+                          <span className="text-secondary/90 tracking-tight truncate">{ann.title}</span>
+                          {ann.content && (
+                            <span className="text-xs text-on-surface-variant font-normal whitespace-pre-wrap truncate hidden sm:block pointer-events-none">- {ann.content}</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-zinc-500 bg-surface-variant/30 px-1.5 py-0.5 rounded-full shrink-0 relative z-10">
+                           {currentAnnounceIndex + 1} / {serverAnnouncements.length}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 하단 페이지네이션 닷 (Dots) */}
+                  {serverAnnouncements.length > 1 && (
+                    <div className="absolute bottom-1 left-0 right-0 flex justify-center items-center gap-1.5 pointer-events-none">
+                      {serverAnnouncements.map((_, idx) => (
+                        <div 
+                           key={idx} 
+                           className={`h-1.5 rounded-full shadow-sm transition-all duration-300 ${idx === currentAnnounceIndex ? 'w-4 bg-primary' : 'w-1.5 bg-zinc-600/60'}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {currentTab === 'chats' && (
                 <div className="p-4 space-y-5">
@@ -3037,7 +3231,7 @@ export default function Home() {
                               )}
                             </div>
                             <span className="text-[11px] text-zinc-400 truncate mt-0.5 font-mono flex items-center gap-1">
-                              <Crown size={10} className="text-yellow-500" /> 서버 최고 점수: 0
+                              <Crown size={10} className="text-yellow-500" /> 서버 최고 점수: {game.serverBest != null ? game.serverBest.toLocaleString() : '-'}
                             </span>
                           </div>
                         </div>
@@ -3897,6 +4091,30 @@ export default function Home() {
             </div>
           </div>
         )}
+
+      {/* 공지사항 상세 모달 */}
+      {isAnnouncementModalOpen && selectedAnnouncement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsAnnouncementModalOpen(false)}>
+          <div className="w-full max-w-sm bg-surface-container rounded-[24px] shadow-2xl border border-outline-variant/20 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center gap-2 mb-4">
+                 <span className="bg-primary/20 text-primary border border-primary/30 px-2.5 py-1 rounded shadow-sm text-xs font-bold">공지사항</span>
+              </div>
+              <h2 className="text-lg font-bold text-white mb-4 leading-tight">{selectedAnnouncement.title}</h2>
+              <div className="text-sm text-on-surface-variant whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto custom-scrollbar pr-2 mb-6">
+                {selectedAnnouncement.content || "상세 내용이 없습니다."}
+              </div>
+              
+              <button 
+                onClick={() => setIsAnnouncementModalOpen(false)}
+                className="w-full py-3 bg-surface-variant/50 hover:bg-surface-variant rounded-xl font-bold text-white transition-colors"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       </div>
     </div>

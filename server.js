@@ -365,6 +365,33 @@ app.prepare().then(() => {
     });
   });
 
+  // ---- 게임 점수 API 프록시 (game-portal:3000 으로 포워딩) ----
+  // next.config.ts의 rewrite는 빌드 후에만 적용되므로, Express 레벨에서 직접 처리
+  expressApp.use('/api/highscore', express.json(), (req, res) => {
+    const http = require('http');
+    const qs = req.query && Object.keys(req.query).length > 0
+      ? '?' + new URLSearchParams(req.query).toString()
+      : '';
+    const options = {
+      hostname: '127.0.0.1',
+      port: 3000,
+      path: `/api/highscore${req.path === '/' ? '' : req.path}${qs}`,
+      method: req.method,
+      headers: { 'Content-Type': 'application/json' }
+    };
+    const proxyReq = http.request(options, (proxyRes) => {
+      res.status(proxyRes.statusCode);
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 'no-store');
+      proxyRes.pipe(res);
+    });
+    proxyReq.on('error', () => res.status(502).json({ error: 'game-portal unavailable' }));
+    if (req.method === 'POST' && req.body) {
+      proxyReq.write(JSON.stringify(req.body));
+    }
+    proxyReq.end();
+  });
+
   // Next.js 로우레벨 라우팅 처리 (Express v5 이상 호환)
   expressApp.use((req, res) => {
     return handle(req, res);
