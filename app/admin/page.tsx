@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShieldAlert, ArrowLeft, Send, Save, CreditCard, ChevronLeft, Gift } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Send, Save, CreditCard, ChevronLeft, Gift, Trash2, Power, PowerOff } from 'lucide-react';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -119,6 +119,33 @@ export default function AdminDashboard() {
     } catch (e) {
       alert('오류가 발생했습니다.');
     }
+  };
+
+
+  const handleToggleAnnouncement = async (announcementId: string) => {
+    try {
+      const res = await fetch('/api/admin/announcements', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, announcementId, action: 'TOGGLE_ACTIVE' })
+      });
+      if (res.ok) loadAnnouncements();
+    } catch(e) { }
+  };
+
+  const handleDeleteAnnouncement = async (announcementId: string) => {
+    if (!confirm('정말로 이 공지사항을 삭제하시겠습니까? (삭제 시 복구 불가)')) return;
+    try {
+      const res = await fetch(`/api/admin/announcements?userId=${user.id}&announcementId=${announcementId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        alert('공지사항이 삭제되었습니다.');
+        loadAnnouncements();
+      } else {
+        alert('삭제 실패');
+      }
+    } catch(e) { }
   };
 
   const handleCreateEvent = async () => {
@@ -278,7 +305,25 @@ export default function AdminDashboard() {
                 <div key={ann.id} className="bg-surface-container border border-outline-variant/20 rounded-xl p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-lg">{ann.title}</span>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold tracking-tight ${ann.isActive ? 'bg-primary/20 text-primary' : 'bg-surface-variant text-on-surface-variant'}`}>{ann.isActive ? '활성' : '비활성'}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-bold tracking-tight ${ann.isActive ? 'bg-primary/20 text-primary' : 'bg-surface-variant text-on-surface-variant'}`}>
+                        {ann.isActive ? '활성' : '비활성'}
+                      </span>
+                      <button 
+                        onClick={() => handleToggleAnnouncement(ann.id)}
+                        className="p-1.5 rounded-md hover:bg-surface-variant text-on-surface-variant transition-colors"
+                        title={ann.isActive ? '비활성화' : '활성화'}
+                      >
+                        {ann.isActive ? <PowerOff size={14} /> : <Power size={14} />}
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteAnnouncement(ann.id)}
+                        className="p-1.5 rounded-md hover:bg-red-500/20 text-red-500 transition-colors"
+                        title="삭제"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-sm text-on-surface-variant whitespace-pre-wrap leading-relaxed">{ann.content}</p>
                   <p className="text-xs text-on-surface-variant mt-4 opacity-50">{new Date(ann.createdAt).toLocaleString()}</p>
