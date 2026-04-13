@@ -57,7 +57,13 @@ Why should the room host bear the entire cost of API inference? Alopop introduce
    2) **Pay-Per-Use Sponsored Mode**: Guests automatically pay a host-defined 'coin toll' to use the host's AI engine.
    3) **P2P Coin Pooling**: Participants crowdfund tokens via split-billing to collectively fund heavy multimodality requests.
 
-### 4. Local-First Architecture & Optimistic UI ⚡
+### 4. Admin-Sponsored "Free AI Events" & CMS Dashboard 👑
+
+Alopop breaks the entry barrier for new users lacking API keys by empowering administrators with a full-fledged robust **CMS (Content Management System) Dashboard**.
+- **Frictionless Onboarding (Free AI Events)**: Admins can dynamically issue "Free AI Events" for specific models (e.g. Gemini 1.5 Pro). The system automatically detects new users without BYOK setup, grants them a Daily Quota of free AI inferences paid by the Admin's configured vault, and displays interactive `[EVENT]` purple UI badges. Once exhausted, it cleanly falls back to BYOK requirements.
+- **Real-Time Global Announcements**: Admins can instantly broadcast global server announcements using the real-time Dashboard, managing the toggling and lifecycle of system-wide popups effortlessly.
+
+### 5. Local-First Architecture & Optimistic UI ⚡
 
 ![Local First PWA](./public/feature-offline.svg)
 
