@@ -24,6 +24,26 @@ export default function AdminDashboard() {
   const [eventStartDate, setEventStartDate] = useState('');
   const [eventEndDate, setEventEndDate] = useState('');
 
+  // Free AI Event specific states
+  const [eventType, setEventType] = useState<'REWARD' | 'FREE_AI'>('REWARD');
+  const [aiProvider, setAiProvider] = useState('gemini');
+  const [aiModel, setAiModel] = useState('');
+  const [eventApiKey, setEventApiKey] = useState('');
+  const [dailyLimit, setDailyLimit] = useState<number | ''>(30);
+  const [aiModelsData, setAiModelsData] = useState<Record<string, any[]>>({});
+
+  useEffect(() => {
+    fetch('/api/models')
+      .then(res => res.json())
+      .then(data => {
+        setAiModelsData(data);
+        if (data.gemini && data.gemini.length > 0) {
+          setAiModel(data.gemini[0].id);
+        }
+      })
+      .catch(err => console.error("모델 로드 실패", err));
+  }, []);
+
   // System States
   const [systemSettings, setSystemSettings] = useState<any[]>([]);
   const [dirtySettings, setDirtySettings] = useState<Record<string, string>>({});
@@ -111,8 +131,13 @@ export default function AdminDashboard() {
           userId: user.id, 
           title: eventTitle, 
           description: eventDesc, 
+          eventType,
           rewardCoins: Number(eventReward),
           rewardFrequency: eventFreq,
+          aiProvider: eventType === 'FREE_AI' ? aiProvider : null,
+          aiModel: eventType === 'FREE_AI' ? aiModel : null,
+          eventApiKey: eventType === 'FREE_AI' ? eventApiKey : null,
+          dailyLimit: eventType === 'FREE_AI' ? (dailyLimit === '' ? 0 : Number(dailyLimit)) : null,
           startsAt: eventStartDate || null,
           endsAt: eventEndDate || null
         })
@@ -120,6 +145,7 @@ export default function AdminDashboard() {
       if (res.ok) {
         setEventTitle(''); setEventDesc(''); setEventReward(0);
         setEventFreq('ONCE'); setEventStartDate(''); setEventEndDate('');
+        setEventType('REWARD'); setEventApiKey(''); setDailyLimit(30);
         
         const startEl = document.getElementById('event-start-date') as HTMLInputElement | null;
         if (startEl) startEl.value = '';
@@ -269,9 +295,34 @@ export default function AdminDashboard() {
 
         {activeTab === 'EVENT' && (
           <div className="max-w-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-2xl font-bold mb-6 text-tertiary drop-shadow-sm flex items-center gap-2"><Gift size={28}/> 이벤트 생성 및 보상</h2>
+            <h2 className="text-2xl font-bold mb-6 text-tertiary drop-shadow-sm flex items-center gap-2"><Gift size={28}/> 이벤트 관리</h2>
             
             <div className="bg-surface-container-low border border-tertiary/30 rounded-2xl p-6 shadow-sm mb-10">
+              <div className="flex gap-4 mb-6 pb-4 border-b border-outline-variant/20">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="eventType" 
+                    value="REWARD" 
+                    checked={eventType === 'REWARD'} 
+                    onChange={() => setEventType('REWARD')} 
+                    className="accent-tertiary w-4 h-4 cursor-pointer"
+                  />
+                  <span className="font-bold text-sm">코인 지급 이벤트</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="eventType" 
+                    value="FREE_AI" 
+                    checked={eventType === 'FREE_AI'} 
+                    onChange={() => setEventType('FREE_AI')} 
+                    className="accent-emerald-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span className="font-bold text-sm text-emerald-400">무료 AI 개방 이벤트</span>
+                </label>
+              </div>
+
               <input 
                 type="text" 
                 placeholder="이벤트 제목 (예: 가을 맞이 깜짝 보상!)" 
@@ -304,27 +355,87 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-4">
-                <span className="text-sm font-bold text-on-surface-variant flex-shrink-0 sm:w-24">지급 방식:</span>
-                <select 
-                  value={eventFreq} 
-                  onChange={e => setEventFreq(e.target.value)} 
-                  className="bg-dark-bg border border-outline-variant/40 rounded px-2 py-1.5 outline-none font-bold focus:border-tertiary text-sm"
-                >
-                  <option value="ONCE">1회 접속 시 1번 지급</option>
-                  <option value="DAILY">매일 최초 접속 시 지급</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-4 mb-6">
-                <span className="text-sm font-bold text-on-surface-variant flex-shrink-0 w-24">지급 코인:</span>
-                <input 
-                    type="number" 
-                    value={eventReward} 
-                    onChange={e => setEventReward(Number(e.target.value))} 
-                    className="bg-dark-bg border border-outline-variant/40 rounded px-3 py-1.5 w-32 outline-none font-mono focus:border-tertiary"
-                />
-              </div>
+              {eventType === 'REWARD' ? (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-4">
+                    <span className="text-sm font-bold text-on-surface-variant flex-shrink-0 sm:w-24">지급 방식:</span>
+                    <select 
+                      value={eventFreq} 
+                      onChange={e => setEventFreq(e.target.value)} 
+                      className="bg-dark-bg border border-outline-variant/40 rounded px-2 py-1.5 outline-none font-bold focus:border-tertiary text-sm"
+                    >
+                      <option value="ONCE">1회 접속 시 1번 지급</option>
+                      <option value="DAILY">매일 최초 접속 시 지급</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-4 mb-6">
+                    <span className="text-sm font-bold text-on-surface-variant flex-shrink-0 w-24">지급 코인:</span>
+                    <input 
+                        type="number" 
+                        value={eventReward} 
+                        onChange={e => setEventReward(Number(e.target.value))} 
+                        className="bg-dark-bg border border-outline-variant/40 rounded px-3 py-1.5 w-32 outline-none font-mono focus:border-tertiary"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 mb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-4">
+                    <span className="text-sm font-bold text-emerald-400 flex-shrink-0 sm:w-24">제공 업체:</span>
+                    <select 
+                      value={aiProvider} 
+                      onChange={e => {
+                        setAiProvider(e.target.value);
+                        if (aiModelsData[e.target.value] && aiModelsData[e.target.value].length > 0) {
+                          setAiModel(aiModelsData[e.target.value][0].id);
+                        } else {
+                          setAiModel('');
+                        }
+                      }} 
+                      className="bg-dark-bg border border-emerald-500/40 rounded px-2 py-1.5 outline-none font-bold focus:border-emerald-400 text-sm min-w-[150px]"
+                    >
+                      <option value="openai">OpenAI</option>
+                      <option value="gemini">Gemini</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-4">
+                    <span className="text-sm font-bold text-emerald-400 flex-shrink-0 sm:w-24">대화 모델:</span>
+                    <select 
+                      value={aiModel} 
+                      onChange={e => setAiModel(e.target.value)} 
+                      className="bg-dark-bg border border-emerald-500/40 rounded px-2 py-1.5 outline-none font-bold focus:border-emerald-400 text-sm min-w-[200px]"
+                    >
+                      {(aiModelsData[aiProvider] || []).map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-4">
+                    <span className="text-sm font-bold text-emerald-400 flex-shrink-0 sm:w-24">API 키 등록:</span>
+                    <input 
+                      type="password"
+                      placeholder="sk-..." 
+                      value={eventApiKey}
+                      onChange={e => setEventApiKey(e.target.value)}
+                      className="bg-dark-bg border border-emerald-500/40 rounded px-3 py-1.5 flex-1 outline-none font-mono focus:border-emerald-400 text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                    <span className="text-sm font-bold text-emerald-400 flex-shrink-0 sm:w-24">일일 횟수:</span>
+                    <div className="flex items-center gap-2">
+                      <input 
+                        type="number" 
+                        value={dailyLimit} 
+                        onChange={e => setDailyLimit(e.target.value === '' ? '' : Number(e.target.value))} 
+                        placeholder="제한 없음(0)"
+                        className="bg-dark-bg border border-emerald-500/40 rounded px-3 py-1.5 w-24 outline-none font-mono focus:border-emerald-400 text-sm"
+                      />
+                      <span className="text-xs text-zinc-400">회 (0 입력 시 무제한)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end mt-4">
                 <button 
                     onClick={handleCreateEvent}
@@ -347,12 +458,26 @@ export default function AdminDashboard() {
                         <p className="text-xs text-on-surface-variant mb-4">{ev.description}</p>
                         
                         <div className="flex items-center justify-between border-t border-outline-variant/10 pt-4">
-                            <div className="text-sm font-bold flex items-center gap-4 group">
-                                <span className="bg-surface-variant text-on-surface px-2 py-1 rounded text-xs">
-                                  {ev.rewardFrequency === 'DAILY' ? '매일 지급' : '1회 지급'}
-                                </span>
-                                <div>보상 코인: <span className="text-tertiary font-mono group-hover:scale-110 transition-transform inline-block">{ev.reward.toLocaleString()}</span> C</div>
-                            </div>
+                            {ev.eventType === 'FREE_AI' ? (
+                                <div className="text-sm font-bold flex flex-wrap items-center gap-2 sm:gap-4 group">
+                                    <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded text-xs">
+                                      AI 무료
+                                    </span>
+                                    <div className="text-emerald-500 font-mono">
+                                      {ev.aiProvider} ({ev.aiModel})
+                                    </div>
+                                    <div className="text-xs text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded-full">
+                                      한도: {!ev.dailyLimit ? '무제한' : `일 ${ev.dailyLimit}회`}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-sm font-bold flex flex-wrap items-center gap-2 sm:gap-4 group">
+                                    <span className="bg-surface-variant text-on-surface px-2 py-1 rounded text-xs">
+                                      {ev.rewardFrequency === 'DAILY' ? '매일 지급' : '1회 지급'}
+                                    </span>
+                                    <div>보상 코인: <span className="text-tertiary font-mono group-hover:scale-110 transition-transform inline-block">{(ev.reward || 0).toLocaleString()}</span> C</div>
+                                </div>
+                            )}
                             <button 
                                 onClick={()=>handleDeleteEvent(ev.id)}
                                 className="bg-error/10 text-error hover:bg-error/20 font-bold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1"

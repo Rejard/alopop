@@ -166,6 +166,7 @@ export default function Home() {
 
   // 글로벌 서버 이벤트 상태 및 롤링 인덱스
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
+  const [exhaustedFreeEvents, setExhaustedFreeEvents] = useState<Record<string, boolean>>({});
   const [currentEventIndex, setCurrentEventIndex] = useState(0);
 
   // 이벤트 롤링
@@ -274,7 +275,7 @@ export default function Home() {
   };
 
   const chatStore = useChatStore();
-  const { setIsOpen: setSettingsOpen, selectedProvider, apiKeys, loadSettings } = useSettingsStore();
+  const { setIsOpen: setSettingsOpen, selectedProvider, apiKeys, loadSettings, setSelectedProvider } = useSettingsStore();
 
   // 앱 최초 로드 시 로컬 스토리지의 AI 설정을 스토어에 즉시 동기화
   useEffect(() => {
@@ -1145,19 +1146,25 @@ export default function Home() {
                 }
 
                 return paymentPromise.then(() => {
+                  const friendProvider = isSponsorMode
+                    ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
+                    : realProvider;
+                  const friendAiModel = isSponsorMode ? currentRoom.sponsorModel : localStorage.getItem('alo_ai_model') || '';
+                  const friendUseFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === friendProvider && e.aiModel === friendAiModel && !exhaustedFreeEvents[e.id]);
+
                   return fetch('/api/chat/friend', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     signal: controller.signal,
                     body: JSON.stringify({
-                      provider: isSponsorMode
-                        ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
-                        : realProvider,
+                      provider: friendProvider,
                       byokKey: realByokKey,
-                      aiModel: isSponsorMode ? currentRoom.sponsorModel : localStorage.getItem('alo_ai_model') || '',
+                      aiModel: friendAiModel,
                       systemPrompt: aiUser.aiPrompt,
                       isDelegate: amIDelegate,
                       sponsorId: sponsorMember?.userId,
+                      userId: user?.id,
+                      useFreeEvent: friendUseFreeEvent,
                       content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
                     })
                   });
@@ -1260,6 +1267,30 @@ export default function Home() {
 
   }, [messages, currentRoom?.id, user?.id]);
 
+// --- [스폰서 UI Lock 상태 계산] ---
+  const isSponsorLocked = currentRoom && currentRoom.sponsorMode;
+  const sponsorPrice = currentRoom?.sponsorPrice || 0;
+  const hasSetupAi = Object.values(apiKeys).some(key => key.trim().length > 0);
+  const freeAiEvents = activeEvents.filter(e => e.eventType === 'FREE_AI' && !exhaustedFreeEvents[e.id]);
+  const isFreeAiActiveForModel = !!freeAiEvents.find(e => e.aiProvider === selectedProvider && e.aiModel === selectedAiModel);
+  const hasSetupForProvider = !!apiKeys[selectedProvider]?.trim();
+  const showAiWarning = !isSponsorLocked && !hasSetupForProvider && !isFreeAiActiveForModel;
+
+  // Auto fallback to free AI event if API keys are missing
+  useEffect(() => {
+    const hasAnySetup = Object.values(apiKeys).some(key => key.trim().length > 0);
+    if (!hasAnySetup && freeAiEvents.length > 0) {
+      if (!isFreeAiActiveForModel && !isSponsorLocked) {
+        const targetEvent = freeAiEvents[0];
+        setSelectedProvider(targetEvent.aiProvider);
+        localStorage.setItem('alo_ai_provider', targetEvent.aiProvider);
+        setSelectedAiModel(targetEvent.aiModel);
+        localStorage.setItem('alo_ai_model', targetEvent.aiModel);
+      }
+    }
+  }, [apiKeys, freeAiEvents.length, selectedProvider, selectedAiModel, isSponsorLocked]);
+
+  
   if (!user) {
     return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-500">Loading...</div>;
   }
@@ -1320,9 +1351,18 @@ export default function Home() {
               const keysStr = localStorage.getItem('alo_api_keys');
               const apiKeys = keysStr ? JSON.parse(keysStr) : {};
               const byokKey = apiKeys[selectedProvider];
+              const useFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === selectedProvider && e.aiModel === selectedAiModel && !exhaustedFreeEvents[e.id]);
               const aiRes = await fetch('/api/chat', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: '', imageUrl: data.url, provider: selectedProvider, byokKey, aiModel: selectedAiModel })
+                body: JSON.stringify({ 
+                  content: '', 
+                  imageUrl: data.url, 
+                  provider: selectedProvider, 
+                  byokKey, 
+                  aiModel: selectedAiModel,
+                  userId: user?.id,
+                  useFreeEvent: useFreeEvent
+                })
               });
 
               let aiAnalysisResult;
@@ -1478,6 +1518,7 @@ export default function Home() {
           setTotalAiUsageCount(newUsed);
           db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error(e));
 
+          const useFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === selectedProvider && e.aiModel === selectedAiModel && !exhaustedFreeEvents[e.id]);
           const aiRes = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1485,7 +1526,9 @@ export default function Home() {
               content: messageContent,
               provider: selectedProvider,
               byokKey,
-              aiModel: selectedAiModel
+              aiModel: selectedAiModel,
+              userId: user?.id,
+              useFreeEvent: useFreeEvent
             })
           });
 
@@ -2171,12 +2214,6 @@ export default function Home() {
     }
   };
 
-  // --- [스폰서 UI Lock 상태 계산] ---
-  const isSponsorLocked = currentRoom && currentRoom.sponsorMode;
-  const sponsorPrice = currentRoom?.sponsorPrice || 0;
-  const hasSetupAi = Object.values(apiKeys).some(key => key.trim().length > 0);
-  const showAiWarning = !isSponsorLocked && !hasSetupAi;
-
   const lockedModelId = currentRoom?.sponsorModel || 'openai';
   let foundModelName = '스폰서 제공';
   for (const provider of Object.keys(aiModels)) {
@@ -2489,10 +2526,13 @@ export default function Home() {
                         }}
                         className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border shrink-0 shadow-sm ${isSponsorLocked
                           ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
-                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                          : isFreeAiActiveForModel
+                            ? 'bg-purple-600/20 text-purple-400 shadow-[0_0_8px_rgba(147,51,234,0.3)] border-purple-500/30 hover:bg-purple-600/30'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
                           }`}
                       >
                         <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                        {isFreeAiActiveForModel && !isSponsorLocked && <span className="bg-emerald-500 text-dark-bg px-1 rounded text-[8px] font-bold tracking-tighter">EVENT</span>}
                         {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
                       </button>
                     )}
@@ -2594,10 +2634,13 @@ export default function Home() {
                       }}
                       className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-colors border shrink-0 shadow-sm ${isSponsorLocked
                         ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
-                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                        : isFreeAiActiveForModel
+                          ? 'bg-purple-600/20 text-purple-400 shadow-[0_0_8px_rgba(147,51,234,0.3)] border-purple-500/30 hover:bg-purple-600/30'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
                         }`}
                     >
                       <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                      {isFreeAiActiveForModel && !isSponsorLocked && <span className="bg-emerald-500 text-dark-bg px-1.5 py-0.5 rounded text-[9px] font-bold tracking-tighter">EVENT</span>}
                       {!isSponsorLocked && <ChevronDown size={12} className="opacity-70" />}
                     </button>
                   )}

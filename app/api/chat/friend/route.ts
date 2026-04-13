@@ -9,7 +9,7 @@ import { decryptKey } from '@/lib/crypto';
 
 export async function POST(request: Request) {
   try {
-    const { provider, byokKey, aiModel, systemPrompt, content, isDelegate, sponsorId } = await request.json();
+    const { provider, byokKey, aiModel, systemPrompt, content, isDelegate, sponsorId, userId, useFreeEvent } = await request.json();
 
     if (!content) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
@@ -18,8 +18,49 @@ export async function POST(request: Request) {
     const currentProvider = provider || 'openai';
     let apiKey = byokKey;
 
+    if (useFreeEvent && userId) {
+      const now = new Date();
+      const activeEvent = await prisma.event.findFirst({
+        where: {
+          eventType: 'FREE_AI',
+          isActive: true,
+          aiProvider: currentProvider,
+          aiModel: aiModel,
+          startDate: { lte: now },
+          OR: [{ endDate: null }, { endDate: { gte: now } }]
+        }
+      });
+
+      if (activeEvent && activeEvent.eventApiKey) {
+        let isAllowed = true;
+        if (activeEvent.dailyLimit && activeEvent.dailyLimit > 0) {
+           const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+           const usage = await prisma.userEventUsage.findUnique({
+             where: { userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate } }
+           });
+           
+           if (usage && usage.count >= activeEvent.dailyLimit) {
+              isAllowed = false;
+           } else {
+              await prisma.userEventUsage.upsert({
+                where: { userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate } },
+                update: { count: { increment: 1 } },
+                create: { userId, eventId: activeEvent.id, usageDate: kstDate, count: 1 }
+              });
+           }
+        }
+        
+        if (isAllowed) {
+          apiKey = activeEvent.eventApiKey;
+        } else {
+          return NextResponse.json({ error: '오늘 할당된 무료 AI 사용 횟수를 초과했습니다.' }, { status: 429 });
+        }
+      }
+    }
+
     // [신규] 고스트 임시 방장이 대리 연산 중인 경우, 방장의 API Key를 DB에서 꺼내 씁니다.
-    if (isDelegate && sponsorId) {
+    // (단, 무료 이벤트 키가 존재할 경우 아래 로직보다 무료 키가 우선 적용되어 있습니다! apiKey가 채워져 있다면 유지)
+    if (!apiKey && isDelegate && sponsorId) {
       const hostUser = await prisma.user.findUnique({ where: { id: sponsorId } });
       if (hostUser) {
         let rawEncryptedKey = null;

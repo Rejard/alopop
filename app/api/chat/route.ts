@@ -10,13 +10,61 @@ import path from 'path';
 
 export async function POST(request: Request) {
   try {
-    const { content, imageUrl, byokKey, provider, aiModel } = await request.json();
+    const { content, imageUrl, byokKey, provider, aiModel, userId, useFreeEvent } = await request.json();
 
     if (!content && !imageUrl) {
       return NextResponse.json({ error: 'Content or image is required' }, { status: 400 });
     }
 
     let apiKey = byokKey;
+    
+    // [FREE AI EVENT LOGIC]
+    if (useFreeEvent && userId) {
+      const now = new Date();
+      // Find active free event for this model
+      const { prisma } = await import('@/lib/prisma');
+      const activeEvent = await prisma.event.findFirst({
+        where: {
+          eventType: 'FREE_AI',
+          isActive: true,
+          aiModel: aiModel,
+          startDate: { lte: now },
+          OR: [{ endDate: null }, { endDate: { gte: now } }]
+        }
+      });
+
+      if (activeEvent && activeEvent.eventApiKey) {
+        let isAllowed = true;
+        
+        // Check daily limit if set > 0
+        if (activeEvent.dailyLimit && activeEvent.dailyLimit > 0) {
+           const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+           const usage = await prisma.userEventUsage.findUnique({
+             where: {
+               userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate }
+             }
+           });
+           
+           if (usage && usage.count >= activeEvent.dailyLimit) {
+              isAllowed = false;
+           } else {
+              // Increment or create usage
+              await prisma.userEventUsage.upsert({
+                where: { userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate } },
+                update: { count: { increment: 1 } },
+                create: { userId, eventId: activeEvent.id, usageDate: kstDate, count: 1 }
+              });
+           }
+        }
+        
+        if (isAllowed) {
+          apiKey = activeEvent.eventApiKey;
+        } else {
+          return NextResponse.json({ error: '오늘 할당된 무료 AI 사용 횟수를 초과했습니다.' }, { status: 429 });
+        }
+      }
+    }
+
     if (!apiKey) {
       if (provider === 'gemini' || provider === 'gemini-free') apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
       else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;

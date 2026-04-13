@@ -39,6 +39,7 @@ model User {
   pushSubscriptions PushSubscription[] @relation("UserPushSubscriptions")
   // 보상 수령 이력
   eventRewards UserEventReward[]
+  eventUsages  UserEventUsage[]
 }
 
 model Transaction {
@@ -144,13 +145,22 @@ model Event {
   description     String?
   reward          Int      @default(0) // 지급할 코인 량 등
   isActive        Boolean  @default(true)
+  eventType       String   @default("REWARD") // "REWARD" 또는 "FREE_AI"
   rewardFrequency String   @default("ONCE") // "ONCE" 또는 "DAILY"
+  
+  // 무료 AI 이벤트 전용 필드
+  aiProvider      String?
+  aiModel         String?
+  eventApiKey     String?  
+  dailyLimit      Int?     @default(30) // 일일 사용 한도 (0이면 무제한)
+
   startDate       DateTime @default(now())
   endDate         DateTime? // null이면 무기한
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   rewardLogs      UserEventReward[]
+  usageLogs       UserEventUsage[]
 }
 
 // 개별 사용자의 이벤트 보상 수령 이력 (매일 1회 또는 1회성 중복 지급 방지)
@@ -162,5 +172,20 @@ model UserEventReward {
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
 
+  @@index([userId, eventId])
+}
+
+// 무료 AI 이벤트 일일 사용량 추적 모델
+model UserEventUsage {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  usageDate   String   // "YYYY-MM-DD" 형태의 (KST 기준) 날짜
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, eventId, usageDate])
   @@index([userId, eventId])
 }

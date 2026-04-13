@@ -8,7 +8,12 @@ export async function GET(request: Request) {
     const events = await prisma.event.findMany({
       orderBy: { createdAt: 'desc' }
     });
-    return NextResponse.json(events);
+    // Remove sensitive API keys before returning to client
+    const safeEvents = events.map(e => {
+      const { eventApiKey, ...safeEvent } = e;
+      return safeEvent;
+    });
+    return NextResponse.json(safeEvents);
   } catch (error) {
     console.error('Fetch events error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -17,7 +22,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { userId, title, description, rewardCoins, startsAt, endsAt, rewardFrequency } = await request.json();
+    const { 
+      userId, title, description, rewardCoins, startsAt, endsAt, rewardFrequency,
+      eventType, aiProvider, aiModel, eventApiKey, dailyLimit 
+    } = await request.json();
 
     if (!userId || !title) {
       return NextResponse.json({ error: 'userId and title are required' }, { status: 400 });
@@ -32,8 +40,13 @@ export async function POST(request: Request) {
       data: {
         title,
         description,
+        eventType: eventType || "REWARD",
         reward: rewardCoins || 0,
         rewardFrequency: rewardFrequency || "ONCE",
+        aiProvider: aiProvider || null,
+        aiModel: aiModel || null,
+        eventApiKey: eventApiKey || null,
+        dailyLimit: dailyLimit !== undefined ? dailyLimit : null,
         startDate: startsAt ? new Date(startsAt) : new Date(),
         endDate: endsAt ? new Date(endsAt) : null,
       }
