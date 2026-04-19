@@ -3688,6 +3688,9 @@ export default function Home() {
                       )}
                       <span className="text-xs text-zinc-500">참가자 {currentRoom.members?.length}명</span>
                     </div>
+                    <div className="bg-white p-3 rounded-xl mb-4">
+                      {/* Mistakenly added QR block removed */}
+                    </div>
                     <button onClick={() => setIsDrawerOpen(false)} className="text-zinc-400 hover:text-white p-1 shrink-0">
                       <X size={18} />
                     </button>
@@ -3955,7 +3958,7 @@ export default function Home() {
                   <div className="bg-zinc-950 p-5 rounded-2xl border border-zinc-800 text-center flex flex-col items-center">
                     <span className="text-sm text-zinc-400 mb-4 font-medium">나의 QR 코드 & 초대 코드</span>
                     <div className="bg-white p-3 rounded-xl mb-4">
-                      <QRCode value={myProfile?.inviteCode || user?.inviteCode || user?.id || ''} size={120} level="M" />
+                      <QRCode value={`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3099'}/invite/${myProfile?.inviteCode || user?.inviteCode || user?.id || ''}`} size={120} level="M" />
                     </div>
 
                     <div className="w-full flex items-center gap-2 bg-zinc-900 p-2 rounded-lg border border-zinc-800">
