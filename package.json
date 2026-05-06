@@ -33,7 +33,6 @@
     "socket.io-client": "^4.8.3",
     "uuid": "^13.0.0",
     "web-push": "^3.6.7",
-    "zod": "^4.3.6",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
@@ -47,6 +46,7 @@
     "eslint-config-next": "16.1.6",
     "prisma": "^5.22.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "5.9.3",
+    "zod": "^4.4.3"
   }
 }

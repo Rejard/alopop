@@ -1,0 +1,5 @@
+﻿# CRITICAL AI RULES
+1. NEVER delete, move, or rename the "node_modules" directory under any circumstances.
+2. DO NOT run "npm install", "npm ci", or any package uninstallation/installation commands without the user's explicit permission.
+3. If you encounter a dependency issue or a module is not found, STOP the task and report the error to the user immediately. Do not attempt to fix it by cleaning the environment or running npm commands.
+4. Focus only on editing source code files (js, css, html, etc.).
