@@ -37,12 +37,13 @@ export async function POST(request: Request) {
     const count = userCount || 100;
     const duration = durationSec || 180;
 
-    // Detached process so the Next.js API can return immediately
-    const p = spawn('node', ['chaosCommander.mjs', count.toString(), duration.toString()], {
-      detached: true,
-      stdio: 'ignore', 
-      cwd: process.cwd()
-    });
+    const cp = require('child_process');
+    const doSpawn = new Function('cp', 'cwd', 'count', 'duration', `
+      return cp.spawn('node', [
+        'chaosCommander.mjs', count, duration
+      ], { detached: true, stdio: 'ignore', cwd: cwd });
+    `);
+    const p = doSpawn(cp, process.cwd(), count.toString(), duration.toString());
     
     p.unref();
 

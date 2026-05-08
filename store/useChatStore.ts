@@ -119,6 +119,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       window.dispatchEvent(new CustomEvent('typing_end', { detail: payload }));
     });
 
+    socket.on('vibe_coding_start', (payload) => {
+      window.dispatchEvent(new CustomEvent('vibe_coding_start', { detail: payload }));
+    });
+
+    socket.on('vibe_coding_end', (payload) => {
+      window.dispatchEvent(new CustomEvent('vibe_coding_end', { detail: payload }));
+    });
+
     socket.on('sponsor_settings_changed', (payload) => {
       window.dispatchEvent(new CustomEvent('sponsor_settings_changed', { detail: payload }));
     });

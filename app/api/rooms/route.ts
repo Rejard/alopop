@@ -17,6 +17,7 @@ const roomInclude = {
           username: true,
           avatar_url: true,
           isAi: true,
+          isAgent: true,
           aiOwnerId: true,
           aiPrompt: true,
         },

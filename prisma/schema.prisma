@@ -20,6 +20,9 @@ model User {
   aiOwnerId     String?  // Phase 13: AI를 창조한 주인의 ID
   aiPrompt      String?  // Phase 13: 이 AI의 성격/페르소나 시스템 프롬프트
   isAdmin       Boolean  @default(false) // 관리자 권한 여부
+  isAgent       Boolean  @default(false) // 원격 PC 제어 에이전트 여부
+  agentToken    String?  @unique // 원격 PC 클라이언트 접속용 토큰
+  agentPath     String?  // 원격 PC 작업 기준 경로 (파워쉘 cd 명령용)
   
   // AI 연동용 API Key (Sponsor 모드 - 평문 저장)
   openaiKey     String?

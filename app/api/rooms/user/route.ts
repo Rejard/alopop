@@ -55,6 +55,7 @@ export async function GET(request: Request) {
                 username: true,
                 avatar_url: true,
                 isAi: true,
+                isAgent: true,
                 aiOwnerId: true,
                 aiPrompt: true,
               },

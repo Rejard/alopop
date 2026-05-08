@@ -20,6 +20,9 @@ export async function GET(request: Request) {
             username: true,
             avatar_url: true,
             isAi: true,
+            isAgent: true,
+            agentToken: true,
+            agentPath: true,
             aiOwnerId: true,
             aiPrompt: true,
             statusMessage: true
@@ -99,7 +102,7 @@ export async function POST(request: Request) {
         },
         include: {
           friend: {
-            select: { id: true, username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true }
+            select: { id: true, username: true, avatar_url: true, isAi: true, isAgent: true, agentToken: true, agentPath: true, aiOwnerId: true, aiPrompt: true }
           }
         }
       });

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { generateText } from 'ai';
+import { generateText, tool } from 'ai';
+import { z } from 'zod';
 import { search } from 'duck-duck-scrape';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
       roomId,
       aiUserId,
       aiOwnerId,
+      isAutonomous,
     } = await request.json();
 
     if (!content) {
@@ -107,7 +109,25 @@ export async function POST(request: Request) {
       if (limitExceededFlag) {
         return NextResponse.json({ error: 'Daily free AI usage limit exceeded.' }, { status: 429 });
       }
+      if (isAutonomous) {
+        return NextResponse.json({ error: 'API 키 또는 Vibe 코딩을 지원하는 유료 모델이 설정되어 있지 않아 자율 작업을 시작할 수 없습니다.' }, { status: 400 });
+      }
       return NextResponse.json({ error: `No API Key provided for ${provider || 'openai'}` }, { status: 400 });
+    }
+
+    if (isAutonomous) {
+      const cp = require('child_process');
+      const doSpawn = new Function('cp', 'cwd', 'userId', 'roomId', 'aiUserId', 'provider', 'apiKey', 'model', 'content', `
+        return cp.spawn('node', [
+          cwd + '/scripts/vibeCoder.mjs',
+          userId, roomId, aiUserId, provider, apiKey, model, content
+        ], { detached: true, stdio: 'ignore', cwd: cwd });
+      `);
+      
+      const p = doSpawn(cp, process.cwd(), currentUser.id, roomId || '', aiUserId || '', currentProvider, apiKey, finalAiModel, content);
+      p.unref();
+
+      return NextResponse.json({ reply: '🚀 바이브 코딩 작업을 백그라운드에서 시작했습니다. 완료되면 전체 알림을 드립니다!' });
     }
 
     let modelInstance;
@@ -149,12 +169,92 @@ export async function POST(request: Request) {
       }
     }
 
-    const { text } = await generateText({
-      model: modelInstance,
-      system: (systemPrompt || '당신은 알로팝 메신저의 친근한 AI 친구입니다.') + injectedSearchContext,
-      prompt: content,
-      temperature: 0.85,
-    });
+    let agentTools: any = undefined;
+    let isAgent = false;
+    let agentPath = '';
+    if (aiUserId) {
+      const targetUser = await prisma.user.findUnique({
+        where: { id: aiUserId },
+        select: { isAgent: true, agentPath: true }
+      });
+      isAgent = !!targetUser?.isAgent;
+      agentPath = targetUser?.agentPath || process.cwd();
+    }
+
+    if (isAgent) {
+      const executeAgentTool = async (toolName: string, args: any) => {
+        const port = process.env.PORT || 3099;
+        const res = await fetch(`http://127.0.0.1:${port}/api/internal/agent-tool`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ aiUserId, tool: toolName, args })
+        });
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+        return res.json();
+      };
+
+      agentTools = {
+        run_command: tool({
+          description: 'Run a shell command on the remote PC. Provide the command string.',
+          parameters: z.object({ command: z.string() }),
+          // @ts-ignore
+          execute: async (args: any) => executeAgentTool('run_command', args)
+        }),
+        read_file: tool({
+          description: 'Read the contents of a file on the remote PC. Provide the absolute or relative path.',
+          parameters: z.object({ path: z.string() }),
+          // @ts-ignore
+          execute: async (args: any) => executeAgentTool('read_file', args)
+        }),
+        write_file: tool({
+          description: 'Write contents to a file on the remote PC. Provide the path and content.',
+          parameters: z.object({ path: z.string(), content: z.string() }),
+          // @ts-ignore
+          execute: async (args: any) => executeAgentTool('write_file', args)
+        }),
+        list_dir: tool({
+          description: 'List contents of a directory on the remote PC.',
+          parameters: z.object({ path: z.string() }),
+          // @ts-ignore
+          execute: async (args: any) => executeAgentTool('list_dir', args)
+        })
+      };
+    }
+
+    const finalSystemPrompt = isAgent
+      ? (systemPrompt || '당신은 사용자의 원격 PC를 제어하고 관리하는 전문적인 개발자용 OpenAlo 에이전트 터미널입니다.') + injectedSearchContext + 
+        `\n\n[기본 작업 디렉토리] ${agentPath}\n- 사용자가 파일이나 폴더를 탐색/수정할 때 반드시 이 디렉토리를 절대 경로로 명시하여 작업하세요.` +
+        '\n\n[중요] 사용자가 시스템 정보, 폴더 리스트, 터미널 명령어 등을 요청하면 반드시 제공된 도구를 사용하여 실제 PC의 상태를 확인한 후 대답하세요.\n[규칙 1] 도구 실행 결과는 절대로 대충 요약하거나 생략하지 마세요. 개발자가 꼼꼼히 확인할 수 있도록 터미널 출력 결과나 파일 리스트를 가감 없이 원본 그대로 모두 출력하세요.\n[규칙 2] 친근한 말투나 불필요한 대화(~있네요, ~할까요? 등)는 절대 사용하지 말고, 시스템 콘솔처럼 건조하고 정확하게 결괏값만 전문적으로 전달하세요.'
+      : (systemPrompt || '당신은 알로팝 메신저의 친근한 AI 친구입니다.') + injectedSearchContext;
+
+    let finalReply = '';
+    const messages: any[] = [{ role: 'user', content }];
+
+    for (let step = 0; step < (isAgent ? 3 : 1); step++) {
+      const { text, toolCalls, toolResults } = await generateText({
+        model: modelInstance,
+        system: finalSystemPrompt,
+        messages: messages,
+        temperature: 0.85,
+        tools: isAgent ? agentTools : undefined,
+      });
+
+      if (toolResults && toolResults.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: text || '도구를 실행했습니다.',
+        });
+        messages.push({
+          role: 'user',
+          content: `[시스템 알림: 도구 실행 결과]\n${JSON.stringify(toolResults, null, 2)}\n\n이 도구 실행 결과를 바탕으로 이전 질문에 대한 답변을 제공하세요.`
+        });
+      } else {
+        finalReply = text;
+        break;
+      }
+    }
 
     if (sponsorRoom?.sponsorMode && sponsorId && aiUserId && aiOwnerId && aiOwnerId !== sponsorId && sponsorRoom.sponsorPrice > 0) {
       const aiUser = await prisma.user.findUnique({
@@ -195,7 +295,7 @@ export async function POST(request: Request) {
 
     await recordFreeEventUsage(currentUser.id, resolvedAi.freeEvent);
 
-    return NextResponse.json({ reply: text });
+    return NextResponse.json({ reply: finalReply || '응답을 생성할 수 없습니다.' });
   } catch (error) {
     console.error('AI chat friend error:', error);
     const messageStr = error instanceof Error ? error.message : '';

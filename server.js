@@ -9,6 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { loadEnvConfig } = require('@next/env');
 
+
 loadEnvConfig(process.cwd());
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -222,7 +223,24 @@ app.prepare().then(() => {
   // Socket.io 통신 처리
   io.on('connection', async (socket) => {
     console.log('🔗 User connected:', socket.id);
-    const socketUser = await getAuthenticatedSocketUser(socket);
+    let socketUser = null;
+    const agentToken = socket.handshake.auth?.token;
+    
+    if (agentToken) {
+      socketUser = await prisma.user.findUnique({
+        where: { agentToken: agentToken },
+        select: { id: true, username: true, isAdmin: true, isAgent: true }
+      });
+      if (socketUser && socketUser.isAgent) {
+        console.log(`🤖 OpenAlo Agent connected: ${socketUser.id} (${socketUser.username})`);
+        socket.isAgent = true;
+      } else {
+        socketUser = null;
+      }
+    } else {
+      socketUser = await getAuthenticatedSocketUser(socket);
+    }
+
     if (!socketUser) {
       socket.emit('auth_error', { error: 'Unauthorized' });
       socket.disconnect(true);
@@ -562,6 +580,82 @@ app.prepare().then(() => {
     proxyReq.end();
   });
 
+  // ---- OpenAlo 내부 API 릴레이 로직 ----
+  expressApp.use('/api/internal/agent-tool', express.json(), async (req, res) => {
+    const { aiUserId, tool, args } = req.body;
+    if (!aiUserId || !tool) return res.status(400).json({ error: 'Missing parameters' });
+    
+    // Find the socket connected by this agent
+    let targetSocket = null;
+    for (const [id, socket] of io.sockets.sockets.entries()) {
+      if (socket.isAgent && socket.userId === aiUserId) {
+        targetSocket = socket;
+        break;
+      }
+    }
+    
+    if (!targetSocket) {
+      return res.status(404).json({ error: 'Agent is not currently connected' });
+    }
+    
+    try {
+      // Emit the tool command and wait for a response for up to 30 seconds
+      const response = await targetSocket.timeout(30000).emitWithAck('execute_tool', { tool, args });
+      return res.json(response);
+    } catch (e) {
+      console.error('Agent tool execution error:', e);
+      return res.status(504).json({ error: 'Agent did not respond in time or an error occurred', details: String(e) });
+    }
+  });
+
+  // ---- OpenAlo 바이브 코딩 알림 및 메시지 브로드캐스트 로직 ----
+  expressApp.use('/api/internal/vibe-notify', express.json(), async (req, res) => {
+    const { action, roomId, aiUserId, aiUserName, message } = req.body;
+    if (!action || !roomId || !aiUserId) return res.status(400).json({ error: 'Missing parameters' });
+    
+    try {
+      if (action === 'start') {
+        io.to(roomId).emit('vibe_coding_start', { roomId, aiId: aiUserId, aiName: aiUserName || 'OpenAlo' });
+      } else if (action === 'message') {
+        io.to(roomId).emit('vibe_coding_end', { roomId, aiId: aiUserId });
+        
+        // Construct standard message object
+        if (message) {
+          const room = await getRoomWithMembers(roomId);
+          if (room && room.members) {
+            room.members.forEach((member) => {
+              const targetId = member.userId;
+              if (targetId === message.senderId) return; // Skip sending to the AI itself (not that it has a local DB)
+
+              const roomSet = io.sockets.adapter.rooms.get(targetId);
+              if (roomSet && roomSet.size > 0) {
+                // Online
+                io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
+                  if (err || !responses || Object.keys(responses).length === 0) {
+                    await prisma.offlineMessage.create({
+                      data: { receiverId: targetId, payload: JSON.stringify(message) }
+                    }).catch(e => console.error('Offline msg save err:', e));
+                    sendWebPush(targetId, message).catch(console.error);
+                  }
+                });
+              } else {
+                // Offline
+                prisma.offlineMessage.create({
+                  data: { receiverId: targetId, payload: JSON.stringify(message) }
+                }).catch(e => console.error('Offline msg save err:', e));
+                sendWebPush(targetId, message).catch(console.error);
+              }
+            });
+          }
+        }
+      }
+      return res.json({ success: true });
+    } catch (e) {
+      console.error('Vibe notify error:', e);
+      return res.status(500).json({ error: String(e) });
+    }
+  });
+
   // Next.js 로우레벨 라우팅 처리 (Express v5 이상 호환)
   expressApp.use((req, res) => {
     return handle(req, res);
@@ -571,5 +665,8 @@ app.prepare().then(() => {
     if (err) throw err;
     console.log(`> 🚀 Ready on http://${hostname}:${port}`);
     console.log('> 🛡️ Custom Express Server with Socket.io running (No-Log Mode)');
+    
+    // 텔레그램 봇 초기화
+
   });
 });

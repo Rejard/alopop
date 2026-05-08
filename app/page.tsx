@@ -80,6 +80,7 @@ export default function Home() {
   const [isGuideOpen, setIsGuideOpen] = useState(false); // 가이드 모달 오픈 상태
 
   const [inputText, setInputText] = useState('');
+  const [isVibeMode, setIsVibeMode] = useState(false); // 자율 주행 모드 상태
   const [rooms, setRooms] = useState<any[]>([]);
   const [gameList, setGameList] = useState<any[]>([]);
 
@@ -291,6 +292,9 @@ export default function Home() {
   // AI 자율 응답 작성 중(Typing...) 상태
   const [typingAIs, setTypingAIs] = useState<Record<string, { aiId: string, aiName: string }[]>>({});
 
+  // 바이브 코딩 자율 작업 진행 중 상태
+  const [vibeCodingAIs, setVibeCodingAIs] = useState<Record<string, { aiId: string, aiName: string }[]>>({});
+
   // 현재 방에 접속 중인 유저 명단 (스텔스 고스트 임시 방장용)
   const [activeRoomUsers, setActiveRoomUsers] = useState<string[]>([]);
 
@@ -345,7 +349,7 @@ export default function Home() {
   }, [isAiEnabled]);
 
   // AI 친구 생성 폼 상태
-  const [addFriendTab, setAddFriendTab] = useState<'NORMAL' | 'AI'>('NORMAL');
+  const [addFriendTab, setAddFriendTab] = useState<'NORMAL' | 'AI' | 'OPENALO'>('NORMAL');
   const [aiNameValue, setAiNameValue] = useState('');
   const [aiMbtiValue, setAiMbtiValue] = useState('ENFP');
   const [aiGenderValue, setAiGenderValue] = useState('여성');
@@ -360,6 +364,12 @@ export default function Home() {
   const [generationElapsedSec, setGenerationElapsedSec] = useState(0); // 신규: 그림 그리는 초 단위 대기 시간 표시
   const [avatarGenMode, setAvatarGenMode] = useState<'system' | 'pollinations' | 'dicebear' | 'robohash'>('system');
   const [isAiCreating, setIsAiCreating] = useState(false);
+
+  // 신규: OpenAlo 봇 생성 폼 상태
+  const [openAloNameValue, setOpenAloNameValue] = useState('');
+  const [openAloPathValue, setOpenAloPathValue] = useState('');
+  const [createdOpenAloToken, setCreatedOpenAloToken] = useState<string | null>(null);
+  const [openAloEditSuccess, setOpenAloEditSuccess] = useState(false);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -687,6 +697,25 @@ export default function Home() {
       });
     };
 
+    const handleVibeCodingStart = (e: any) => {
+      const { roomId, aiId, aiName } = e.detail;
+      setVibeCodingAIs(prev => {
+        const roomAIs = prev[roomId] || [];
+        if (!roomAIs.find(t => t.aiId === aiId)) {
+          return { ...prev, [roomId]: [...roomAIs, { aiId, aiName }] };
+        }
+        return prev;
+      });
+    };
+
+    const handleVibeCodingEnd = (e: any) => {
+      const { roomId, aiId } = e.detail;
+      setVibeCodingAIs(prev => {
+        const roomAIs = prev[roomId] || [];
+        return { ...prev, [roomId]: roomAIs.filter(t => t.aiId !== aiId) };
+      });
+    };
+
     const handleMessageUpdated = (e: any) => {
       const payload = e.detail;
       // 팩트체크 결제 결과가 담겨 돌아왔다면 잔액 동기화 (게스트 화면용)
@@ -778,6 +807,8 @@ export default function Home() {
     window.addEventListener('room_name_updated', handleRoomNameUpdated as EventListener);
     window.addEventListener('typing_start', handleHumanTypingStart as EventListener);
     window.addEventListener('typing_end', handleHumanTypingEnd as EventListener);
+    window.addEventListener('vibe_coding_start', handleVibeCodingStart as EventListener);
+    window.addEventListener('vibe_coding_end', handleVibeCodingEnd as EventListener);
     window.addEventListener('message_updated', handleMessageUpdated as EventListener);
     window.addEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
     window.addEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
@@ -791,6 +822,8 @@ export default function Home() {
       window.removeEventListener('room_name_updated', handleRoomNameUpdated as EventListener);
       window.removeEventListener('typing_start', handleHumanTypingStart as EventListener);
       window.removeEventListener('typing_end', handleHumanTypingEnd as EventListener);
+      window.removeEventListener('vibe_coding_start', handleVibeCodingStart as EventListener);
+      window.removeEventListener('vibe_coding_end', handleVibeCodingEnd as EventListener);
       window.removeEventListener('message_updated', handleMessageUpdated as EventListener);
       window.removeEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
       window.removeEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
@@ -1143,12 +1176,14 @@ export default function Home() {
                       aiOwnerId: aiUser.aiOwnerId,
                       userId: user?.id,
                       useFreeEvent: friendUseFreeEvent,
-                      content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
+                      isAutonomous: isVibeMode,
+                      content: isVibeMode ? currentContext : `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
                     })
                   });
                 });
               })
               .then((aiResponse: any) => {
+                if (isVibeMode) setIsVibeMode(false);
                 if (!aiResponse.ok) {
                   reportApiFailure({
                     area: 'ai_friend_reply',
@@ -1909,8 +1944,13 @@ export default function Home() {
 
   // 프로필 사진 생성 전용 API 호출
   const handleGenerateAvatar = async () => {
-    // 취미 혹은 특별한 정보가 비어있어도 진행 가능하도록 최소 요구사항만 체크
-    if (!aiMbtiValue || !selectedProvider) {
+    const isAlo = addFriendTab === 'OPENALO';
+    const name = isAlo ? openAloNameValue : aiNameValue;
+    const mbti = isAlo ? 'ISTJ' : aiMbtiValue;
+    const gender = isAlo ? '성별 없음' : aiGenderValue;
+    const age = isAlo ? '나이 미상' : aiAgeValue;
+
+    if (!isAlo && (!mbti || !selectedProvider)) {
       alert('MBTI 성격 설정 후 진행해주세요.');
       return;
     }
@@ -1920,10 +1960,10 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mbti: aiMbtiValue,
-          gender: aiGenderValue,
-          age: aiAgeValue,
-          aiName: aiNameValue,
+          mbti,
+          gender,
+          age,
+          aiName: name,
           aiProvider: avatarGenMode === 'system' ? selectedProvider : avatarGenMode,
           apiKey: apiKeys[selectedProvider]
         })
@@ -2036,6 +2076,63 @@ export default function Home() {
     }
   };
 
+  // OpenAlo 원격 PC 에이전트 생성 및 수정
+  const handleCreateOpenAloSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!openAloNameValue.trim() || !user?.id) return;
+
+    setIsAiCreating(true);
+    try {
+      let res;
+      if (editingAiFriend) {
+        res = await fetch('/api/admin/agent', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            id: editingAiFriend.id,
+            name: openAloNameValue.trim(),
+            path: openAloPathValue.trim(),
+            avatarUrl: aiAvatarUrl
+          })
+        });
+      } else {
+        res = await fetch('/api/admin/agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            name: openAloNameValue.trim(),
+            path: openAloPathValue.trim()
+          })
+        });
+      }
+      const data = await res.json();
+      if (res.ok && data.agent) {
+        if (!editingAiFriend) {
+          setCreatedOpenAloToken(data.agent.agentToken);
+        } else {
+          setOpenAloEditSuccess(true);
+          setTimeout(() => setOpenAloEditSuccess(false), 3000);
+        }
+        // 친구 목록 강제 갱신
+        fetch(`/api/friends?userId=${user.id}`)
+          .then(res => res.json())
+          .then(fData => {
+            const activeFriends = fData.friendships
+              .filter((fs: any) => fs.status === 'ACTIVE')
+              .map((fs: any) => fs.friend);
+            setFriends(activeFriends);
+          });
+      } else {
+        alert(data.error || 'OpenAlo 처리에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('OpenAlo 처리 중 오류가 발생했습니다.');
+    } finally {
+      setIsAiCreating(false);
+    }
+  };
+
   // 내 초대 링크 복사
   const handleCopyMyLink = () => {
     const code = myProfile?.inviteCode || user?.inviteCode || user?.id;
@@ -2102,6 +2199,18 @@ export default function Home() {
     if (!user?.id) return;
     if (friend.aiOwnerId !== user.id) {
       alert('본인이 생성한 AI만 수정할 수 있습니다.');
+      return;
+    }
+
+    if (friend.isAgent) {
+      setOpenAloNameValue(friend.username);
+      setOpenAloPathValue(friend.agentPath || '');
+      setCreatedOpenAloToken(friend.agentToken || null);
+      setAiAvatarUrl(friend.avatar_url || null);
+      setEditingAiFriend(friend);
+      setActiveFriendMenuId(null);
+      setAddFriendTab('OPENALO');
+      setIsAddFriendModalOpen(true);
       return;
     }
 
@@ -2557,13 +2666,26 @@ export default function Home() {
                       </button>
                     )}
 
-                    {showAiWarning ? (
+                    {currentRoom?.members?.some((m: any) => m.user?.isAgent) ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsVibeMode(!isVibeMode);
+                        }}
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] shadow-sm border transition-all active:scale-95 shrink-0 ${isVibeMode
+                          ? 'bg-purple-500/15 text-purple-400 border-purple-500/40 font-bold'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-medium'
+                          }`}
+                      >
+                        {isVibeMode ? 'VM 🟢' : 'VM 🔘'}
+                      </button>
+                    ) : showAiWarning ? (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           alert('❗ AI 기능을 사용하려면 먼저 설정에서 본인의 API 키를 등록해주세요.');
                         }}
-                        className="flex items-center gap-1 px-2.5 py-0.5 rounded-full shadow-sm border bg-zinc-800/80 text-zinc-600 border-zinc-700/50 cursor-not-allowed shrink-0 transition-all font-medium"
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] shadow-sm border bg-zinc-800/80 text-zinc-600 border-zinc-700/50 cursor-not-allowed shrink-0 transition-all font-medium"
                       >
                         🔒 AI 🔘
                       </button>
@@ -2577,7 +2699,7 @@ export default function Home() {
                           }
                           setIsAiEnabled(nextState);
                         }}
-                        className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
                           ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
                           : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-medium'
                           }`}
@@ -2665,13 +2787,26 @@ export default function Home() {
                     </button>
                   )}
 
-                  {showAiWarning ? (
+                  {currentRoom?.members?.some((m: any) => m.user?.isAgent) ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsVibeMode(!isVibeMode);
+                      }}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] shadow-sm border transition-all active:scale-95 shrink-0 ${isVibeMode
+                        ? 'bg-purple-500/15 text-purple-400 border-purple-500/40 font-bold'
+                        : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-medium'
+                        }`}
+                    >
+                      {isVibeMode ? 'VM 🟢' : 'VM 🔘'}
+                    </button>
+                  ) : showAiWarning ? (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         alert('❗ AI 기능을 사용하려면 먼저 설정에서 본인의 API 키를 등록해주세요.');
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-full shadow-sm border bg-zinc-800/80 text-zinc-600 border-zinc-700/50 cursor-not-allowed shrink-0 transition-all font-semibold text-xs"
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-full shadow-sm border bg-zinc-800/80 text-zinc-600 border-zinc-700/50 cursor-not-allowed shrink-0 transition-all font-medium text-[10px]"
                     >
                       🔒 AI 🔘
                     </button>
@@ -2685,9 +2820,9 @@ export default function Home() {
                         }
                         setIsAiEnabled(nextState);
                       }}
-                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] shadow-sm border transition-all active:scale-95 shrink-0 ${isAiEnabled
                         ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-bold'
-                        : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-semibold'
+                        : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700 hover:border-zinc-500 font-medium'
                         }`}
                     >
                       {isAiEnabled ? 'AI 🟢' : 'AI 🔘'}
@@ -3147,7 +3282,12 @@ export default function Home() {
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0 pl-2">
-                            {friend.isAi && friend.aiPrompt && (() => {
+                            {friend.isAgent && (
+                              <span className="mr-1 px-2.5 py-0.5 text-xs font-bold tracking-wider text-blue-100 bg-blue-600 border border-blue-500 rounded-full whitespace-nowrap shadow-sm">
+                                OpenAlo
+                              </span>
+                            )}
+                            {!friend.isAgent && friend.isAi && friend.aiPrompt && (() => {
                               const mbtiMatch = friend.aiPrompt.match(/- MBTI: (.*)/);
                               const mbti = mbtiMatch ? mbtiMatch[1].trim() : null;
                               return mbti ? (
@@ -3596,6 +3736,24 @@ export default function Home() {
             {/* 타이핑 인디케이터 (AI & 휴먼 통합 작성 중) */}
             {(() => {
               if (!currentRoom) return null;
+              
+              const currentVibeAIs = vibeCodingAIs[currentRoom.id] || [];
+              if (currentVibeAIs.length > 0) {
+                const vibeAIsNames = currentVibeAIs.map(a => a.aiName);
+                return (
+                  <div className="absolute bottom-[76px] left-4 bg-zinc-800/95 backdrop-blur-md px-4 py-2.5 rounded-2xl rounded-bl-sm shadow-xl border border-zinc-700/50 flex flex-col items-start gap-1.5 z-10 animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200">
+                    <span className="text-[11px] font-bold text-zinc-400">
+                      <strong className="text-purple-400 font-extrabold">{vibeAIsNames.join(', ')}</strong> 님이 바이브 코딩 작업중...
+                    </span>
+                    <div className="flex gap-1 h-2 items-center ml-1">
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce"></div>
+                    </div>
+                  </div>
+                );
+              }
+
               const currentAIs = typingAIs[currentRoom.id] || [];
               const currentHumans = humanTyping[currentRoom.id] || [];
               const allTypers = [...currentAIs.map(a => a.aiName), ...currentHumans.map(h => h.userName)];
@@ -3939,13 +4097,16 @@ export default function Home() {
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-bold text-zinc-100 text-lg flex items-center gap-2">
                 <UserPlus className="text-primary text-glow-purple" size={20} />
-                {editingAiFriend ? 'AI 친구 정보 수정' : '새로운 친구 추가'}
+                {editingAiFriend ? (editingAiFriend.isAgent ? 'OpenAlo 에이전트 정보 수정' : 'AI 친구 정보 수정') : '새로운 친구 추가'}
               </h4>
               <button
                 onClick={() => {
                   setIsAddFriendModalOpen(false);
                   setAddFriendTab('NORMAL');
                   setEditingAiFriend(null);
+                  setCreatedOpenAloToken(null);
+                  setOpenAloNameValue('');
+                  setOpenAloPathValue('');
                 }}
                 className="text-zinc-400 hover:text-white p-1 bg-zinc-800/50 rounded-full"
               >
@@ -3955,18 +4116,24 @@ export default function Home() {
 
             {/* 탭 헤더 (수정 모드일때는 숨김) */}
             {!editingAiFriend && (
-              <div className="flex bg-zinc-800/50 p-1 rounded-xl mb-6 shrink-0">
+              <div className="flex bg-zinc-800/50 p-1 rounded-xl mb-6 shrink-0 gap-1 overflow-x-auto">
                 <button
                   onClick={() => setAddFriendTab('NORMAL')}
-                  className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'NORMAL' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
+                  className={`flex-1 min-w-[80px] py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'NORMAL' ? 'bg-zinc-700 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
                 >
                   👤 친구 추가
                 </button>
                 <button
                   onClick={() => setAddFriendTab('AI')}
-                  className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'AI' ? 'bg-purple-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
+                  className={`flex-1 min-w-[80px] py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'AI' ? 'bg-purple-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
                 >
                   🤖 AI 생성
+                </button>
+                <button
+                  onClick={() => setAddFriendTab('OPENALO')}
+                  className={`flex-1 min-w-[100px] py-2 text-sm font-semibold rounded-lg transition-colors ${addFriendTab === 'OPENALO' ? 'bg-blue-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-300'}`}
+                >
+                  💻 OpenAlo 생성
                 </button>
               </div>
             )}
@@ -4015,7 +4182,7 @@ export default function Home() {
                     </button>
                   </form>
                 </>
-              ) : (
+              ) : addFriendTab === 'AI' ? (
                 <form onSubmit={handleSubmitAiFriend} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-zinc-400 mb-1.5 ml-1">AI 이름 (표시될 닉네임) <span className="text-red-400">*</span></label>
@@ -4127,10 +4294,188 @@ export default function Home() {
                     disabled={!aiNameValue.trim() || isAiCreating}
                     className="w-full mt-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
                   >
-                    {isAiCreating ? <span className="animate-pulse">처리 중...</span> : (editingAiFriend ? '수정 완료' : 'AI 친구 생성 및 등록')}
                   </button>
                   <p className="text-[11px] text-zinc-500 text-center mt-3">※ 이 AI는 내 환경에 등록된 API 키 권한으로 응답합니다.</p>
                 </form>
+              ) : (
+                <div className="space-y-4">
+                  {createdOpenAloToken && !editingAiFriend ? (
+                    <div className="bg-zinc-900 p-4 rounded-xl border border-blue-500/30">
+                      <h4 className="text-blue-400 font-bold mb-2 flex items-center gap-2">
+                        <CheckCircle2 size={18} />
+                        생성 성공! PC를 연동하세요.
+                      </h4>
+                      <p className="text-sm text-zinc-300 mb-4">
+                        아래 명령어를 복사하여 원격 제어할 PC의 <strong className="text-white">PowerShell</strong> 에 붙여넣고 실행하세요. 실행 즉시 친구 목록에 있는 봇이 응답을 시작합니다.
+                      </p>
+                      <div className="relative">
+                        <pre className="text-[10px] text-zinc-300 font-mono overflow-x-auto p-3 bg-black rounded-lg whitespace-pre-wrap break-all">
+                          {`powershell -Command "${openAloPathValue.trim() ? `cd '${openAloPathValue.trim().replace(/\\/g, '\\\\')}'; ` : ''}Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${createdOpenAloToken}"`}
+                        </pre>
+                        <button 
+                          onClick={() => navigator.clipboard.writeText(`powershell -Command "${openAloPathValue.trim() ? `cd '${openAloPathValue.trim().replace(/\\/g, '\\\\')}'; ` : ''}Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${createdOpenAloToken}"`)}
+                          className="absolute top-2 right-2 p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-white text-xs flex items-center gap-1"
+                        >
+                          <Copy size={12} /> 복사
+                        </button>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(`powershell -Command "${openAloPathValue.trim() ? `cd '${openAloPathValue.trim().replace(/\\/g, '\\\\')}'; ` : ''}Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${createdOpenAloToken}"`);
+                          alert('명령어가 복사되었습니다! PowerShell에 붙여넣기 해주세요.');
+                        }}
+                        className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Copy size={16} /> 명령어 복사하기
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleCreateOpenAloSubmit} className="space-y-4">
+                      <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl mb-4">
+                        <p className="text-xs text-blue-200">
+                          내 컴퓨터나 회사 PC를 알로팝 채팅으로 제어할 수 있는 봇을 만듭니다. 명령어(PowerShell) 복사 및 1회 실행만으로 쉽게 연동됩니다.<br />
+                          <span className="text-blue-300 font-medium">※ 주의: 연동된 PowerShell 창을 닫으면 봇 작동이 멈춥니다. 다시 작동하려면 창을 열고 명령어를 한 번 더 입력하세요.</span>
+                        </p>
+                      </div>
+
+
+                      
+                      <div className="space-y-3">
+                        <label className="block text-sm font-semibold text-zinc-300 ml-1">원격 PC 봇 이름</label>
+                        <input
+                          type="text"
+                          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                          placeholder="예: 회사 업무용 PC, 내 노트북"
+                          value={openAloNameValue}
+                          onChange={(e) => {
+                            setOpenAloNameValue(e.target.value);
+                            if (openAloEditSuccess) setOpenAloEditSuccess(false);
+                          }}
+                          maxLength={15}
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="block text-sm font-semibold text-zinc-300 ml-1 flex justify-between">
+                          <span>작업 기준 경로 (선택)</span>
+                          <span className="text-[10px] text-zinc-500 font-normal">PC의 특정 폴더에서 작업을 시작할 때</span>
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono text-sm"
+                          placeholder="예: C:\home\alopop"
+                          value={openAloPathValue}
+                          onChange={(e) => {
+                            setOpenAloPathValue(e.target.value);
+                            if (openAloEditSuccess) setOpenAloEditSuccess(false);
+                          }}
+                        />
+                      </div>
+
+                      <div className="pt-4 pb-2">
+                        <button
+                          type="submit"
+                          disabled={!openAloNameValue.trim() || isAiCreating}
+                          className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-surface-container-highest disabled:text-on-surface-variant text-white font-bold py-3.5 px-4 rounded-xl shadow-sm transition-all flex justify-center items-center gap-2"
+                        >
+                          {isAiCreating ? (
+                            <>
+                              <Loader2 size={18} className="animate-spin" /> {editingAiFriend ? '수정 중...' : '생성 중...'}
+                            </>
+                          ) : (
+                            <>
+                              <Terminal size={18} />
+                              {editingAiFriend ? (openAloEditSuccess ? '정보 수정완료' : 'OpenAlo 정보 수정') : '내 PC 연동 명령어 생성'}
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {editingAiFriend && createdOpenAloToken && (
+                        <div className="bg-zinc-900 p-4 rounded-xl border border-blue-500/30 mt-4">
+                          <h4 className="text-blue-400 font-bold mb-2 flex items-center gap-2 text-sm">
+                            <Terminal size={14} />
+                            PowerShell 연동 명령어
+                          </h4>
+                          <div className="relative">
+                            <pre className="text-[10px] text-zinc-300 font-mono overflow-x-auto p-3 bg-black rounded-lg whitespace-pre-wrap break-all">
+                              {`powershell -Command "${openAloPathValue.trim() ? `cd '${openAloPathValue.trim().replace(/\\/g, '\\\\')}'; ` : ''}Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${createdOpenAloToken}"`}
+                            </pre>
+                            <button 
+                              type="button"
+                              onClick={() => navigator.clipboard.writeText(`powershell -Command "${openAloPathValue.trim() ? `cd '${openAloPathValue.trim().replace(/\\/g, '\\\\')}'; ` : ''}Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${createdOpenAloToken}"`)}
+                              className="absolute top-2 right-2 p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-white text-xs flex items-center gap-1"
+                            >
+                              <Copy size={12} /> 복사
+                            </button>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`powershell -Command "${openAloPathValue.trim() ? `cd '${openAloPathValue.trim().replace(/\\/g, '\\\\')}'; ` : ''}Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${createdOpenAloToken}"`);
+                              alert('명령어가 복사되었습니다! PowerShell에 붙여넣기 해주세요.');
+                            }}
+                            className="w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Copy size={16} /> 명령어 복사하기
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg mt-4 flex items-center justify-between gap-4 mb-4">
+                        <div className="w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
+                          {aiAvatarUrl ? (
+                            <img src={aiAvatarUrl} alt="Preview Avatar" className="w-full h-full object-cover" />
+                          ) : (
+                            <Bot className="text-zinc-500" size={24} />
+                          )}
+                        </div>
+                        <div className="flex-1 flex flex-col justify-center">
+                          <span className="text-[13px] text-zinc-300 font-bold mb-1.5 flex items-center gap-1.5">
+                            <Sparkles className="text-blue-400" size={14} />
+                            현재 작동 화가 : {
+                              avatarGenMode === 'system'
+                                ? (selectedProvider === 'openai' && apiKeys['openai'] ? 'OpenAI DALL-E 3' :
+                                  (selectedProvider === 'gemini' || selectedProvider === 'gemini-free') && apiKeys[selectedProvider] ? 'Gemini Imagen 3 (불안정)' :
+                                    '무료 그림 AI (Pollinations)')
+                                : avatarGenMode === 'pollinations' ? '무료 그림 AI (Pollinations)'
+                                  : avatarGenMode === 'dicebear' ? '무료 로봇 일러스트 (DiceBear)'
+                                    : '무료 동물 일러스트 (Robohash)'
+                            }
+                          </span>
+                          <div className="flex flex-col gap-1.5 mb-2.5">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                              <input type="radio" name="avG_alo" value="system" checked={avatarGenMode === 'system'} onChange={() => setAvatarGenMode('system')} className="accent-blue-500" />
+                              <span>현재 설정된 화가 (DALL-E / Gemini)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                              <input type="radio" name="avG_alo" value="pollinations" checked={avatarGenMode === 'pollinations'} onChange={() => setAvatarGenMode('pollinations')} className="accent-blue-500" />
+                              <span>Pollinations AI (약 15초 대기)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                              <input type="radio" name="avG_alo" value="dicebear" checked={avatarGenMode === 'dicebear'} onChange={() => setAvatarGenMode('dicebear')} className="accent-blue-500" />
+                              <span>DiceBear 로봇 타일 (0.1초 무료)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                              <input type="radio" name="avG_alo" value="robohash" checked={avatarGenMode === 'robohash'} onChange={() => setAvatarGenMode('robohash')} className="accent-blue-500" />
+                              <span>Robohash 동물 타일 (0.1초 무료)</span>
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleGenerateAvatar}
+                            disabled={isGeneratingAvatar}
+                            className="bg-zinc-800 hover:bg-zinc-700 text-blue-300 text-xs py-2 rounded-lg font-bold border border-blue-500/20 shadow-sm transition-colors disabled:opacity-50"
+                          >
+                            {isGeneratingAvatar ? `🎨 사진 생성 중... (${generationElapsedSec}초 경과)` : '프로필 사진 생성하기'}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
               )}
             </div>
           </div>
