@@ -1,42 +1,55 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const DelegateHostSchema = z.object({
+  roomId: z.string().min(1),
+  targetUserId: z.string().min(1),
+  requesterId: z.string().min(1).optional(),
+});
 
 export async function POST(request: Request) {
   try {
-    const { roomId, targetUserId, requesterId } = await request.json();
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
 
-    if (!roomId || !targetUserId || !requesterId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const parseResult = DelegateHostSchema.safeParse(await request.json());
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    // 1. 요청자가 해당 방의 방장(isHost: true)인지 확인
+    const { roomId, targetUserId, requesterId } = parseResult.data;
+    if (requesterId && requesterId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const requester = await prisma.roomMember.findUnique({
       where: {
         userId_roomId: {
-          userId: requesterId,
-          roomId: roomId
-        }
-      }
+          userId: currentUser.id,
+          roomId,
+        },
+      },
     });
 
     if (!requester || !requester.isHost) {
       return NextResponse.json({ error: 'Permission denied: Not a host' }, { status: 403 });
     }
 
-    // 2. 방장 권한 변경 트랜잭션: 기존 방장의 권한 박탈, 타겟에게 권한 부여
     await prisma.$transaction([
       prisma.roomMember.update({
         where: {
-          userId_roomId: { userId: requesterId, roomId: roomId }
+          userId_roomId: { userId: currentUser.id, roomId },
         },
-        data: { isHost: false }
+        data: { isHost: false },
       }),
       prisma.roomMember.update({
         where: {
-          userId_roomId: { userId: targetUserId, roomId: roomId }
+          userId_roomId: { userId: targetUserId, roomId },
         },
-        data: { isHost: true }
-      })
+        data: { isHost: true },
+      }),
     ]);
 
     return NextResponse.json({ success: true, newHostId: targetUserId });

@@ -1,44 +1,52 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
 import fs from 'fs/promises';
 import path from 'path';
 
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
 export async function POST(request: Request) {
   try {
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
+
     const formData = await request.formData();
-    const userId = formData.get('userId') as string;
-    const file = formData.get('file') as File;
+    const requestedUserId = formData.get('userId') as string | null;
+    const file = formData.get('file') as File | null;
 
-    if (!userId || !file) {
-      return NextResponse.json({ error: 'userId and file are required' }, { status: 400 });
+    if (requestedUserId && requestedUserId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // 파일 버퍼 변환
+    if (!file) {
+      return NextResponse.json({ error: 'file is required' }, { status: 400 });
+    }
+
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      return NextResponse.json({ error: 'Only jpeg, png, webp, and gif images are allowed' }, { status: 400 });
+    }
+
+    if (file.size > MAX_AVATAR_BYTES) {
+      return NextResponse.json({ error: 'Avatar file is too large' }, { status: 400 });
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
-    
-    // 파일명 생성 및 저장 경로 지정
-    const ext = path.extname(file.name);
-    const uniqueFilename = `${userId}_${Date.now()}${ext}`;
+    const ext = path.extname(file.name).toLowerCase() || '.jpg';
+    const uniqueFilename = `${currentUser.id}_${Date.now()}${ext}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    
-    // 디렉토리가 없으면 생성
-    try {
-      await fs.access(uploadDir);
-    } catch {
-      await fs.mkdir(uploadDir, { recursive: true });
-    }
+
+    await fs.mkdir(uploadDir, { recursive: true });
 
     const filepath = path.join(uploadDir, uniqueFilename);
     const publicUrl = `/uploads/${uniqueFilename}`;
-
-    // 파일 로컬 저장소 쓰기
     await fs.writeFile(filepath, buffer);
 
-    // 기존 User DB의 avatar_url 업데이트
     const updatedUser = await prisma.user.update({
-      where: { id: userId },
+      where: { id: currentUser.id },
       data: { avatar_url: publicUrl },
-      select: { id: true, username: true, avatar_url: true }
+      select: { id: true, username: true, avatar_url: true },
     });
 
     return NextResponse.json({ success: true, user: updatedUser });

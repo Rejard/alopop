@@ -4,10 +4,92 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldAlert, ArrowLeft, Send, Save, CreditCard, ChevronLeft, Gift, Trash2, Power, PowerOff } from 'lucide-react';
 
+function ChaosPanel() {
+  const [userCount, setUserCount] = useState(100);
+  const [durationSec, setDurationSec] = useState(180);
+  const [status, setStatus] = useState('idle');
+  const [log, setLog] = useState('');
+
+  useEffect(() => {
+    let interval: any;
+    const fetchStatus = () => {
+      fetch('/api/admin/chaos')
+        .then(r => r.json())
+        .then(data => {
+          setStatus(data.status || 'idle');
+          setLog(data.log || '');
+        }).catch(() => {});
+    };
+    fetchStatus();
+    interval = setInterval(fetchStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStart = async () => {
+    if (!confirm(`경고: 실제 운영 환경에서 ${userCount}명의 가짜 유저를 생성하여 폭격합니다. 계속하시겠습니까?`)) return;
+    try {
+      const res = await fetch('/api/admin/chaos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userCount, durationSec })
+      });
+      if (res.ok) setStatus('running');
+      else alert('실행에 실패했습니다.');
+    } catch(e) {
+      alert('오류 발생');
+    }
+  };
+
+  return (
+    <div className="max-w-4xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <h2 className="text-2xl font-bold mb-6 text-red-500 drop-shadow-sm flex items-center gap-2">☠️ 카오스 훈련소 (Chaos Monkey)</h2>
+      <div className="bg-surface-container border border-red-500/30 rounded-2xl p-6 shadow-sm mb-10">
+        <p className="text-sm text-red-400 mb-6 font-bold">
+          주의: 설정된 유저 수만큼 소켓 동시접속 및 API 난사가 진행됩니다. 이 작업은 서버 자원을 극한으로 소모합니다.
+        </p>
+        <div className="flex flex-wrap gap-6 mb-6">
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1 font-bold">투입할 가짜 유저 수 (명)</label>
+            <input 
+              type="number" 
+              value={userCount} 
+              onChange={e => setUserCount(Number(e.target.value))} 
+              disabled={status === 'running'}
+              className="bg-dark-bg border border-outline-variant/30 rounded-lg px-4 py-2 text-sm focus:border-red-500 outline-none font-mono w-32"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1 font-bold">훈련 지속 시간 (초)</label>
+            <input 
+              type="number" 
+              value={durationSec} 
+              onChange={e => setDurationSec(Number(e.target.value))} 
+              disabled={status === 'running'}
+              className="bg-dark-bg border border-outline-variant/30 rounded-lg px-4 py-2 text-sm focus:border-red-500 outline-none font-mono w-32"
+            />
+          </div>
+          <div className="flex items-end">
+            <button 
+              onClick={handleStart}
+              disabled={status === 'running'}
+              className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 transition-all ${status === 'running' ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-500 shadow-[0_0_15px_rgba(220,38,38,0.5)] active:scale-95'}`}
+            >
+              {status === 'running' ? '훈련 진행 중...' : '🚨 카오스 훈련 개시'}
+            </button>
+          </div>
+        </div>
+        <div className="bg-black rounded-xl p-4 border border-zinc-800 h-[500px] overflow-y-auto font-mono text-xs shadow-inner flex flex-col-reverse">
+          <pre className="text-emerald-400 whitespace-pre-wrap">{log || '대기 중...'}</pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'ANNOUNCEMENT' | 'EVENT' | 'SYSTEM'>('ANNOUNCEMENT');
+  const [activeTab, setActiveTab] = useState<'ANNOUNCEMENT' | 'EVENT' | 'SYSTEM' | 'CHAOS'>('ANNOUNCEMENT');
 
   // Announcement States
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -265,6 +347,11 @@ export default function AdminDashboard() {
             onClick={() => setActiveTab('SYSTEM')} 
             className={`px-4 py-3 text-sm font-semibold rounded-xl text-left whitespace-nowrap transition-all ${activeTab === 'SYSTEM' ? 'bg-primary text-on-primary shadow-md' : 'text-on-surface-variant hover:bg-surface-variant'}`}>
             ⚙️ 시스템 설정
+          </button>
+          <button 
+            onClick={() => setActiveTab('CHAOS')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left whitespace-nowrap transition-all ${activeTab === 'CHAOS' ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]' : 'text-on-surface-variant hover:bg-surface-variant hover:text-red-400'}`}>
+            ☠️ 시스템 훈련소
           </button>
         </div>
       </div>
@@ -624,6 +711,8 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {activeTab === 'CHAOS' && <ChaosPanel />}
       </div>
     </div>
   );

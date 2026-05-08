@@ -1,50 +1,95 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const SendCoinsSchema = z.object({
+  senderId: z.string().min(1).optional(),
+  receiverId: z.string().min(1, 'receiverId is required'),
+  amount: z.number().int().positive('amount must be a positive integer').max(1_000_000_000),
+  reason: z.string().max(200).optional(),
+});
 
 export async function POST(request: Request) {
   try {
-    const { senderId, receiverId, amount, reason } = await request.json();
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
 
-    if (!senderId || !receiverId || !amount) {
-      return NextResponse.json({ error: 'senderId, receiverId and amount are required' }, { status: 400 });
+    const body = await request.json();
+    const parseResult = SendCoinsSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    if (senderId === receiverId) {
-      return NextResponse.json({ error: '자신에게 송금할 수 없습니다.' }, { status: 400 });
+    const { senderId, receiverId, amount, reason } = parseResult.data;
+    if (senderId && senderId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const sender = await prisma.user.findUnique({ where: { id: senderId } });
-    if (!sender) {
-       return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
+    if (currentUser.id === receiverId) {
+      return NextResponse.json({ error: 'Cannot send coins to yourself' }, { status: 400 });
     }
 
-    if (sender.walletBalance < amount) {
-       return NextResponse.json({ error: `잔액이 부족합니다. (현재: ${sender.walletBalance} 코인)` }, { status: 400 });
-    }
-
-    const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
-    if (!receiver) {
-       return NextResponse.json({ error: 'Receiver not found' }, { status: 404 });
-    }
-
-    // 트랜잭션 기록 및 잔고 증감 (유저 요청: 거래내역 서버 기록 중단, 로컬에만 보관)
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: senderId },
-        data: { walletBalance: sender.walletBalance - amount }
-      }),
-      prisma.user.update({
+    const result = await prisma.$transaction(async (tx) => {
+      const receiver = await tx.user.findUnique({
         where: { id: receiverId },
-        data: { walletBalance: receiver.walletBalance + amount }
-      })
-    ]);
+        select: { id: true },
+      });
+      if (!receiver) {
+        return { error: 'Receiver not found' as const, status: 404 };
+      }
 
-    // 잔고 업데이트를 클라이언트에 반환
-    const updatedUser = await prisma.user.findUnique({ where: { id: senderId } });
+      const debit = await tx.user.updateMany({
+        where: {
+          id: currentUser.id,
+          walletBalance: { gte: amount },
+        },
+        data: {
+          walletBalance: { decrement: amount },
+        },
+      });
 
-    return NextResponse.json({ success: true, balance: updatedUser?.walletBalance });
+      if (debit.count !== 1) {
+        const sender = await tx.user.findUnique({
+          where: { id: currentUser.id },
+          select: { walletBalance: true },
+        });
+        return {
+          error: `Insufficient balance. Current balance: ${sender?.walletBalance ?? 0}`,
+          status: 400,
+        };
+      }
 
-  } catch (error: any) {
+      await tx.user.update({
+        where: { id: receiverId },
+        data: {
+          walletBalance: { increment: amount },
+        },
+      });
+
+      await tx.transaction.create({
+        data: {
+          senderId: currentUser.id,
+          receiverId,
+          amount,
+          reason: reason?.trim() || null,
+        },
+      });
+
+      const updatedSender = await tx.user.findUnique({
+        where: { id: currentUser.id },
+        select: { walletBalance: true },
+      });
+
+      return { balance: updatedSender?.walletBalance ?? 0 };
+    });
+
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+
+    return NextResponse.json({ success: true, balance: result.balance });
+  } catch (error) {
     console.error('Wallet error:', error);
     return NextResponse.json({ error: 'Failed to process transaction' }, { status: 500 });
   }

@@ -1,38 +1,59 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const InviteRoomSchema = z.object({
+  roomId: z.string().min(1),
+  targetUserId: z.string().min(1),
+});
 
 export async function POST(request: Request) {
   try {
-    const { roomId, targetUserId } = await request.json();
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
 
-    if (!roomId || !targetUserId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const parseResult = InviteRoomSchema.safeParse(await request.json());
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    // 이미 방에 있는지 확인
+    const { roomId, targetUserId } = parseResult.data;
+    const inviterMember = await prisma.roomMember.findUnique({
+      where: {
+        userId_roomId: {
+          userId: currentUser.id,
+          roomId,
+        },
+      },
+    });
+
+    if (!inviterMember) {
+      return NextResponse.json({ error: 'Only room members can invite users' }, { status: 403 });
+    }
+
     const exists = await prisma.roomMember.findUnique({
       where: {
         userId_roomId: {
           userId: targetUserId,
-          roomId: roomId
-        }
-      }
+          roomId,
+        },
+      },
     });
 
     if (exists) {
-      return NextResponse.json({ error: '이미 방에 참가 중인 친구입니다.' }, { status: 400 });
+      return NextResponse.json({ error: 'User is already in this room' }, { status: 400 });
     }
 
-    // 새 친구 초대 멤버십 생성
     const newMember = await prisma.roomMember.create({
       data: {
         roomId,
         userId: targetUserId,
-        isHost: false // 초대된 멤버는 일반 유저
+        isHost: false,
       },
       include: {
-        user: true
-      }
+        user: true,
+      },
     });
 
     return NextResponse.json(newMember);

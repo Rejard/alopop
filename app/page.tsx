@@ -10,6 +10,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { SettingsModal } from '@/components/SettingsModal';
 import { v4 as uuidv4 } from 'uuid';
+import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
 
 // AI MODELS loaded dynamically
 
@@ -116,6 +117,40 @@ export default function Home() {
   const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
   const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      reportDiagnostic({
+        area: 'client_runtime',
+        code: 'CLIENT_RUNTIME_ERROR',
+        severity: 'error',
+        safeMessage: event.message,
+        fingerprint: `runtime:${event.filename || 'unknown'}:${event.lineno || 0}`,
+        metadata: {
+          hasRoom: !!currentRoomRef.current,
+          sponsorMode: !!currentRoomRef.current?.sponsorMode,
+        },
+      });
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      reportCaughtError({
+        area: 'client_runtime',
+        code: 'CLIENT_UNHANDLED_REJECTION',
+        error: event.reason,
+        metadata: {
+          hasRoom: !!currentRoomRef.current,
+          sponsorMode: !!currentRoomRef.current?.sponsorMode,
+        },
+      });
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [latestMessageTimes, setLatestMessageTimes] = useState<Record<string, number>>({});
   const [roomMemberReadTimes, setRoomMemberReadTimes] = useState<Record<string, Record<string, number>>>({});
@@ -1085,67 +1120,7 @@ export default function Home() {
                 // (대리 연산자가 연산하더라도 수익은 무조건 원래 방장에게 귀속)
                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
 
-                // 결제를 진행하는 프로미스 체인
-                let paymentPromise = Promise.resolve();
-                if (isSponsorMode && aiUser.aiOwnerId !== sponsorMember?.userId && hostSponsorPrice > 0) {
-                  paymentPromise = fetch('/api/wallet/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      senderId: aiUser.aiOwnerId, // 이 AI의 본주인(게스트)
-                      receiverId: sponsorMember?.userId, // 돈은 오직 진짜 방장에게 넣어야 함 (대리 연산자용 은닉)
-                      amount: hostSponsorPrice,
-                      reason: `[AI 대화 요금] 방장 스폰서 연산 (${aiUser.username})` // 임시 방장이 했다는 사실 은폐
-                    })
-                  }).then(async paymentRes => {
-                    if (!paymentRes.ok) {
-                      const errData = await paymentRes.json();
-                      throw new Error(`PAY_FAIL:${errData.error || '잔액 부족'}`);
-                    }
-                    // 결제 성공 시 당사자(방장 본인이거나 게스트 본인일 때만) 내 지갑 렌더링 최신화
-                    if (sponsorMember?.userId === user?.id || aiUser.aiOwnerId === user?.id) {
-                      // 내(현재 브라우저 사용자)가 돈을 내는 측(게스트)인지, 받는 측(방장)인지 판별
-                      const isSpender = aiUser.aiOwnerId === user?.id;
-                      const isEarner = sponsorMember?.userId === user?.id;
-
-                      if (isSpender) {
-                        db.walletTx?.add({
-                          type: 'SPEND',
-                          category: 'SPONSOR_REVENUE',
-                          amount: hostSponsorPrice,
-                          counterpartyId: sponsorMember?.userId,
-                          counterpartyName: '방장',
-                          createdAt: Date.now(),
-                          description: `AI(${aiUser.username}) 방장 스폰서망 연산`
-                        }).catch(console.error);
-                      }
-
-                      if (isEarner) {
-                        db.walletTx?.add({
-                          type: 'EARN',
-                          category: 'SPONSOR_REVENUE',
-                          amount: hostSponsorPrice,
-                          counterpartyId: aiUser.aiOwnerId,
-                          counterpartyName: aiUser.username,
-                          createdAt: Date.now(),
-                          description: `AI(${aiUser.username}) 대리연산 스폰서 수익`
-                        }).catch(console.error);
-                      }
-
-                      fetch(`/api/users/profile?userId=${user?.id}`)
-                        .then(r => r.json())
-                        .then(d => {
-                          if (d.user) {
-                            setUser(d.user);
-                            setMyProfile(d.user);
-                          }
-                        })
-                        .catch(console.error);
-                    }
-                  });
-                }
-
-                return paymentPromise.then(() => {
+                return Promise.resolve().then(() => {
                   const friendProvider = isSponsorMode
                     ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
                     : realProvider;
@@ -1163,6 +1138,9 @@ export default function Home() {
                       systemPrompt: aiUser.aiPrompt,
                       isDelegate: amIDelegate,
                       sponsorId: sponsorMember?.userId,
+                      roomId: currentRoom.id,
+                      aiUserId: aiUser.id,
+                      aiOwnerId: aiUser.aiOwnerId,
                       userId: user?.id,
                       useFreeEvent: friendUseFreeEvent,
                       content: `현재 채팅방 대화 문맥 (최근 5개):\n${currentContext}\n\n위 문맥을 참고하여 네 차례야. 혼잣말을 연속으로 하지 않게 주의하며 자연스럽게 사람처럼 1문장 내지 2문장으로 짧게 답장해줘.`
@@ -1172,6 +1150,18 @@ export default function Home() {
               })
               .then((aiResponse: any) => {
                 if (!aiResponse.ok) {
+                  reportApiFailure({
+                    area: 'ai_friend_reply',
+                    response: aiResponse,
+                    metadata: {
+                      provider: isSponsorMode
+                        ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
+                        : (localStorage.getItem('alo_ai_provider') || 'openai'),
+                      model: isSponsorMode ? (currentRoom.sponsorModel || '') : (localStorage.getItem('alo_ai_model') || ''),
+                      sponsorMode: isSponsorMode,
+                      roomKind: currentRoom.isGroup ? 'group' : 'dm',
+                    },
+                  });
                   if (aiResponse.status === 429) {
                     chatStore.sendMessage(currentRoom.id, `⚠️ [AI 알림] 오늘 무료 제공량을 모두 소진한 것 같습니다. 내일 다시 이용하시거나 환경설정에서 API 키를 등록해주세요. (혹은 스폰서 방 이용)`, 'system', 'System', 'SYSTEM');
                   } else if (aiResponse.status === 400) {
@@ -1369,6 +1359,17 @@ export default function Home() {
               if (aiRes.ok) {
                 aiAnalysisResult = await aiRes.json();
               } else {
+                reportApiFailure({
+                  area: 'ai_analysis',
+                  response: aiRes,
+                  metadata: {
+                    provider: selectedProvider,
+                    model: selectedAiModel,
+                    roomKind: currentRoom?.isGroup ? 'group' : 'dm',
+                    mediaType: 'image',
+                    sponsorMode: false,
+                  },
+                });
                 console.error('Image fact-check APi error');
                 aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 서버 에러 (크레딧 부족 또는 용량 초과)' };
               }
@@ -1382,6 +1383,16 @@ export default function Home() {
                 });
               }
             } catch (err) {
+              reportCaughtError({
+                area: 'ai_analysis',
+                error: err,
+                code: 'NETWORK_REQUEST_FAILED',
+                metadata: {
+                  roomKind: currentRoom?.isGroup ? 'group' : 'dm',
+                  mediaType: 'image',
+                  sponsorMode: false,
+                },
+              });
               console.warn('AI Vision Analysis failed (skipped):', err);
               const aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 연결 실패' };
               await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
@@ -1391,6 +1402,15 @@ export default function Home() {
         }
       }
     } catch (err) {
+      reportCaughtError({
+        area: 'upload',
+        error: err,
+        code: 'UPLOAD_FAILED',
+        metadata: {
+          roomKind: currentRoom?.isGroup ? 'group' : 'dm',
+          sponsorMode: !!currentRoom?.sponsorMode,
+        },
+      });
       console.error('File upload failed', err);
       alert('파일 업로드에 실패했습니다.');
     } finally {

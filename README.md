@@ -96,6 +96,12 @@ To architecturally support massive scale (millions of Concurrent Users - CCU) wi
 - **BYOK (Bring Your Own Key) P2P Tunneling**: In conventional Web3 or Edge AI, the user donating computation also pays the API toll. Alopop pioneered a decoupled economic tunnel: **Guest A's smartphone** calculates the heavy AI context (Edge Orchestration), but the payload is routed to securely decrypt **Offline Host B's API vault**. Computation is distributed (crowd-sourced), but billing remains sovereign.
 - **Decentralized AI Auto-Reply Engine**: By combining the technologies above, the heaviest server load—processing thousands of chat messages to calculate the exact timing for an AI to intervene—is 100% shifted to the P2P Ghost Delegate. This results in unprecedented O(1) server cost parity per room, even under infinite message velocity.
 
+### 9. Redis-Free 10k CCU Infrastructure & Chaos Monkey 💥
+To support up to 10,000 concurrent users without the operational overhead of external caching layers like Redis, Alopop employs a highly optimized internal architecture.
+- **DB-Backed Offline Queue**: Prevents Node.js memory leaks by persisting undelivered offline messages directly to the database, bypassing RAM entirely.
+- **In-Memory Rate Limiting**: A lightweight custom rate limiter (3 requests/sec) shields the expensive AI Sponsor APIs from malicious bot floods or DDOS attempts, completely independent of external dependencies.
+- **Integrated Chaos Monkey**: The Admin Dashboard features a built-in 'Chaos Monkey' training ground. Administrators can deploy hundreds of automated "Ghost Agents" that mercilessly spam sockets and APIs to continuously validate infrastructure stability and ensure zero downtime.
+
 ---
 
 ## 🛠 Getting Started

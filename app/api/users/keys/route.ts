@@ -1,42 +1,48 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { encryptKey } from '@/lib/crypto';
+import { requireCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const SaveKeySchema = z.object({
+  userId: z.string().min(1).optional(),
+  provider: z.enum(['openai', 'gemini', 'anthropic']),
+  apiKey: z.string().nullable().optional(),
+});
 
 export async function POST(request: Request) {
   try {
-    const { userId, provider, apiKey } = await request.json();
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
 
-    if (!userId || !provider) {
-      return NextResponse.json({ error: 'userId and provider are required' }, { status: 400 });
+    const body = await request.json();
+    const parseResult = SaveKeySchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    if (!apiKey) {
-      // 키를 지우려면 apiKey를 빈 문자열로 보냄
+    const { userId, provider, apiKey } = parseResult.data;
+    if (userId && userId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const encryptedApiKey = apiKey ? encryptKey(apiKey) : null;
-
-    let updateData = {};
-    if (provider === 'openai') {
-      updateData = { openaiKey: encryptedApiKey };
-    } else if (provider === 'gemini') {
-      updateData = { geminiKey: encryptedApiKey };
-    } else if (provider === 'anthropic') {
-      updateData = { anthropicKey: encryptedApiKey };
-    } else {
-      return NextResponse.json({ error: 'Unsupported provider' }, { status: 400 });
-    }
+    const updateData =
+      provider === 'openai'
+        ? { openaiKey: encryptedApiKey }
+        : provider === 'gemini'
+          ? { geminiKey: encryptedApiKey }
+          : { anthropicKey: encryptedApiKey };
 
     const updatedUser = await prisma.user.update({
-      where: { id: userId },
+      where: { id: currentUser.id },
       data: updateData,
       select: {
         id: true,
-        // 보안상 플래그만 반환
         openaiKey: true,
         geminiKey: true,
         anthropicKey: true,
-      }
+      },
     });
 
     return NextResponse.json({
@@ -45,7 +51,7 @@ export async function POST(request: Request) {
         hasOpenAiKey: !!updatedUser.openaiKey,
         hasGeminiKey: !!updatedUser.geminiKey,
         hasAnthropicKey: !!updatedUser.anthropicKey,
-      }
+      },
     });
   } catch (error) {
     console.error('Save API key error:', error);

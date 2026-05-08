@@ -1,20 +1,28 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-// 내 프로필 정보 및 상태 메세지 조회 (GET)
+const UpdateProfileSchema = z.object({
+  userId: z.string().min(1, 'userId is required').optional(),
+  statusMessage: z.string().max(280, 'statusMessage is too long').nullable().optional(),
+});
+
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    const { searchParams } = new URL(request.url);
+    const requestedUserId = searchParams.get('userId');
+    if (requestedUserId && requestedUserId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: currentUser.id },
       select: {
         id: true,
         username: true,
@@ -25,23 +33,24 @@ export async function GET(request: Request) {
         openaiKey: true,
         geminiKey: true,
         anthropicKey: true,
-      }
+      },
     });
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // 보안상 실제 키 문자열은 제거하고 존재 여부만 반환
     const safeUser = {
-      ...user,
+      id: user.id,
+      username: user.username,
+      avatar_url: user.avatar_url,
+      statusMessage: user.statusMessage,
+      walletBalance: user.walletBalance,
+      isAdmin: user.isAdmin,
       hasOpenAiKey: !!user.openaiKey,
       hasGeminiKey: !!user.geminiKey,
       hasAnthropicKey: !!user.anthropicKey,
     };
-    delete (safeUser as any).openaiKey;
-    delete (safeUser as any).geminiKey;
-    delete (safeUser as any).anthropicKey;
 
     return NextResponse.json({ success: true, user: safeUser });
   } catch (error) {
@@ -50,35 +59,32 @@ export async function GET(request: Request) {
   }
 }
 
-// 상태 메시지 및 기타 프로필 정보 업데이트 (PUT)
-import { z } from 'zod';
-
-const UpdateProfileSchema = z.object({
-  userId: z.string().min(1, 'userId is required'),
-  statusMessage: z.string().nullable().optional(),
-});
-
 export async function PUT(request: Request) {
   try {
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
+
     const body = await request.json();
     const parseResult = UpdateProfileSchema.safeParse(body);
-
     if (!parseResult.success) {
       return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
     const { userId, statusMessage } = parseResult.data;
+    if (userId && userId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const updatedUser = await prisma.user.update({
-      where: { id: userId },
+      where: { id: currentUser.id },
       data: {
-        statusMessage: statusMessage || null
+        statusMessage: statusMessage?.trim() || null,
       },
       select: {
         id: true,
         username: true,
-        statusMessage: true
-      }
+        statusMessage: true,
+      },
     });
 
     return NextResponse.json({ success: true, user: updatedUser });
@@ -87,4 +93,3 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-

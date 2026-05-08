@@ -6,22 +6,154 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const next = require('next');
 const path = require('path');
+const crypto = require('crypto');
+const { loadEnvConfig } = require('@next/env');
+
+loadEnvConfig(process.cwd());
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = process.env.PORT || 3099;
+const internalApiSecret = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || (dev ? 'ALO_POP_INTERNAL_SECRET_DEFAULT' : '');
+if (!internalApiSecret) {
+  console.error('INTERNAL_API_SECRET, SESSION_SECRET, or ENCRYPTION_KEY must be set for sponsor background checks.');
+}
+const SESSION_COOKIE_NAME = 'alo_session';
+
+function getSessionSecret() {
+  const secret = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY;
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET or ENCRYPTION_KEY must be set in production');
+  }
+  return secret || 'ALO_POP_SESSION_SECRET_DEFAULT';
+}
+
+function parseCookieHeader(cookieHeader) {
+  const cookies = new Map();
+  if (!cookieHeader) return cookies;
+  cookieHeader.split(';').forEach((pair) => {
+    const [rawName, ...rawValue] = pair.trim().split('=');
+    if (!rawName || rawValue.length === 0) return;
+    cookies.set(rawName, decodeURIComponent(rawValue.join('=')));
+  });
+  return cookies;
+}
+
+function signSessionPayload(encodedPayload) {
+  return crypto
+    .createHmac('sha256', getSessionSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+}
+
+function verifySessionToken(token) {
+  if (!token) return null;
+  const [encodedPayload, signature] = token.split('.');
+  if (!encodedPayload || !signature) return null;
+
+  const expectedSignature = signSessionPayload(encodedPayload);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+    if (!payload.userId || !payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
 
 // Next.js 앱 초기화
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-// 오프라인 메시지 큐 (메모리(RAM)에 임시 저장, 서버가 꺼지면 증발)
-// 구조: Map<receiverId, Array<Message>>
-const offlineQueue = new Map();
+// 오프라인 메시지 상태 관리: 메모리(RAM) 의존 제거
+// 이제부터 offlineQueue(Map) 대신 Prisma DB(OfflineMessage)를 사용하여 OOM(메모리 누수)를 완벽히 방지합니다.
 const roomPresence = new Map();
 
 app.prepare().then(() => {
   const expressApp = express();
+  const { PrismaClient } = require('@prisma/client');
+  const prisma = new PrismaClient();
+
+  async function getAuthenticatedSocketUser(socket) {
+    const cookies = parseCookieHeader(socket.handshake.headers.cookie);
+    const payload = verifySessionToken(cookies.get(SESSION_COOKIE_NAME));
+    if (!payload) return null;
+    return prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, username: true, isAdmin: true }
+    });
+  }
+
+  async function getRoomWithMembers(roomId) {
+    return prisma.room.findUnique({
+      where: { id: roomId },
+      include: { members: true }
+    });
+  }
+
+  function isRoomMember(room, userId) {
+    return !!room?.members?.some((member) => member.userId === userId && !member.isHidden);
+  }
+
+  function isRoomHost(room, userId) {
+    return !!room?.members?.some((member) => member.userId === userId && member.isHost);
+  }
+
+  function isCurrentDelegate(room, userId) {
+    const hostMember = room?.members?.find((member) => member.isHost);
+    if (!hostMember) return false;
+    const activeUsers = Array.from(roomPresence.get(room.id) || []).sort();
+    if (activeUsers.includes(hostMember.userId)) return false;
+    return activeUsers[0] === userId;
+  }
+
+  async function canSendAs(room, socketUserId, requestedSenderId) {
+    if (requestedSenderId === socketUserId) return true;
+
+    const senderUser = await prisma.user.findUnique({
+      where: { id: requestedSenderId },
+      select: { id: true, isAi: true, aiOwnerId: true }
+    });
+    if (!senderUser?.isAi) return false;
+    if (senderUser.aiOwnerId === socketUserId) return true;
+
+    return !!room?.sponsorMode && isRoomMember(room, requestedSenderId) && (
+      isRoomHost(room, socketUserId) || isCurrentDelegate(room, socketUserId)
+    );
+  }
+
+  async function deliverOfflineMessages(socket) {
+    const userId = socket.userId;
+    if (!userId) return;
+    try {
+      const records = await prisma.offlineMessage.findMany({
+        where: { receiverId: userId },
+        orderBy: { createdAt: 'asc' }
+      });
+      if (records.length > 0) {
+        const messages = records.map(r => JSON.parse(r.payload));
+        socket.emit('receive_offline_messages', messages);
+        console.log(`📥 Emitted ${messages.length} offline messages from DB to ${userId}`);
+        
+        await prisma.offlineMessage.deleteMany({
+          where: { id: { in: records.map(r => r.id) } }
+        });
+      }
+    } catch (e) {
+      console.error('deliverOfflineMessages error:', e);
+    }
+  }
 
   // Web Push 초기화
   const webpush = require('web-push');
@@ -79,37 +211,43 @@ app.prepare().then(() => {
   // Socket.io 인스턴스 생성
   const io = new Server(httpServer, {
     cors: {
-      origin: '*', // 개발용 편의 설정
-      methods: ['GET', 'POST']
+      origin: ['https://alopop.alonics.com', 'http://127.0.0.1:3099'],
+      methods: ['GET', 'POST'],
+      credentials: true
     }
   });
 
   const SERVER_START_TIME = Date.now().toString();
 
   // Socket.io 통신 처리
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     console.log('🔗 User connected:', socket.id);
+    const socketUser = await getAuthenticatedSocketUser(socket);
+    if (!socketUser) {
+      socket.emit('auth_error', { error: 'Unauthorized' });
+      socket.disconnect(true);
+      return;
+    }
+    socket.userId = socketUser.id;
     socket.emit('server_version', SERVER_START_TIME);
     
     // 1. 유저 인증 완료 시, 자신의 ID로 된 방(room)에 조인 (개인 DM 또는 알림 수신용)
-    socket.on('register', (userId) => {
-      socket.userId = userId;
-      socket.join(userId);
-      console.log(`👤 User ${userId} registered and joined their personal room`);
+    socket.on('register', () => {
+      socket.userId = socketUser.id;
+      socket.join(socket.userId);
+      console.log(`User ${socket.userId} registered and joined their personal room`);
 
       // 접속 시 오프라인 큐에 보관된 메시지가 있다면 즉시 쏟아냄 (그리고 삭제)
-      if (offlineQueue.has(userId)) {
-        const messages = offlineQueue.get(userId);
-        if (messages.length > 0) {
-          socket.emit('receive_offline_messages', messages);
-          console.log(`📬 Emitted ${messages.length} offline messages to ${userId}`);
-        }
-        offlineQueue.delete(userId);
-      }
+      deliverOfflineMessages(socket);
     });
 
     // 2. 다중 채팅방(Room) 입장 처리
-    socket.on('join_room', (roomId) => {
+    socket.on('join_room', async (roomId) => {
+      const room = await getRoomWithMembers(roomId);
+      if (!isRoomMember(room, socket.userId)) {
+        socket.emit('room_join_denied', { roomId, error: 'Forbidden' });
+        return;
+      }
       socket.join(roomId);
       socket.currentRoom = roomId;
       
@@ -124,20 +262,34 @@ app.prepare().then(() => {
       console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) joined room ${roomId}`);
     });
 
-    socket.on('leave_room', (roomId) => {
+    socket.on('leave_room', async (roomId) => {
       socket.leave(roomId);
       socket.currentRoom = null;
       
       if (socket.userId && roomPresence.has(roomId)) {
-        roomPresence.get(roomId).delete(socket.userId);
-        const activeUsers = Array.from(roomPresence.get(roomId));
-        io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
+        try {
+          const socketsInRoom = await io.in(roomId).fetchSockets();
+          const stillInRoom = socketsInRoom.some(s => {
+            const localSocket = io.sockets.sockets.get(s.id);
+            return localSocket && localSocket.userId === socket.userId && localSocket.id !== socket.id;
+          });
+          
+          if (!stillInRoom) {
+            roomPresence.get(roomId).delete(socket.userId);
+            const activeUsers = Array.from(roomPresence.get(roomId));
+            io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
+          }
+        } catch(e) {
+          console.error('Presence update error on leave_room', e);
+        }
       }
       console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) left room ${roomId}`);
     });
 
     // 3. 채팅방 이름 실시간 변경 브로드캐스트
-    socket.on('update_room_name', (payload) => {
+    socket.on('update_room_name', async (payload) => {
+      const room = await getRoomWithMembers(payload.roomId);
+      if (!isRoomMember(room, socket.userId)) return;
       console.log(`[DEBUG] 🏷️ Room name updated:`, payload);
       // 자신을 포함하여 방에 있는 모든 사람에게 발송 (send_message는 자신 제외지만 이름 변경은 모두가 봐야함)
       io.to(payload.roomId).emit('room_name_updated', payload);
@@ -147,13 +299,8 @@ app.prepare().then(() => {
     socket.on('update_message', async (payload) => {
       console.log(`[DEBUG] 🔄 Message updated by sponsor (Fact-check):`, payload.messageId);
       try {
-        const { PrismaClient } = require('@prisma/client');
-        const prisma = new PrismaClient();
-        
-        const room = await prisma.room.findUnique({
-          where: { id: payload.roomId },
-          include: { members: true }
-        });
+        const room = await getRoomWithMembers(payload.roomId);
+        if (!isRoomMember(room, socket.userId)) return;
 
         if (room && room.members) {
           room.members.forEach((member) => {
@@ -171,18 +318,22 @@ app.prepare().then(() => {
     });
 
     // 3.5. 휴먼 유저 타이핑 상태 릴레이 (자신을 제외한 방 멤버에게 브로드캐스트)
-    socket.on('typing_start', (payload) => {
-      socket.to(payload.roomId).emit('typing_start', payload);
+    socket.on('typing_start', async (payload) => {
+      const room = await getRoomWithMembers(payload.roomId);
+      if (!isRoomMember(room, socket.userId)) return;
+      socket.to(payload.roomId).emit('typing_start', { ...payload, userId: socket.userId });
     });
-    socket.on('typing_end', (payload) => {
-      socket.to(payload.roomId).emit('typing_end', payload);
+    socket.on('typing_end', async (payload) => {
+      const room = await getRoomWithMembers(payload.roomId);
+      if (!isRoomMember(room, socket.userId)) return;
+      socket.to(payload.roomId).emit('typing_end', { ...payload, userId: socket.userId });
     });
 
-    socket.on('sponsor_settings_changed', (payload) => {
+    socket.on('sponsor_settings_changed', async (payload) => {
       // payload: { roomId: string, sponsorId: string, sponsorPrice: number, sponsorMode: boolean, sponsorModel: string }
-      if (payload.roomId) {
-        socket.to(payload.roomId).emit('sponsor_settings_changed', payload);
-      }
+      const room = await getRoomWithMembers(payload.roomId);
+      if (!isRoomHost(room, socket.userId)) return;
+      socket.to(payload.roomId).emit('sponsor_settings_changed', { ...payload, sponsorId: socket.userId });
     });
 
     // 4. No-Log Relay 메시지 전송 로직 (방/개인 공통)
@@ -193,16 +344,22 @@ app.prepare().then(() => {
       
       try {
         // 서버 측에서 Prisma DB를 조회해 해당 방에 속한 멤버들을 가져옵니다.
-        const { PrismaClient } = require('@prisma/client');
-        const prisma = new PrismaClient();
-        
-        const room = await prisma.room.findUnique({
-          where: { id: receiverId },
-          include: { members: true }
-        });
+        const room = await getRoomWithMembers(receiverId);
 
         // 1. 방을 찾았으면 (방향 메시지) -> 멤버 개개인의 ID를 타겟으로 발송
         if (room && room.members) {
+          if (!isRoomMember(room, socket.userId)) {
+            socket.emit('message_denied', { receiverId, error: 'Forbidden' });
+            return;
+          }
+
+          const requestedSenderId = message?.senderId;
+          if (!requestedSenderId || !(await canSendAs(room, socket.userId, requestedSenderId))) {
+            socket.emit('message_denied', { receiverId, error: 'Invalid sender' });
+            return;
+          }
+          message.senderId = requestedSenderId;
+
           if (!room.isGroup) {
             // 1:1 방일 경우 나갔던(숨김 처리된) 유저 자동 부활(Re-join) 로직 처리
             const hiddenMembers = room.members.filter(m => m.isHidden && m.userId !== message.senderId);
@@ -228,28 +385,28 @@ app.prepare().then(() => {
             
             if (roomSet && roomSet.size > 0) {
               // 온라인이면 해당 멤버의 개인 Room으로 즉시 발송하되, 타임아웃/ACK 적용
-              io.to(targetId).timeout(3000).emit('receive_message', message, (err, responses) => {
+              io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                 if (err || !responses || Object.keys(responses).length === 0) {
-                  console.log(`⚠️ ACK Timeout/Error for ${targetId}, pushing to offlineQueue`);
-                  if (!offlineQueue.has(targetId)) {
-                    offlineQueue.set(targetId, []);
-                  }
-                  offlineQueue.get(targetId).push(message);
-                  sendWebPush(targetId, message);
+                  console.log(`⚠️ ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
+                  await prisma.offlineMessage.create({
+                    data: { receiverId: targetId, payload: JSON.stringify(message) }
+                  }).catch(e => console.error('Offline msg save err:', e));
+                  
+                  sendWebPush(targetId, message).catch(console.error); // 비동기 Fire-and-forget
                 } else {
                   console.log(`✅ ACK Received from ${targetId} (in room ${receiverId})`);
                 }
               });
             } else {
-              // 오프라인이면 큐에 저장
-              if (!offlineQueue.has(targetId)) {
-                offlineQueue.set(targetId, []);
-              }
-              offlineQueue.get(targetId).push(message);
-              console.log(`📥 Paused message for offline member ${targetId} (Queue size: ${offlineQueue.get(targetId).length})`);
+              // 오프라인이면 DB에 영구 보관 (서버 재시작/장기 미접속 시 메모리 누수 방지)
+              prisma.offlineMessage.create({
+                data: { receiverId: targetId, payload: JSON.stringify(message) }
+              }).then(() => {
+                console.log(`📥 Paused message for offline member ${targetId} into DB`);
+              }).catch(e => console.error('Offline msg save err:', e));
               
-              // 앱이 완전히 종료되었거나 백그라운드인 경우 푸시 알림 트리거
-              sendWebPush(targetId, message);
+              // 앱이 완전히 종료되었거나 백그라운드인 경우 푸시 알림 트리거 (비동기 처리로 서버 블로킹 제거)
+              sendWebPush(targetId, message).catch(console.error);
             }
           });
 
@@ -262,7 +419,7 @@ app.prepare().then(() => {
               
               fetch(`http://127.0.0.1:${port}/api/chat/sponsor`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-alopop-internal': internalApiSecret },
                 body: JSON.stringify({ roomId: receiverId, message })
               })
               .then(res => res.json())
@@ -297,29 +454,34 @@ app.prepare().then(() => {
           }
         } else {
           // 2. 방이 아니라면 (1:1 개인톡 단일 타겟팅인 경우)
+          if (!message?.senderId || !(await canSendAs(null, socket.userId, message.senderId))) {
+            socket.emit('message_denied', { receiverId, error: 'Invalid sender' });
+            return;
+          }
           if (receiverId === message.senderId) return;
 
           const roomSet = io.sockets.adapter.rooms.get(receiverId);
           if (roomSet && roomSet.size > 0) {
-            io.to(receiverId).timeout(3000).emit('receive_message', message, (err, responses) => {
+            io.to(receiverId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
-                console.log(`⚠️ ACK Timeout/Error for ${receiverId}, pushing to offlineQueue`);
-                if (!offlineQueue.has(receiverId)) {
-                  offlineQueue.set(receiverId, []);
-                }
-                offlineQueue.get(receiverId).push(message);
-                sendWebPush(receiverId, message);
+                console.log(`⚠️ ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
+                await prisma.offlineMessage.create({
+                  data: { receiverId: receiverId, payload: JSON.stringify(message) }
+                }).catch(e => console.error('Offline msg save err:', e));
+                
+                sendWebPush(receiverId, message).catch(console.error);
               } else {
                 console.log(`✅ ACK Received directly from ${receiverId}`);
               }
             });
           } else {
-            if (!offlineQueue.has(receiverId)) {
-              offlineQueue.set(receiverId, []);
-            }
-            offlineQueue.get(receiverId).push(message);
-            console.log(`📥 Paused message for offline destination ${receiverId} (Queue size: ${offlineQueue.get(receiverId).length})`);
-            sendWebPush(receiverId, message);
+            prisma.offlineMessage.create({
+              data: { receiverId: receiverId, payload: JSON.stringify(message) }
+            }).then(() => {
+              console.log(`📥 Paused message for offline destination ${receiverId} into DB`);
+            }).catch(e => console.error('Offline msg save err:', e));
+            
+            sendWebPush(receiverId, message).catch(console.error);
           }
         }
       } catch (err) {
@@ -328,15 +490,11 @@ app.prepare().then(() => {
     });
 
     socket.on('read_receipt', async (payload) => {
-      const { roomId, userId, timestamp } = payload;
+      const { roomId, timestamp } = payload;
+      const userId = socket.userId;
       try {
-        const { PrismaClient } = require('@prisma/client');
-        const prisma = new PrismaClient();
-        
-        const room = await prisma.room.findUnique({
-          where: { id: roomId },
-          include: { members: true }
-        });
+        const room = await getRoomWithMembers(roomId);
+        if (!isRoomMember(room, socket.userId)) return;
         
         if (room && room.members) {
            room.members.forEach(member => {
@@ -354,13 +512,25 @@ app.prepare().then(() => {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       console.log('🔴 User disconnected:', socket.id, socket.userId);
       if (socket.currentRoom && socket.userId && roomPresence.has(socket.currentRoom)) {
         const rId = socket.currentRoom;
-        roomPresence.get(rId).delete(socket.userId);
-        const activeUsers = Array.from(roomPresence.get(rId));
-        io.to(rId).emit('room_presence_update', { roomId: rId, activeUsers });
+        try {
+          const socketsInRoom = await io.in(rId).fetchSockets();
+          const stillInRoom = socketsInRoom.some(s => {
+            const localSocket = io.sockets.sockets.get(s.id);
+            return localSocket && localSocket.userId === socket.userId && localSocket.id !== socket.id;
+          });
+          
+          if (!stillInRoom) {
+            roomPresence.get(rId).delete(socket.userId);
+            const activeUsers = Array.from(roomPresence.get(rId));
+            io.to(rId).emit('room_presence_update', { roomId: rId, activeUsers });
+          }
+        } catch(e) {
+          console.error('Presence update error on disconnect', e);
+        }
       }
     });
   });

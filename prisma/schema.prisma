@@ -40,6 +40,9 @@ model User {
   // 보상 수령 이력
   eventRewards UserEventReward[]
   eventUsages  UserEventUsage[]
+  
+  // 오프라인 메시지
+  offlineMessages OfflineMessage[] @relation("UserOfflineMessages")
 }
 
 model Transaction {
@@ -188,4 +191,18 @@ model UserEventUsage {
 
   @@unique([userId, eventId, usageDate])
   @@index([userId, eventId])
+}
+
+// 오프라인 유저를 위한 임시 메시지 보관함 (메모리 누수 방지용)
+model OfflineMessage {
+  id          String   @id @default(uuid())
+  receiverId  String
+  receiver    User     @relation("UserOfflineMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  // JSON 문자열 형태로 메시지 객체 자체를 보관 (발신자, 내용, 타입 등 모두 포함)
+  payload     String
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([receiverId])
 }

@@ -1,39 +1,52 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const KickMemberSchema = z.object({
+  roomId: z.string().min(1),
+  targetUserId: z.string().min(1),
+  requesterId: z.string().min(1).optional(),
+});
 
 export async function POST(request: Request) {
   try {
-    const { roomId, targetUserId, requesterId } = await request.json();
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
 
-    if (!roomId || !targetUserId || !requesterId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const parseResult = KickMemberSchema.safeParse(await request.json());
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    // 1. 요청자가 해당 방의 방장(isHost: true)인지 확인
+    const { roomId, targetUserId, requesterId } = parseResult.data;
+    if (requesterId && requesterId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const requester = await prisma.roomMember.findUnique({
       where: {
         userId_roomId: {
-          userId: requesterId,
-          roomId: roomId
-        }
-      }
+          userId: currentUser.id,
+          roomId,
+        },
+      },
     });
 
     if (!requester || !requester.isHost) {
       const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
-      if (!targetUser || !targetUser.isAi || targetUser.aiOwnerId !== requesterId) {
+      if (!targetUser || !targetUser.isAi || targetUser.aiOwnerId !== currentUser.id) {
         return NextResponse.json({ error: 'Permission denied: Not a host or AI owner' }, { status: 403 });
       }
     }
 
-    // 2. 강퇴할 타겟 멤버 삭제
     await prisma.roomMember.delete({
       where: {
         userId_roomId: {
           userId: targetUserId,
-          roomId: roomId
-        }
-      }
+          roomId,
+        },
+      },
     });
 
     return NextResponse.json({ success: true, kickedUserId: targetUserId });

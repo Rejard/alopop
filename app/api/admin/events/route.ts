@@ -1,16 +1,39 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireAdminUser } from '@/lib/auth';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request) {
+const CreateEventSchema = z.object({
+  userId: z.string().optional(),
+  title: z.string().min(1),
+  description: z.string().nullable().optional(),
+  rewardCoins: z.number().int().min(0).optional(),
+  startsAt: z.string().nullable().optional(),
+  endsAt: z.string().nullable().optional(),
+  rewardFrequency: z.string().optional(),
+  eventType: z.string().optional(),
+  aiProvider: z.string().nullable().optional(),
+  aiModel: z.string().nullable().optional(),
+  eventApiKey: z.string().nullable().optional(),
+  dailyLimit: z.number().int().min(0).nullable().optional(),
+});
+
+const UpdateEventSchema = z.object({
+  userId: z.string().optional(),
+  eventId: z.string().min(1),
+  action: z.enum(['TOGGLE_ACTIVE']),
+});
+
+export async function GET() {
   try {
     const events = await prisma.event.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
-    // Remove sensitive API keys before returning to client
-    const safeEvents = events.map(e => {
-      const { eventApiKey, ...safeEvent } = e;
+    const safeEvents = events.map((event) => {
+      const { eventApiKey, ...safeEvent } = event;
+      void eventApiKey;
       return safeEvent;
     });
     return NextResponse.json(safeEvents);
@@ -22,34 +45,48 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { 
-      userId, title, description, rewardCoins, startsAt, endsAt, rewardFrequency,
-      eventType, aiProvider, aiModel, eventApiKey, dailyLimit 
-    } = await request.json();
+    const { user: adminUser, response } = await requireAdminUser(request);
+    if (!adminUser) return response;
 
-    if (!userId || !title) {
-      return NextResponse.json({ error: 'userId and title are required' }, { status: 400 });
+    const parseResult = CreateEventSchema.safeParse(await request.json());
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.isAdmin) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    const {
+      title,
+      description,
+      rewardCoins,
+      startsAt,
+      endsAt,
+      rewardFrequency,
+      eventType,
+      aiProvider,
+      aiModel,
+      eventApiKey,
+      dailyLimit,
+    } = parseResult.data;
+
+    const startDate = startsAt ? new Date(startsAt) : new Date();
+    const endDate = endsAt ? new Date(endsAt) : null;
+    if (Number.isNaN(startDate.getTime()) || (endDate && Number.isNaN(endDate.getTime()))) {
+      return NextResponse.json({ error: 'Invalid event date' }, { status: 400 });
     }
 
     const event = await prisma.event.create({
       data: {
         title,
         description,
-        eventType: eventType || "REWARD",
+        eventType: eventType || 'REWARD',
         reward: rewardCoins || 0,
-        rewardFrequency: rewardFrequency || "ONCE",
+        rewardFrequency: rewardFrequency || 'ONCE',
         aiProvider: aiProvider || null,
         aiModel: aiModel || null,
         eventApiKey: eventApiKey || null,
-        dailyLimit: dailyLimit !== undefined ? dailyLimit : null,
-        startDate: startsAt ? new Date(startsAt) : new Date(),
-        endDate: endsAt ? new Date(endsAt) : null,
-      }
+        dailyLimit: dailyLimit ?? null,
+        startDate,
+        endDate,
+      },
     });
 
     return NextResponse.json({ success: true, event });
@@ -59,34 +96,27 @@ export async function POST(request: Request) {
   }
 }
 
-// 이벤트 활성화 토글 및 보상 지급
 export async function PUT(request: Request) {
   try {
-    const { userId, eventId, action } = await request.json();
+    const { user: adminUser, response } = await requireAdminUser(request);
+    if (!adminUser) return response;
 
-    if (!userId || !eventId || !action) {
-      return NextResponse.json({ error: 'userId, eventId, and action are required' }, { status: 400 });
+    const parseResult = UpdateEventSchema.safeParse(await request.json());
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.isAdmin) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-    }
-
+    const { eventId } = parseResult.data;
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    if (action === 'TOGGLE_ACTIVE') {
-      const updatedEvent = await prisma.event.update({
-        where: { id: eventId },
-        data: { isActive: !event.isActive }
-      });
-      return NextResponse.json({ success: true, event: updatedEvent });
-    }
-
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    const updatedEvent = await prisma.event.update({
+      where: { id: eventId },
+      data: { isActive: !event.isActive },
+    });
+    return NextResponse.json({ success: true, event: updatedEvent });
   } catch (error) {
     console.error('Update event error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -95,21 +125,17 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { user: adminUser, response } = await requireAdminUser(request);
+    if (!adminUser) return response;
+
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
     const eventId = searchParams.get('eventId');
-
-    if (!userId || !eventId) {
-      return NextResponse.json({ error: 'userId and eventId are required' }, { status: 400 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.isAdmin) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    if (!eventId) {
+      return NextResponse.json({ error: 'eventId is required' }, { status: 400 });
     }
 
     await prisma.event.delete({
-      where: { id: eventId }
+      where: { id: eventId },
     });
 
     return NextResponse.json({ success: true });

@@ -9,9 +9,39 @@ import { z } from 'zod';
 import { search } from 'duck-duck-scrape';
 import fs from 'fs/promises';
 import path from 'path';
+import { checkRateLimit } from '@/lib/rate-limit';
+
+const INTERNAL_API_SECRET =
+  process.env.INTERNAL_API_SECRET ||
+  process.env.SESSION_SECRET ||
+  process.env.ENCRYPTION_KEY ||
+  (process.env.NODE_ENV === 'production' ? '' : 'ALO_POP_INTERNAL_SECRET_DEFAULT');
+
+type PromptMessage = {
+  role: 'user';
+  content:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | { type: 'image'; image: Buffer; mimeType: string }
+      >;
+};
+
+type SearchResultItem = {
+  title?: string;
+  description?: string;
+};
 
 export async function POST(request: Request) {
   try {
+    if (!INTERNAL_API_SECRET) {
+      return NextResponse.json({ error: 'Internal API secret is not configured' }, { status: 500 });
+    }
+
+    if (request.headers.get('x-alopop-internal') !== INTERNAL_API_SECRET) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { roomId, message } = await request.json();
 
     if (!roomId || !message || !message.content) {
@@ -22,12 +52,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ skipped: true, reason: 'System message' });
     }
 
+    // Rate Limiter 적용 (초당 3회 초과 시 어뷰징 차단)
+    if (!checkRateLimit(`chat_sponsor_${message.senderId}`, 3, 1000)) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Too Many Requests',
+        aiAnalysis: { category: 'FAILED', reason: '초당 메시지 전송 한도 초과 (어뷰징 방지)' } 
+      }, { status: 429 });
+    }
+
     // 방 모드, 호스트 확인
     const room = await prisma.room.findUnique({
       where: { id: roomId },
       include: { members: true }
     });
-
     if (!room || !room.sponsorMode) {
       return NextResponse.json({ skipped: true, reason: 'Sponsor mode disabled' });
     }
@@ -144,7 +182,7 @@ export async function POST(request: Request) {
       modelInstance = customOpenAI(sponsorModel === 'openai' ? 'gpt-5.4' : finalAiModel);
     }
 
-    const promptMessages: any[] = [];
+    const promptMessages: PromptMessage[] = [];
     const textContent = message.content || "(사용자가 이미지만 업로드했습니다.)";
     
     if (imageBuffer) {
@@ -167,7 +205,8 @@ export async function POST(request: Request) {
       try {
         const searchResults = await search(textContent);
         if (searchResults && searchResults.results && searchResults.results.length > 0) {
-          const summary = searchResults.results.slice(0, 3).map((r: any) => `제목: ${r.title}\n내용: ${r.description}`).join('\n\n');
+          const searchItems = searchResults.results.slice(0, 3) as SearchResultItem[];
+          const summary = searchItems.map((r) => `제목: ${r.title || ''}\n내용: ${r.description || ''}`).join('\n\n');
           injectedSearchContext = `\n\n[💡 최신 웹 포렌식 검색 결과 (현재 시각: ${new Date().toLocaleString('ko-KR')})]\n분석 대상이 최신 사실과 부합하는지 검색 결과를 교차 검증의 근거로 우선 활용하세요:\n${summary}`;
         }
       } catch (e) {
@@ -195,16 +234,18 @@ export async function POST(request: Request) {
       temperature: finalAiModel === 'gpt-5.4-pro' ? undefined : 0.1,
     });
 
-    const aiRes = result.object;
+    const aiRes = {
+      ...result.object,
+      isSponsored: true,
+      sponsorModel: finalAiModel,
+      sponsorPrice,
+    };
     // 방장 스폰서 식별용 표식 삽입
-    (aiRes as any).isSponsored = true;
-    (aiRes as any).sponsorModel = finalAiModel;
-    (aiRes as any).sponsorPrice = sponsorPrice;
 
     return NextResponse.json({ success: true, aiAnalysis: aiRes });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Sponsor background AI check error:', error);
-    return NextResponse.json({ error: error?.message || 'Failed' }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed' }, { status: 500 });
   }
 }

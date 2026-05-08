@@ -1,32 +1,45 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const UpdateRoomSchema = z.object({
+  roomId: z.string().min(1),
+  name: z.string().max(80).nullable().optional(),
+  requesterId: z.string().min(1).optional(),
+});
 
 export async function PUT(request: Request) {
   try {
-    const { roomId, name, requesterId } = await request.json();
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
 
-    if (!roomId || !requesterId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const parseResult = UpdateRoomSchema.safeParse(await request.json());
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    // 요청자가 해당 방의 멤버인지 확인
+    const { roomId, name, requesterId } = parseResult.data;
+    if (requesterId && requesterId !== currentUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const member = await prisma.roomMember.findUnique({
       where: {
         userId_roomId: {
-          userId: requesterId,
-          roomId: roomId,
-        }
-      }
+          userId: currentUser.id,
+          roomId,
+        },
+      },
     });
 
     if (!member) {
-      return NextResponse.json({ error: '권한이 없습니다 (방 멤버만 이름 수정 가능)' }, { status: 403 });
+      return NextResponse.json({ error: 'Only room members can rename this room' }, { status: 403 });
     }
 
-    // 방 이름 업데이트
     const updatedRoom = await prisma.room.update({
       where: { id: roomId },
-      data: { name: name || null },
+      data: { name: name?.trim() || null },
     });
 
     return NextResponse.json(updatedRoom);
