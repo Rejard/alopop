@@ -1,0 +1,2959 @@
+﻿diff --git a/app/api/admin/announcements/route.ts b/app/api/admin/announcements/route.ts
+index 4b59570..336063d 100644
+--- a/app/api/admin/announcements/route.ts
++++ b/app/api/admin/announcements/route.ts
+@@ -1,96 +1,103 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireAdminUser } from '@/lib/auth';
++import { z } from 'zod';
+ 
+-export async function GET(request: Request) {
++const CreateAnnouncementSchema = z.object({
++  userId: z.string().optional(),
++  title: z.string().min(1),
++  content: z.string().min(1),
++  isActive: z.boolean().optional(),
++  durationMs: z.union([z.number(), z.string()]).optional(),
++});
++
++const UpdateAnnouncementSchema = z.object({
++  userId: z.string().optional(),
++  announcementId: z.string().min(1),
++  action: z.enum(['TOGGLE_ACTIVE']),
++});
++
++export async function GET() {
+   try {
+     const announcements = await prisma.announcement.findMany({
+-      orderBy: { createdAt: 'desc' }
++      orderBy: { createdAt: 'desc' },
+     });
+     return NextResponse.json(announcements);
+-  } catch (err) {
++  } catch {
+     return NextResponse.json({ error: 'Failed to fetch announcements' }, { status: 500 });
+   }
+ }
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { userId, title, content, isActive, durationMs } = await request.json();
+-    
+-    // Auth Check
+-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+-    const user = await prisma.user.findUnique({ where: { id: userId } });
+-    if (!user || !user.isAdmin) {
+-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
++    const { user: adminUser, response } = await requireAdminUser(request);
++    if (!adminUser) return response;
++
++    const parseResult = CreateAnnouncementSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
++    const { title, content, isActive, durationMs } = parseResult.data;
++    const parsedDurationMs = durationMs ? Number(durationMs) : 4000;
+     const created = await prisma.announcement.create({
+       data: {
+         title,
+         content,
+-        durationMs: durationMs ? parseInt(durationMs) : 4000,
+-        isActive: isActive !== undefined ? isActive : true
+-      }
++        durationMs: Number.isFinite(parsedDurationMs) && parsedDurationMs > 0 ? parsedDurationMs : 4000,
++        isActive: isActive ?? true,
++      },
+     });
+ 
+     return NextResponse.json(created);
+-  } catch (err) {
++  } catch {
+     return NextResponse.json({ error: 'Failed to create announcement' }, { status: 500 });
+   }
+ }
+ 
+ export async function PUT(request: Request) {
+   try {
+-    const { userId, announcementId, action } = await request.json();
++    const { user: adminUser, response } = await requireAdminUser(request);
++    if (!adminUser) return response;
+ 
+-    if (!userId || !announcementId || !action) {
+-      return NextResponse.json({ error: 'userId, announcementId, and action are required' }, { status: 400 });
+-    }
+-
+-    const user = await prisma.user.findUnique({ where: { id: userId } });
+-    if (!user || !user.isAdmin) {
+-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
++    const parseResult = UpdateAnnouncementSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
++    const { announcementId } = parseResult.data;
+     const announcement = await prisma.announcement.findUnique({ where: { id: announcementId } });
+     if (!announcement) {
+       return NextResponse.json({ error: 'Announcement not found' }, { status: 404 });
+     }
+ 
+-    if (action === 'TOGGLE_ACTIVE') {
+-      const updated = await prisma.announcement.update({
+-        where: { id: announcementId },
+-        data: { isActive: !announcement.isActive }
+-      });
+-      return NextResponse.json({ success: true, announcement: updated });
+-    }
+-
+-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+-  } catch (error) {
++    const updated = await prisma.announcement.update({
++      where: { id: announcementId },
++      data: { isActive: !announcement.isActive },
++    });
++    return NextResponse.json({ success: true, announcement: updated });
++  } catch {
+     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+   }
+ }
+ 
+ export async function DELETE(request: Request) {
+   try {
++    const { user: adminUser, response } = await requireAdminUser(request);
++    if (!adminUser) return response;
++
+     const { searchParams } = new URL(request.url);
+-    const userId = searchParams.get('userId');
+     const announcementId = searchParams.get('announcementId');
+-
+-    if (!userId || !announcementId) {
+-      return NextResponse.json({ error: 'userId and announcementId are required' }, { status: 400 });
+-    }
+-
+-    const user = await prisma.user.findUnique({ where: { id: userId } });
+-    if (!user || !user.isAdmin) {
+-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
++    if (!announcementId) {
++      return NextResponse.json({ error: 'announcementId is required' }, { status: 400 });
+     }
+ 
+     await prisma.announcement.delete({
+-      where: { id: announcementId }
++      where: { id: announcementId },
+     });
+ 
+     return NextResponse.json({ success: true });
+-  } catch (error) {
++  } catch {
+     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+   }
+ }
+diff --git a/app/api/admin/events/route.ts b/app/api/admin/events/route.ts
+index 2c1b0b0..f8cc47e 100644
+--- a/app/api/admin/events/route.ts
++++ b/app/api/admin/events/route.ts
+@@ -1,16 +1,39 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireAdminUser } from '@/lib/auth';
++import { z } from 'zod';
+ 
+ export const dynamic = 'force-dynamic';
+ 
+-export async function GET(request: Request) {
++const CreateEventSchema = z.object({
++  userId: z.string().optional(),
++  title: z.string().min(1),
++  description: z.string().nullable().optional(),
++  rewardCoins: z.number().int().min(0).optional(),
++  startsAt: z.string().nullable().optional(),
++  endsAt: z.string().nullable().optional(),
++  rewardFrequency: z.string().optional(),
++  eventType: z.string().optional(),
++  aiProvider: z.string().nullable().optional(),
++  aiModel: z.string().nullable().optional(),
++  eventApiKey: z.string().nullable().optional(),
++  dailyLimit: z.number().int().min(0).nullable().optional(),
++});
++
++const UpdateEventSchema = z.object({
++  userId: z.string().optional(),
++  eventId: z.string().min(1),
++  action: z.enum(['TOGGLE_ACTIVE']),
++});
++
++export async function GET() {
+   try {
+     const events = await prisma.event.findMany({
+-      orderBy: { createdAt: 'desc' }
++      orderBy: { createdAt: 'desc' },
+     });
+-    // Remove sensitive API keys before returning to client
+-    const safeEvents = events.map(e => {
+-      const { eventApiKey, ...safeEvent } = e;
++    const safeEvents = events.map((event) => {
++      const { eventApiKey, ...safeEvent } = event;
++      void eventApiKey;
+       return safeEvent;
+     });
+     return NextResponse.json(safeEvents);
+@@ -22,34 +45,48 @@ export async function GET(request: Request) {
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { 
+-      userId, title, description, rewardCoins, startsAt, endsAt, rewardFrequency,
+-      eventType, aiProvider, aiModel, eventApiKey, dailyLimit 
+-    } = await request.json();
++    const { user: adminUser, response } = await requireAdminUser(request);
++    if (!adminUser) return response;
+ 
+-    if (!userId || !title) {
+-      return NextResponse.json({ error: 'userId and title are required' }, { status: 400 });
++    const parseResult = CreateEventSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
+-    const user = await prisma.user.findUnique({ where: { id: userId } });
+-    if (!user || !user.isAdmin) {
+-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
++    const {
++      title,
++      description,
++      rewardCoins,
++      startsAt,
++      endsAt,
++      rewardFrequency,
++      eventType,
++      aiProvider,
++      aiModel,
++      eventApiKey,
++      dailyLimit,
++    } = parseResult.data;
++
++    const startDate = startsAt ? new Date(startsAt) : new Date();
++    const endDate = endsAt ? new Date(endsAt) : null;
++    if (Number.isNaN(startDate.getTime()) || (endDate && Number.isNaN(endDate.getTime()))) {
++      return NextResponse.json({ error: 'Invalid event date' }, { status: 400 });
+     }
+ 
+     const event = await prisma.event.create({
+       data: {
+         title,
+         description,
+-        eventType: eventType || "REWARD",
++        eventType: eventType || 'REWARD',
+         reward: rewardCoins || 0,
+-        rewardFrequency: rewardFrequency || "ONCE",
++        rewardFrequency: rewardFrequency || 'ONCE',
+         aiProvider: aiProvider || null,
+         aiModel: aiModel || null,
+         eventApiKey: eventApiKey || null,
+-        dailyLimit: dailyLimit !== undefined ? dailyLimit : null,
+-        startDate: startsAt ? new Date(startsAt) : new Date(),
+-        endDate: endsAt ? new Date(endsAt) : null,
+-      }
++        dailyLimit: dailyLimit ?? null,
++        startDate,
++        endDate,
++      },
+     });
+ 
+     return NextResponse.json({ success: true, event });
+@@ -59,34 +96,27 @@ export async function POST(request: Request) {
+   }
+ }
+ 
+-// ?대깽???쒖꽦???좉? 諛?蹂댁긽 吏湲? export async function PUT(request: Request) {
+   try {
+-    const { userId, eventId, action } = await request.json();
++    const { user: adminUser, response } = await requireAdminUser(request);
++    if (!adminUser) return response;
+ 
+-    if (!userId || !eventId || !action) {
+-      return NextResponse.json({ error: 'userId, eventId, and action are required' }, { status: 400 });
+-    }
+-
+-    const user = await prisma.user.findUnique({ where: { id: userId } });
+-    if (!user || !user.isAdmin) {
+-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
++    const parseResult = UpdateEventSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
++    const { eventId } = parseResult.data;
+     const event = await prisma.event.findUnique({ where: { id: eventId } });
+     if (!event) {
+       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+     }
+ 
+-    if (action === 'TOGGLE_ACTIVE') {
+-      const updatedEvent = await prisma.event.update({
+-        where: { id: eventId },
+-        data: { isActive: !event.isActive }
+-      });
+-      return NextResponse.json({ success: true, event: updatedEvent });
+-    }
+-
+-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
++    const updatedEvent = await prisma.event.update({
++      where: { id: eventId },
++      data: { isActive: !event.isActive },
++    });
++    return NextResponse.json({ success: true, event: updatedEvent });
+   } catch (error) {
+     console.error('Update event error:', error);
+     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+@@ -95,21 +125,17 @@ export async function PUT(request: Request) {
+ 
+ export async function DELETE(request: Request) {
+   try {
++    const { user: adminUser, response } = await requireAdminUser(request);
++    if (!adminUser) return response;
++
+     const { searchParams } = new URL(request.url);
+-    const userId = searchParams.get('userId');
+     const eventId = searchParams.get('eventId');
+-
+-    if (!userId || !eventId) {
+-      return NextResponse.json({ error: 'userId and eventId are required' }, { status: 400 });
+-    }
+-
+-    const user = await prisma.user.findUnique({ where: { id: userId } });
+-    if (!user || !user.isAdmin) {
+-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
++    if (!eventId) {
++      return NextResponse.json({ error: 'eventId is required' }, { status: 400 });
+     }
+ 
+     await prisma.event.delete({
+-      where: { id: eventId }
++      where: { id: eventId },
+     });
+ 
+     return NextResponse.json({ success: true });
+diff --git a/app/api/admin/system/route.ts b/app/api/admin/system/route.ts
+index fe3e105..37151c8 100644
+--- a/app/api/admin/system/route.ts
++++ b/app/api/admin/system/route.ts
+@@ -1,12 +1,22 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireAdminUser } from '@/lib/auth';
++import { z } from 'zod';
+ 
+ export const dynamic = 'force-dynamic';
+ 
+-export async function GET(request: Request) {
++const UpdateSystemSettingsSchema = z.object({
++  userId: z.string().optional(),
++  settings: z.array(z.object({
++    key: z.string().min(1),
++    value: z.string(),
++  })),
++});
++
++export async function GET() {
+   try {
+     const settings = await prisma.systemSetting.findMany({
+-      orderBy: { key: 'asc' }
++      orderBy: { key: 'asc' },
+     });
+     return NextResponse.json(settings);
+   } catch (error) {
+@@ -17,27 +27,20 @@ export async function GET(request: Request) {
+ 
+ export async function PUT(request: Request) {
+   try {
+-    const { userId, settings } = await request.json();
+-
+-    if (!userId) {
+-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+-    }
++    const { user: adminUser, response } = await requireAdminUser(request);
++    if (!adminUser) return response;
+ 
+-    // 蹂댁븞 寃利? userId媛 ?ㅼ젣 愿由ъ옄?몄? ?뺤씤
+-    const user = await prisma.user.findUnique({ where: { id: userId } });
+-    if (!user || !user.isAdmin) {
+-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
++    const parseResult = UpdateSystemSettingsSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
+-    // settings array ?낅뜲?댄듃
+-    if (Array.isArray(settings)) {
+-      for (const setting of settings) {
+-        await prisma.systemSetting.upsert({
+-          where: { key: setting.key },
+-          update: { value: setting.value },
+-          create: { key: setting.key, value: setting.value }
+-        });
+-      }
++    for (const setting of parseResult.data.settings) {
++      await prisma.systemSetting.upsert({
++        where: { key: setting.key },
++        update: { value: setting.value },
++        create: { key: setting.key, value: setting.value },
++      });
+     }
+ 
+     return NextResponse.json({ success: true });
+diff --git a/app/api/auth/google/route.ts b/app/api/auth/google/route.ts
+index 7ad85fd..7c96944 100644
+--- a/app/api/auth/google/route.ts
++++ b/app/api/auth/google/route.ts
+@@ -2,9 +2,17 @@ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { OAuth2Client } from 'google-auth-library';
+ import crypto from 'crypto';
++import { setSessionCookie } from '@/lib/auth';
+ 
+ const client = new OAuth2Client(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+ 
++type GooglePayload = {
++  sub?: string;
++  email?: string;
++  name?: string;
++  picture?: string;
++};
++
+ function generateInviteCode() {
+   return crypto.randomBytes(3).toString('hex').toUpperCase();
+ }
+@@ -20,24 +28,22 @@ export async function POST(request: Request) {
+       );
+     }
+ 
+-    let payload: any;
++    let payload: GooglePayload | undefined;
+ 
+     if (credential.split('.').length === 3) {
+-      // Google JWT ?좏겙(ID Token) 寃利?       const ticket = await client.verifyIdToken({
+         idToken: credential,
+         audience: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+       });
+       payload = ticket.getPayload();
+     } else {
+-      // Access Token??寃쎌슦 援ш? userinfo API瑜??듯빐 寃利?       const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+-        headers: { Authorization: `Bearer ${credential}` }
++        headers: { Authorization: `Bearer ${credential}` },
+       });
+       if (!res.ok) {
+         return NextResponse.json({ error: 'Invalid Google token' }, { status: 401 });
+       }
+-      payload = await res.json();
++      payload = await res.json() as GooglePayload;
+     }
+ 
+     if (!payload || !payload.sub) {
+@@ -49,7 +55,6 @@ export async function POST(request: Request) {
+ 
+     const { sub: googleId, email, name, picture } = payload;
+ 
+-    // 湲곗〈 濡쒓렇???좎? ?뺤씤
+     let user = await prisma.user.findUnique({
+       where: { googleId },
+     });
+@@ -57,27 +62,25 @@ export async function POST(request: Request) {
+     const isTargetAdmin = email === 'lemaiiisk@gmail.com';
+ 
+     if (!user) {
+-      // ?좉퇋 ?좎? ?앹꽦 (?먮룞 ?뚯썝媛??
+       let inviteCode = '';
+       let isUnique = false;
+ 
+       while (!isUnique) {
+         inviteCode = generateInviteCode();
+         const existing = await prisma.user.findUnique({
+-          where: { inviteCode }
++          where: { inviteCode },
+         });
+         if (!existing) {
+           isUnique = true;
+         }
+       }
+ 
+-      // ?쒖뒪???ㅼ젙?먯꽌 SIGNUP_BONUS 議고쉶
+       let initialBalance = 10000;
+       try {
+         const bonusSetting = await prisma.systemSetting.findUnique({ where: { key: 'SIGNUP_BONUS' } });
+-        if (bonusSetting && bonusSetting.value) {
+-            const val = parseInt(bonusSetting.value, 10);
+-            if (!isNaN(val)) initialBalance = val;
++        if (bonusSetting?.value) {
++          const val = parseInt(bonusSetting.value, 10);
++          if (!isNaN(val)) initialBalance = val;
+         }
+       } catch (e) {
+         console.error('Failed to get SIGNUP_BONUS', e);
+@@ -91,22 +94,19 @@ export async function POST(request: Request) {
+           avatar_url: picture,
+           inviteCode,
+           isAdmin: isTargetAdmin,
+-          walletBalance: initialBalance
++          walletBalance: initialBalance,
+         },
+       });
+-    } else {
+-      // 湲곗〈 ?좎?媛 ?寃?愿由ъ옄??寃쎌슦 沅뚰븳 遺??(?꾩슂 ???낅뜲?댄듃)
+-      if (isTargetAdmin && !user.isAdmin) {
+-        user = await prisma.user.update({
+-          where: { id: user.id },
+-          data: { isAdmin: true }
+-        });
+-      }
++    } else if (isTargetAdmin && !user.isAdmin) {
++      user = await prisma.user.update({
++        where: { id: user.id },
++        data: { isAdmin: true },
++      });
+     }
+ 
+-    // ?좎? ?뺣낫 諛섑솚 (UUID ???꾩껜 媛앹껜)
+-    return NextResponse.json(user);
+-    
++    const response = NextResponse.json(user);
++    setSessionCookie(response, user.id);
++    return response;
+   } catch (error) {
+     console.error('Google Auth Error:', error);
+     return NextResponse.json(
+diff --git a/app/api/chat/friend/route.ts b/app/api/chat/friend/route.ts
+index e23d5c8..645f5ff 100644
+--- a/app/api/chat/friend/route.ts
++++ b/app/api/chat/friend/route.ts
+@@ -6,81 +6,100 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
+ import { createAnthropic } from '@ai-sdk/anthropic';
+ import { prisma } from '@/lib/prisma';
+ import { decryptKey } from '@/lib/crypto';
++import { requireCurrentUser } from '@/lib/auth';
++import { recordFreeEventUsage, resolveAiKeyForRequest } from '@/lib/ai-key-resolution';
++
++type Provider = 'openai' | 'gemini' | 'anthropic';
++
++function defaultModelForProvider(provider: Provider) {
++  if (provider === 'gemini') return 'gemini-1.5-pro-latest';
++  if (provider === 'anthropic') return 'claude-3-haiku-20240307';
++  return 'gpt-4o';
++}
++
++function hostKeyForProvider(
++  hostUser: { openaiKey: string | null; geminiKey: string | null; anthropicKey: string | null },
++  provider: Provider
++) {
++  if (provider === 'gemini') return hostUser.geminiKey;
++  if (provider === 'anthropic') return hostUser.anthropicKey;
++  return hostUser.openaiKey;
++}
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { provider, byokKey, aiModel, systemPrompt, content, isDelegate, sponsorId, userId, useFreeEvent } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const {
++      provider,
++      byokKey,
++      aiModel,
++      systemPrompt,
++      content,
++      isDelegate,
++      sponsorId,
++      roomId,
++      aiUserId,
++      aiOwnerId,
++    } = await request.json();
+ 
+     if (!content) {
+       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
+     }
+ 
+-    const currentProvider = provider || 'openai';
+-    let apiKey = byokKey;
+-
+-    if (useFreeEvent && userId) {
+-      const now = new Date();
+-      const activeEvent = await prisma.event.findFirst({
+-        where: {
+-          eventType: 'FREE_AI',
+-          isActive: true,
+-          aiProvider: currentProvider,
+-          aiModel: aiModel,
+-          startDate: { lte: now },
+-          OR: [{ endDate: null }, { endDate: { gte: now } }]
+-        }
+-      });
++    const sponsorRoom = roomId ? await prisma.room.findUnique({
++      where: { id: roomId },
++      include: { members: true },
++    }) : null;
+ 
+-      if (activeEvent && activeEvent.eventApiKey) {
+-        let isAllowed = true;
+-        if (activeEvent.dailyLimit && activeEvent.dailyLimit > 0) {
+-           const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+-           const usage = await prisma.userEventUsage.findUnique({
+-             where: { userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate } }
+-           });
+-           
+-           if (usage && usage.count >= activeEvent.dailyLimit) {
+-              isAllowed = false;
+-           } else {
+-              await prisma.userEventUsage.upsert({
+-                where: { userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate } },
+-                update: { count: { increment: 1 } },
+-                create: { userId, eventId: activeEvent.id, usageDate: kstDate, count: 1 }
+-              });
+-           }
+-        }
+-        
+-        if (isAllowed) {
+-          apiKey = activeEvent.eventApiKey;
+-        } else {
+-          return NextResponse.json({ error: '?ㅻ뒛 ?좊떦??臾대즺 AI ?ъ슜 ?잛닔瑜?珥덇낵?덉뒿?덈떎.' }, { status: 429 });
+-        }
+-      }
++    let resolvedAi = await resolveAiKeyForRequest({
++      user: currentUser,
++      provider,
++      aiModel,
++      byokKey,
++      allowFreeEventFallback: false,
++      allowEnvFallback: false,
++    });
++
++    if (resolvedAi.limitExceeded) {
++      return NextResponse.json({ error: 'Daily free AI usage limit exceeded.' }, { status: 429 });
+     }
+ 
+-    // [?좉퇋] 怨좎뒪???꾩떆 諛⑹옣???由??곗궛 以묒씤 寃쎌슦, 諛⑹옣??API Key瑜?DB?먯꽌 爰쇰궡 ?곷땲??
+-    // (?? 臾대즺 ?대깽???ㅺ? 議댁옱??寃쎌슦 ?꾨옒 濡쒖쭅蹂대떎 臾대즺 ?ㅺ? ?곗꽑 ?곸슜?섏뼱 ?덉뒿?덈떎! apiKey媛 梨꾩썙???덈떎硫??좎?)
+-    if (!apiKey && isDelegate && sponsorId) {
+-      const hostUser = await prisma.user.findUnique({ where: { id: sponsorId } });
+-      if (hostUser) {
+-        let rawEncryptedKey = null;
+-        if (currentProvider.startsWith('gpt') || currentProvider === 'openai') {
+-          rawEncryptedKey = hostUser.openaiKey;
+-        } else if (currentProvider.includes('gemini')) {
+-          rawEncryptedKey = hostUser.geminiKey;
+-        } else if (currentProvider.includes('claude') || currentProvider === 'anthropic') {
+-          rawEncryptedKey = hostUser.anthropicKey;
+-        }
+-        if (rawEncryptedKey) {
+-           apiKey = decryptKey(rawEncryptedKey);
+-        }
++    let apiKey = resolvedAi.apiKey;
++    let currentProvider = resolvedAi.provider;
++    let finalAiModel = resolvedAi.aiModel || defaultModelForProvider(currentProvider);
++
++    if (!apiKey && isDelegate && sponsorId && sponsorRoom?.sponsorMode) {
++      const isCurrentRoomMember = sponsorRoom.members.some(member => member.userId === currentUser.id && !member.isHidden);
++      const sponsorMember = sponsorRoom.members.find(member => member.isHost && member.userId === sponsorId);
++      const aiMember = sponsorRoom.members.find(member => member.userId === aiUserId);
++      if (!isCurrentRoomMember || !sponsorMember || !aiMember) {
++        return NextResponse.json({ error: 'Forbidden sponsor room access' }, { status: 403 });
+       }
++
++      const hostUser = await prisma.user.findUnique({
++        where: { id: sponsorId },
++        select: { openaiKey: true, geminiKey: true, anthropicKey: true },
++      });
++      apiKey = hostUser ? decryptKey(hostKeyForProvider(hostUser, currentProvider)) : null;
+     }
+ 
+     if (!apiKey) {
+-      if (currentProvider === 'gemini' || currentProvider === 'gemini-free') apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+-      else if (currentProvider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
+-      else apiKey = process.env.OPENAI_API_KEY;
++      resolvedAi = await resolveAiKeyForRequest({
++        user: currentUser,
++        provider,
++        aiModel,
++        byokKey,
++      });
++
++      if (resolvedAi.limitExceeded) {
++        return NextResponse.json({ error: 'Daily free AI usage limit exceeded.' }, { status: 429 });
++      }
++
++      apiKey = resolvedAi.apiKey;
++      currentProvider = resolvedAi.provider;
++      finalAiModel = resolvedAi.aiModel || defaultModelForProvider(currentProvider);
+     }
+ 
+     if (!apiKey) {
+@@ -88,58 +107,97 @@ export async function POST(request: Request) {
+     }
+ 
+     let modelInstance;
+-
+     switch (currentProvider) {
+-      case 'gemini-free':
+-      case 'gemini':
++      case 'gemini': {
+         const customGoogle = createGoogleGenerativeAI({ apiKey });
+-        modelInstance = customGoogle(currentProvider === 'gemini-free' ? 'gemini-1.5-pro-latest' : (aiModel || 'gemini-1.5-pro-latest'));
++        modelInstance = customGoogle(finalAiModel);
+         break;
+-      case 'anthropic':
++      }
++      case 'anthropic': {
+         const customAnthropic = createAnthropic({ apiKey });
+-        modelInstance = customAnthropic(aiModel || 'claude-3-opus-20240229');
++        modelInstance = customAnthropic(finalAiModel);
+         break;
++      }
+       case 'openai':
+-      default:
++      default: {
+         const customOpenAI = createOpenAI({ apiKey });
+-        modelInstance = customOpenAI(aiModel || 'gpt-4o');
++        modelInstance = customOpenAI(finalAiModel);
+         break;
++      }
+     }
+ 
+-    // EdenAI ??援ы삎 ?꾨줉???뚯꽌媛 JSON Schema Tool 洹쒓꺽??吏?먰븯吏 紐삵븯??type: None ?щ옒?? 移섎챸???명솚???댁뒋 ?닿껐
+-    // ?댁젅???먮떒?섏뿬 ?ъ슜?먭? 理쒖떊 ?뺣낫瑜??붽뎄?섎뒗 吏덈Ц??寃쎌슦 API ?먯껜 ?먮떒??嫄곗튂吏 ?딄퀬 ?쒕쾭媛 癒쇱? 媛뺤젣濡?DuckDuckGo ?명꽣??寃???섑뻾
+-    let injectedSearchContext = "";
+-    const searchKeywords = ['?댁뒪', '?좎뵪', '寃??, '?ㅻ뒛', '?뚮젮以?, '?대븣', '二쇱떇', '?꾧뎄??, '硫곗튌', '?쒓컙'];
++    let injectedSearchContext = '';
++    const searchKeywords = ['?댁뒪', '理쒖떊', '寃??, '?ㅻ뒛', '?뚮젮以?, '?몄젣', '二쇱떇', '?쇨뎄', '硫곗튌', '?쒓컙'];
+     const needsSearch = searchKeywords.some(keyword => content.includes(keyword));
+ 
+     if (needsSearch) {
+       try {
+         const searchResults = await search(content);
+-        if (searchResults && searchResults.results && searchResults.results.length > 0) {
+-          const summary = searchResults.results.slice(0, 3).map(r => `?쒕ぉ: ${r.title}\n?댁슜: ${r.description}`).join('\n\n');
+-          injectedSearchContext = `\n\n[?뮕 理쒖떊 ??寃??寃곌낵 諛곌꼍吏??(?꾩옱 ?쒓컖: ${new Date().toLocaleString('ko-KR')})]\n?ъ슜?먯쓽 吏덈Ц????듯븷 ???꾨옒 理쒖떊 ?명꽣???뺣낫瑜?諛뷀깢?쇰줈 ?꾨뒗 泥숉븯硫??먯뿰?ㅻ읇寃???듯빐二쇱꽭??\n${summary}`;
++        if (searchResults?.results?.length) {
++          const summary = searchResults.results
++            .slice(0, 3)
++            .map((r) => `?쒕ぉ: ${r.title}\n?댁슜: ${r.description}`)
++            .join('\n\n');
++          injectedSearchContext = `\n\n[理쒖떊 ??寃??寃곌낵]\n?꾩옱 ?쒓컖: ${new Date().toLocaleString('ko-KR')}\n${summary}`;
+         }
+       } catch (e) {
+         console.error('Manual Pre-search failed:', e);
+       }
+     }
+ 
+-    // AI ?먯쑉 ?묐떟 (?띿뒪???앹꽦) 紐⑤뜽 ?몄텧
+     const { text } = await generateText({
+       model: modelInstance,
+-      system: (systemPrompt || "?뱀떊? ?뚮줈??硫붿떊????ㅼ젙?섍퀬 移쒓렐??AI 移쒓뎄?낅땲??") + injectedSearchContext,
++      system: (systemPrompt || '?뱀떊? ?뚮줈??硫붿떊???移쒓렐??AI 移쒓뎄?낅땲??') + injectedSearchContext,
+       prompt: content,
+-      temperature: 0.85, // ?쎄컙 李쎌쓽?곸씠怨??щ엺媛숈? ?깆쭏 遺??+      temperature: 0.85,
+     });
+ 
+-    return NextResponse.json({ reply: text });
++    if (sponsorRoom?.sponsorMode && sponsorId && aiUserId && aiOwnerId && aiOwnerId !== sponsorId && sponsorRoom.sponsorPrice > 0) {
++      const aiUser = await prisma.user.findUnique({
++        where: { id: aiUserId },
++        select: { id: true, isAi: true, aiOwnerId: true },
++      });
++      const aiMember = sponsorRoom.members.find(member => member.userId === aiUserId);
++      if (!aiUser?.isAi || aiUser.aiOwnerId !== aiOwnerId || !aiMember) {
++        return NextResponse.json({ error: 'Invalid AI ownership' }, { status: 403 });
++      }
+ 
+-  } catch (error: any) {
++      const paymentResult = await prisma.$transaction(async (tx) => {
++        const debit = await tx.user.updateMany({
++          where: { id: aiOwnerId, walletBalance: { gte: sponsorRoom.sponsorPrice } },
++          data: { walletBalance: { decrement: sponsorRoom.sponsorPrice } },
++        });
++        if (debit.count !== 1) return false;
++
++        await tx.user.update({
++          where: { id: sponsorId },
++          data: { walletBalance: { increment: sponsorRoom.sponsorPrice } },
++        });
++        await tx.transaction.create({
++          data: {
++            senderId: aiOwnerId,
++            receiverId: sponsorId,
++            amount: sponsorRoom.sponsorPrice,
++            reason: `[AI response sponsor fee] Room ${roomId}`,
++          },
++        });
++        return true;
++      });
++
++      if (!paymentResult) {
++        return NextResponse.json({ error: 'INSUFFICIENT_FUNDS' }, { status: 402 });
++      }
++    }
++
++    await recordFreeEventUsage(currentUser.id, resolvedAi.freeEvent);
++
++    return NextResponse.json({ reply: text });
++  } catch (error) {
+     console.error('AI chat friend error:', error);
+-    const messageStr = error?.message || '';
++    const messageStr = error instanceof Error ? error.message : '';
+     const isQuotaError = messageStr.includes('429') || messageStr.toLowerCase().includes('exhausted') || messageStr.toLowerCase().includes('quota');
+     const status = isQuotaError ? 429 : 500;
+-    
++
+     return NextResponse.json(
+       { error: messageStr || 'Failed to process conversational AI chat', status },
+       { status }
+diff --git a/app/api/chat/route.ts b/app/api/chat/route.ts
+index 4488890..2164dce 100644
+--- a/app/api/chat/route.ts
++++ b/app/api/chat/route.ts
+@@ -7,71 +7,53 @@ import { z } from 'zod';
+ import { search } from 'duck-duck-scrape';
+ import fs from 'fs/promises';
+ import path from 'path';
++import { requireCurrentUser } from '@/lib/auth';
++import { recordFreeEventUsage, resolveAiKeyForRequest } from '@/lib/ai-key-resolution';
++
++type PromptMessage = {
++  role: 'user';
++  content:
++    | string
++    | Array<
++        | { type: 'text'; text: string }
++        | { type: 'image'; image: Buffer; mimeType: string }
++      >;
++};
++
++type SearchResultItem = {
++  title?: string;
++  description?: string;
++};
++
++function defaultModelForProvider(provider: string) {
++  if (provider === 'gemini') return 'gemini-1.5-pro-latest';
++  if (provider === 'anthropic') return 'claude-3-haiku-20240307';
++  return 'gpt-5.4';
++}
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { content, imageUrl, byokKey, provider, aiModel, userId, useFreeEvent } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const { content, imageUrl, byokKey, provider, aiModel } = await request.json();
+ 
+     if (!content && !imageUrl) {
+       return NextResponse.json({ error: 'Content or image is required' }, { status: 400 });
+     }
+ 
+-    let apiKey = byokKey;
+-    
+-    // [FREE AI EVENT LOGIC]
+-    if (useFreeEvent && userId) {
+-      const now = new Date();
+-      // Find active free event for this model
+-      const { prisma } = await import('@/lib/prisma');
+-      const activeEvent = await prisma.event.findFirst({
+-        where: {
+-          eventType: 'FREE_AI',
+-          isActive: true,
+-          aiModel: aiModel,
+-          startDate: { lte: now },
+-          OR: [{ endDate: null }, { endDate: { gte: now } }]
+-        }
+-      });
+-
+-      if (activeEvent && activeEvent.eventApiKey) {
+-        let isAllowed = true;
+-        
+-        // Check daily limit if set > 0
+-        if (activeEvent.dailyLimit && activeEvent.dailyLimit > 0) {
+-           const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
+-           const usage = await prisma.userEventUsage.findUnique({
+-             where: {
+-               userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate }
+-             }
+-           });
+-           
+-           if (usage && usage.count >= activeEvent.dailyLimit) {
+-              isAllowed = false;
+-           } else {
+-              // Increment or create usage
+-              await prisma.userEventUsage.upsert({
+-                where: { userId_eventId_usageDate: { userId, eventId: activeEvent.id, usageDate: kstDate } },
+-                update: { count: { increment: 1 } },
+-                create: { userId, eventId: activeEvent.id, usageDate: kstDate, count: 1 }
+-              });
+-           }
+-        }
+-        
+-        if (isAllowed) {
+-          apiKey = activeEvent.eventApiKey;
+-        } else {
+-          return NextResponse.json({ error: '?ㅻ뒛 ?좊떦??臾대즺 AI ?ъ슜 ?잛닔瑜?珥덇낵?덉뒿?덈떎.' }, { status: 429 });
+-        }
+-      }
+-    }
++    const resolvedAi = await resolveAiKeyForRequest({
++      user: currentUser,
++      provider,
++      aiModel,
++      byokKey,
++    });
+ 
+-    if (!apiKey) {
+-      if (provider === 'gemini' || provider === 'gemini-free') apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+-      else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
+-      else apiKey = process.env.OPENAI_API_KEY;
++    if (resolvedAi.limitExceeded) {
++      return NextResponse.json({ error: 'Daily free AI usage limit exceeded.' }, { status: 429 });
+     }
+ 
+-    if (!apiKey) {
++    if (!resolvedAi.apiKey) {
+       return NextResponse.json({ error: `No API Key provided for ${provider || 'openai'}` }, { status: 400 });
+     }
+ 
+@@ -85,54 +67,53 @@ export async function POST(request: Request) {
+           imageBuffer = await fs.readFile(filepath);
+           if (basename.toLowerCase().endsWith('.png')) mimeType = 'image/png';
+           else if (basename.toLowerCase().endsWith('.webp')) mimeType = 'image/webp';
+-        } catch(e) {
+-          console.error("Failed to read image for vision API:", e);
++        } catch (e) {
++          console.error('Failed to read image for vision API:', e);
+         }
+       }
+     }
+ 
+-    let finalAiModel = aiModel;
+-    const currentProvider = provider || 'openai';
+-
+-    // GPT-5.4-Pro (OpenAI 異붾줎 紐⑤뜽)??Vision(硫?곕え???대?吏) ?낅젰???꾩쭅 吏?먰븯吏 ?딆쑝誘濡? 
+-    // ?대?吏媛 ?ы븿???⑺듃泥댄겕 ?쒖뿉??踰붿슜 紐⑤뜽(gpt-5.4)濡?媛뺤젣 Fallback 泥섎━?섏뿬 ?먮윭 諛⑹?
++    const currentProvider = resolvedAi.provider;
++    let finalAiModel = resolvedAi.aiModel || defaultModelForProvider(currentProvider);
+     if (imageBuffer && currentProvider === 'openai' && finalAiModel === 'gpt-5.4-pro') {
+       finalAiModel = 'gpt-5.4';
+     }
+ 
+     let modelInstance;
+     switch (currentProvider) {
+-      case 'gemini-free':
+-      case 'gemini':
+-        const customGoogle = createGoogleGenerativeAI({ apiKey });
+-        modelInstance = customGoogle(currentProvider === 'gemini-free' ? 'gemini-1.5-pro-latest' : (finalAiModel || 'gemini-1.5-pro-latest'));
++      case 'gemini': {
++        const customGoogle = createGoogleGenerativeAI({ apiKey: resolvedAi.apiKey });
++        modelInstance = customGoogle(finalAiModel);
+         break;
+-      case 'anthropic':
+-        const customAnthropic = createAnthropic({ apiKey });
+-        modelInstance = customAnthropic(finalAiModel || 'claude-3-haiku-20240307');
++      }
++      case 'anthropic': {
++        const customAnthropic = createAnthropic({ apiKey: resolvedAi.apiKey });
++        modelInstance = customAnthropic(finalAiModel);
+         break;
++      }
+       case 'openai':
+-      default:
+-        const customOpenAI = createOpenAI({ apiKey });
+-        modelInstance = customOpenAI(finalAiModel || 'gpt-5.4');
++      default: {
++        const customOpenAI = createOpenAI({ apiKey: resolvedAi.apiKey });
++        modelInstance = customOpenAI(finalAiModel);
+         break;
++      }
+     }
+ 
+-    const promptMessages: any[] = [];
+-    const textContent = content || "(?ъ슜?먭? ?대?吏留??낅줈?쒗뻽?듬땲??)";
+-    
++    const promptMessages: PromptMessage[] = [];
++    const textContent = content || '(?ъ슜?먭? ?대?吏留??낅줈?쒗뻽?듬땲??)';
++
+     if (imageBuffer) {
+       promptMessages.push({
+         role: 'user',
+         content: [
+-          { type: 'text', text: `Analyze this image and attached message: "${textContent}". Look closely at the image for Deepfake artifacts, text in the image, or malicious context.` },
+-          { type: 'image', image: imageBuffer, mimeType: mimeType }
+-        ]
++          { type: 'text', text: `Analyze this image and attached message: "${textContent}". Look closely at the image for deepfake artifacts, text in the image, or malicious context.` },
++          { type: 'image', image: imageBuffer, mimeType },
++        ],
+       });
+     } else {
+       promptMessages.push({
+         role: 'user',
+-        content: `Analyze this message: "${textContent}"`
++        content: `Analyze this message: "${textContent}"`,
+       });
+     }
+ 
+@@ -140,9 +121,10 @@ export async function POST(request: Request) {
+     if (content && content.length > 5) {
+       try {
+         const searchResults = await search(content);
+-        if (searchResults && searchResults.results && searchResults.results.length > 0) {
+-          const summary = searchResults.results.slice(0, 3).map((r: any) => `?쒕ぉ: ${r.title}\n?댁슜: ${r.description}`).join('\n\n');
+-          injectedSearchContext = `\n\n[?뮕 理쒖떊 ???щ젋??寃??寃곌낵 (?꾩옱 ?쒓컖: ${new Date().toLocaleString('ko-KR')})]\n遺꾩꽍 ??곸씠 理쒖떊 ?ъ떎怨?遺?⑺븯?붿? ?꾨옒 ?명꽣??寃??寃곌낵瑜?援먯감 寃利앹쓽 洹쇨굅濡??곗꽑 ?쒖슜?섏꽭??\n${summary}`;
++        if (searchResults?.results?.length) {
++          const searchItems = searchResults.results.slice(0, 3) as SearchResultItem[];
++          const summary = searchItems.map((r) => `?쒕ぉ: ${r.title || ''}\n?댁슜: ${r.description || ''}`).join('\n\n');
++          injectedSearchContext = `\n\n[理쒖떊 ??寃??寃곌낵]\n遺꾩꽍 ??곸씠 理쒖떊 ?ъ떎怨?遺?⑺븯?붿? ?꾨옒 寃??寃곌낵瑜?援먯감 寃利앹쓽 洹쇨굅濡??곗꽑 ?쒖슜?섏꽭??\n${summary}`;
+         }
+       } catch (e) {
+         console.error('Fact-check Web Search failed:', e);
+@@ -151,39 +133,36 @@ export async function POST(request: Request) {
+ 
+     const result = await generateObject({
+       model: modelInstance,
+-      system: `?뱀떊? 理쒓퀬 ?섏????붿????щ젋??諛??⑺듃泥댄겕 AI?낅땲?? ?ъ슜?먭? ?꾩넚???띿뒪???먮뒗 ?ъ쭊 ?대?吏瑜??뺣? 遺꾩꽍?섏꽭??${injectedSearchContext}
+-      
+-      [?밸퀎 吏移?
+-      1. ?⑥닚???몄궗留?"?덈뀞", "萸먰빐"), ?쇱긽?곸씤 媛먯젙 ?쒗쁽("?뗣뀑", "?졼뀪", "諛곌퀬??), ?곷?諛⑷낵???됰쾾???〓떞 ???⑺듃泥댄겕媛 ?꾪? 臾댁쓽誘명븳 ?쇱긽 ??붾씪硫?**諛섎뱶??'PASS'**濡?遺꾨쪟?섏꽭??
+-      2. ?ъ쭊???낅줈?쒕맂 寃쎌슦, AI媛 ?앹꽦??洹몃┝(?뱀쑀??吏덇컧, 鍮꾪쁽?ㅼ쟻??愿묒썝, 留ㅻ걚?ъ슫 ?쇰?, ?뺥깭 ?쒓끝 ?????섏떖?쒕떎硫?'AI_GENERATED'濡?遺꾨쪟?섏꽭??
+-      3. ?몃Ъ?대굹 ?곹솴???낆쓽?곸쑝濡??⑹꽦???ν럹?댄겕??媛吏??댁뒪??議곗옉 ?ъ쭊?닿굅???덉쐞 二쇱옣?대㈃ 'FAKE' ?먮뒗 'SUSPICIOUS'濡?遺꾨쪟?섏꽭??
+-      4. ?ㅼ젣 ?꾩떎??臾대낫???ъ쭊?꾩씠 ?뺤떎?섍굅??二쇱옣?섎뒗 諛붽? 紐낅갚??媛앷???吏꾩떎???뚮쭔 'VERIFIED' ?먮뒗 'NORMAL'??遺?ы븯?몄슂.
+-      
+-      遺꾩꽍 ?댁슜??諛뷀깢?쇰줈 ?ㅼ쓬 JSON 媛앹껜瑜?諛섑솚?섏꽭??
+-      - category: PASS, NORMAL, SUSPICIOUS, FAKE, VERIFIED, AI_GENERATED 以??섎굹 
+-      - confidence: 0?먯꽌 1?ъ씠???ㅼ닔 (?뺤떊??
+-      - reason: 遺꾩꽍 寃곌낵???????뱁븳 ?댁쑀 (?쒓뎅?대줈 吏㏐쾶 1~2臾몄옣. PASS???뚮뒗 '?쇱긽 ??붿엯?덈떎' ?깆쑝濡??묒꽦)`,
++      system: `?뱀떊? 硫붿떆吏? ?대?吏瑜?遺꾩꽍?섎뒗 ?щ젋??諛??⑺듃泥댄겕 AI?낅땲??${injectedSearchContext}
++
++?먯젙 湲곗?:
++1. ?⑥닚 ?몄궗, ?쇱긽 ??? ?띾떞, 媛먯젙 ?쒗쁽泥섎읆 寃利앹씠 ?꾩슂 ?녿뒗 ?댁슜? PASS濡?遺꾨쪟?섏꽭??
++2. ?대?吏媛 AI ?앹꽦 洹몃┝泥섎읆 蹂댁씠硫?AI_GENERATED濡?遺꾨쪟?섏꽭??
++3. 議곗옉, ?덉쐞 二쇱옣, ?쇱떛, ?ш린, ?낆꽦 ?섎룄媛 ?섏떖?섎㈃ SUSPICIOUS ?먮뒗 FAKE濡?遺꾨쪟?섏꽭??
++4. 紐낇솗???ъ떎濡??뺤씤?섎뒗 ?뺣낫??VERIFIED ?먮뒗 NORMAL濡?遺꾨쪟?섏꽭??
++
++諛섎뱶???ㅼ쓬 JSON ?뺤떇?쇰줈 ?묐떟?섏꽭??`,
+       messages: promptMessages,
+       schema: z.object({
+         category: z.enum(['PASS', 'FAKE', 'AI_GENERATED', 'SUSPICIOUS', 'VERIFIED', 'NORMAL']),
+         confidence: z.number().min(0).max(1),
+-        reason: z.string()
++        reason: z.string(),
+       }),
+       temperature: finalAiModel === 'gpt-5.4-pro' ? undefined : 0.1,
+     });
+ 
+-    return NextResponse.json(result.object);
++    await recordFreeEventUsage(currentUser.id, resolvedAi.freeEvent);
+ 
+-  } catch (error: any) {
++    return NextResponse.json(result.object);
++  } catch (error) {
+     console.error('AI check error:', error);
+-    const messageStr = error?.message || '';
++    const messageStr = error instanceof Error ? error.message : '';
+     const isQuotaError = messageStr.includes('429') || messageStr.toLowerCase().includes('exhausted') || messageStr.toLowerCase().includes('quota');
+     const status = isQuotaError ? 429 : 500;
+-    
++
+     return NextResponse.json(
+       { error: messageStr || 'Failed to process AI analysis', status },
+       { status }
+     );
+   }
+ }
+-
+diff --git a/app/api/chat/sponsor/route.ts b/app/api/chat/sponsor/route.ts
+index bba5b85..7bd924b 100644
+--- a/app/api/chat/sponsor/route.ts
++++ b/app/api/chat/sponsor/route.ts
+@@ -10,8 +10,37 @@ import { search } from 'duck-duck-scrape';
+ import fs from 'fs/promises';
+ import path from 'path';
+ 
++const INTERNAL_API_SECRET =
++  process.env.INTERNAL_API_SECRET ||
++  process.env.SESSION_SECRET ||
++  process.env.ENCRYPTION_KEY ||
++  (process.env.NODE_ENV === 'production' ? '' : 'ALO_POP_INTERNAL_SECRET_DEFAULT');
++
++type PromptMessage = {
++  role: 'user';
++  content:
++    | string
++    | Array<
++        | { type: 'text'; text: string }
++        | { type: 'image'; image: Buffer; mimeType: string }
++      >;
++};
++
++type SearchResultItem = {
++  title?: string;
++  description?: string;
++};
++
+ export async function POST(request: Request) {
+   try {
++    if (!INTERNAL_API_SECRET) {
++      return NextResponse.json({ error: 'Internal API secret is not configured' }, { status: 500 });
++    }
++
++    if (request.headers.get('x-alopop-internal') !== INTERNAL_API_SECRET) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++
+     const { roomId, message } = await request.json();
+ 
+     if (!roomId || !message || !message.content) {
+@@ -144,7 +173,7 @@ export async function POST(request: Request) {
+       modelInstance = customOpenAI(sponsorModel === 'openai' ? 'gpt-5.4' : finalAiModel);
+     }
+ 
+-    const promptMessages: any[] = [];
++    const promptMessages: PromptMessage[] = [];
+     const textContent = message.content || "(?ъ슜?먭? ?대?吏留??낅줈?쒗뻽?듬땲??)";
+     
+     if (imageBuffer) {
+@@ -167,7 +196,8 @@ export async function POST(request: Request) {
+       try {
+         const searchResults = await search(textContent);
+         if (searchResults && searchResults.results && searchResults.results.length > 0) {
+-          const summary = searchResults.results.slice(0, 3).map((r: any) => `?쒕ぉ: ${r.title}\n?댁슜: ${r.description}`).join('\n\n');
++          const searchItems = searchResults.results.slice(0, 3) as SearchResultItem[];
++          const summary = searchItems.map((r) => `?쒕ぉ: ${r.title || ''}\n?댁슜: ${r.description || ''}`).join('\n\n');
+           injectedSearchContext = `\n\n[?뮕 理쒖떊 ???щ젋??寃??寃곌낵 (?꾩옱 ?쒓컖: ${new Date().toLocaleString('ko-KR')})]\n遺꾩꽍 ??곸씠 理쒖떊 ?ъ떎怨?遺?⑺븯?붿? 寃??寃곌낵瑜?援먯감 寃利앹쓽 洹쇨굅濡??곗꽑 ?쒖슜?섏꽭??\n${summary}`;
+         }
+       } catch (e) {
+@@ -195,16 +225,18 @@ export async function POST(request: Request) {
+       temperature: finalAiModel === 'gpt-5.4-pro' ? undefined : 0.1,
+     });
+ 
+-    const aiRes = result.object;
++    const aiRes = {
++      ...result.object,
++      isSponsored: true,
++      sponsorModel: finalAiModel,
++      sponsorPrice,
++    };
+     // 諛⑹옣 ?ㅽ룿???앸퀎???쒖떇 ?쎌엯
+-    (aiRes as any).isSponsored = true;
+-    (aiRes as any).sponsorModel = finalAiModel;
+-    (aiRes as any).sponsorPrice = sponsorPrice;
+ 
+     return NextResponse.json({ success: true, aiAnalysis: aiRes });
+ 
+-  } catch (error: any) {
++  } catch (error) {
+     console.error('Sponsor background AI check error:', error);
+-    return NextResponse.json({ error: error?.message || 'Failed' }, { status: 500 });
++    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed' }, { status: 500 });
+   }
+ }
+diff --git a/app/api/rooms/delegate/route.ts b/app/api/rooms/delegate/route.ts
+index 1c37934..f0c2411 100644
+--- a/app/api/rooms/delegate/route.ts
++++ b/app/api/rooms/delegate/route.ts
+@@ -1,42 +1,55 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const DelegateHostSchema = z.object({
++  roomId: z.string().min(1),
++  targetUserId: z.string().min(1),
++  requesterId: z.string().min(1).optional(),
++});
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { roomId, targetUserId, requesterId } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const parseResult = DelegateHostSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
+ 
+-    if (!roomId || !targetUserId || !requesterId) {
+-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
++    const { roomId, targetUserId, requesterId } = parseResult.data;
++    if (requesterId && requesterId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+-    // 1. ?붿껌?먭? ?대떦 諛⑹쓽 諛⑹옣(isHost: true)?몄? ?뺤씤
+     const requester = await prisma.roomMember.findUnique({
+       where: {
+         userId_roomId: {
+-          userId: requesterId,
+-          roomId: roomId
+-        }
+-      }
++          userId: currentUser.id,
++          roomId,
++        },
++      },
+     });
+ 
+     if (!requester || !requester.isHost) {
+       return NextResponse.json({ error: 'Permission denied: Not a host' }, { status: 403 });
+     }
+ 
+-    // 2. 諛⑹옣 沅뚰븳 蹂寃??몃옖??뀡: 湲곗〈 諛⑹옣??沅뚰븳 諛뺥깉, ?寃잛뿉寃?沅뚰븳 遺??     await prisma.$transaction([
+       prisma.roomMember.update({
+         where: {
+-          userId_roomId: { userId: requesterId, roomId: roomId }
++          userId_roomId: { userId: currentUser.id, roomId },
+         },
+-        data: { isHost: false }
++        data: { isHost: false },
+       }),
+       prisma.roomMember.update({
+         where: {
+-          userId_roomId: { userId: targetUserId, roomId: roomId }
++          userId_roomId: { userId: targetUserId, roomId },
+         },
+-        data: { isHost: true }
+-      })
++        data: { isHost: true },
++      }),
+     ]);
+ 
+     return NextResponse.json({ success: true, newHostId: targetUserId });
+diff --git a/app/api/rooms/invite/route.ts b/app/api/rooms/invite/route.ts
+index 7e47260..4082f0f 100644
+--- a/app/api/rooms/invite/route.ts
++++ b/app/api/rooms/invite/route.ts
+@@ -1,38 +1,59 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const InviteRoomSchema = z.object({
++  roomId: z.string().min(1),
++  targetUserId: z.string().min(1),
++});
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { roomId, targetUserId } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const parseResult = InviteRoomSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
++
++    const { roomId, targetUserId } = parseResult.data;
++    const inviterMember = await prisma.roomMember.findUnique({
++      where: {
++        userId_roomId: {
++          userId: currentUser.id,
++          roomId,
++        },
++      },
++    });
+ 
+-    if (!roomId || !targetUserId) {
+-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
++    if (!inviterMember) {
++      return NextResponse.json({ error: 'Only room members can invite users' }, { status: 403 });
+     }
+ 
+-    // ?대? 諛⑹뿉 ?덈뒗吏 ?뺤씤
+     const exists = await prisma.roomMember.findUnique({
+       where: {
+         userId_roomId: {
+           userId: targetUserId,
+-          roomId: roomId
+-        }
+-      }
++          roomId,
++        },
++      },
+     });
+ 
+     if (exists) {
+-      return NextResponse.json({ error: '?대? 諛⑹뿉 李멸? 以묒씤 移쒓뎄?낅땲??' }, { status: 400 });
++      return NextResponse.json({ error: 'User is already in this room' }, { status: 400 });
+     }
+ 
+-    // ??移쒓뎄 珥덈? 硫ㅻ쾭???앹꽦
+     const newMember = await prisma.roomMember.create({
+       data: {
+         roomId,
+         userId: targetUserId,
+-        isHost: false // 珥덈???硫ㅻ쾭???쇰컲 ?좎?
++        isHost: false,
+       },
+       include: {
+-        user: true
+-      }
++        user: true,
++      },
+     });
+ 
+     return NextResponse.json(newMember);
+diff --git a/app/api/rooms/kick/route.ts b/app/api/rooms/kick/route.ts
+index 4a14b2d..ced4e3f 100644
+--- a/app/api/rooms/kick/route.ts
++++ b/app/api/rooms/kick/route.ts
+@@ -1,39 +1,52 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const KickMemberSchema = z.object({
++  roomId: z.string().min(1),
++  targetUserId: z.string().min(1),
++  requesterId: z.string().min(1).optional(),
++});
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { roomId, targetUserId, requesterId } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const parseResult = KickMemberSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
+ 
+-    if (!roomId || !targetUserId || !requesterId) {
+-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
++    const { roomId, targetUserId, requesterId } = parseResult.data;
++    if (requesterId && requesterId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+-    // 1. ?붿껌?먭? ?대떦 諛⑹쓽 諛⑹옣(isHost: true)?몄? ?뺤씤
+     const requester = await prisma.roomMember.findUnique({
+       where: {
+         userId_roomId: {
+-          userId: requesterId,
+-          roomId: roomId
+-        }
+-      }
++          userId: currentUser.id,
++          roomId,
++        },
++      },
+     });
+ 
+     if (!requester || !requester.isHost) {
+       const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+-      if (!targetUser || !targetUser.isAi || targetUser.aiOwnerId !== requesterId) {
++      if (!targetUser || !targetUser.isAi || targetUser.aiOwnerId !== currentUser.id) {
+         return NextResponse.json({ error: 'Permission denied: Not a host or AI owner' }, { status: 403 });
+       }
+     }
+ 
+-    // 2. 媛뺥눜???寃?硫ㅻ쾭 ??젣
+     await prisma.roomMember.delete({
+       where: {
+         userId_roomId: {
+           userId: targetUserId,
+-          roomId: roomId
+-        }
+-      }
++          roomId,
++        },
++      },
+     });
+ 
+     return NextResponse.json({ success: true, kickedUserId: targetUserId });
+diff --git a/app/api/rooms/leave/route.ts b/app/api/rooms/leave/route.ts
+index 0e56a59..228e5ec 100644
+--- a/app/api/rooms/leave/route.ts
++++ b/app/api/rooms/leave/route.ts
+@@ -1,100 +1,101 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const LeaveRoomSchema = z.object({
++  roomId: z.string().min(1),
++  userId: z.string().min(1).optional(),
++});
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { roomId, userId } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const parseResult = LeaveRoomSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
+ 
+-    if (!roomId || !userId) {
+-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
++    const { roomId, userId } = parseResult.data;
++    if (userId && userId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+-    // ?꾩옱 ?좊굹???щ엺??硫ㅻ쾭???뺣낫 議고쉶
+     const leavingMember = await prisma.roomMember.findUnique({
+       where: {
+         userId_roomId: {
+           roomId,
+-          userId
+-        }
+-      }
++          userId: currentUser.id,
++        },
++      },
+     });
+ 
+     if (!leavingMember) {
+-      return NextResponse.json({ error: '李몄뿬 以묒씠吏 ?딆? 諛⑹엯?덈떎.' }, { status: 400 });
++      return NextResponse.json({ error: 'You are not a member of this room' }, { status: 400 });
+     }
+ 
+-    // ?듭긽?곸씤 諛??댁옣 ??젣 泥섎━
+     const room = await prisma.room.findUnique({
+-      where: { id: roomId }
++      where: { id: roomId },
+     });
+ 
+     if (!room) {
+-      return NextResponse.json({ error: '諛⑹씠 議댁옱?섏? ?딆뒿?덈떎.' }, { status: 404 });
++      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+     }
+ 
+     if (room.isGroup) {
+-      // 洹몃９諛⑹? 硫ㅻ쾭?먯꽌 ?꾩쟾????젣
+       await prisma.roomMember.delete({
+         where: {
+           userId_roomId: {
+             roomId,
+-            userId
+-          }
+-        }
++            userId: currentUser.id,
++          },
++        },
+       });
+ 
+-      // ?⑥? ?щ엺 議고쉶
+       const remainMembers = await prisma.roomMember.findMany({
+         where: { roomId },
+-        orderBy: { joinedAt: 'asc' }
++        orderBy: { joinedAt: 'asc' },
+       });
+ 
+       if (remainMembers.length === 0) {
+-        // ?꾨Т?????⑥븯?쇰㈃ 諛??먯껜 ??젣
+         await prisma.room.delete({
+-          where: { id: roomId }
++          where: { id: roomId },
+         });
+-      } else {
+-        // ?⑥? ?щ엺???덇퀬, ?좊궃 ?щ엺??諛⑹옣?댁뿀?ㅻ㈃
+-        if (leavingMember.isHost) {
+-          // ?⑥? 硫ㅻ쾭 以?媛??癒쇱? ?ㅼ뼱???щ엺 1紐낆뿉寃?諛⑹옣 沅뚰븳 ?밴퀎
+-          await prisma.roomMember.update({
+-            where: {
+-              userId_roomId: {
+-                roomId: roomId,
+-                userId: remainMembers[0].userId
+-              }
++      } else if (leavingMember.isHost) {
++        await prisma.roomMember.update({
++          where: {
++            userId_roomId: {
++              roomId,
++              userId: remainMembers[0].userId,
+             },
+-            data: {
+-              isHost: true
+-            }
+-          });
+-        }
++          },
++          data: {
++            isHost: true,
++          },
++        });
+       }
+     } else {
+-      // 1:1 諛⑹? ?④? 泥섎━ (isHidden: true)
+       await prisma.roomMember.update({
+         where: {
+           userId_roomId: {
+             roomId,
+-            userId
+-          }
++            userId: currentUser.id,
++          },
+         },
+         data: {
+-          isHidden: true
+-        }
++          isHidden: true,
++        },
+       });
+ 
+-      // ??紐?紐⑤몢 ?④? ?곹깭?쇰㈃, ?꾨Т??諛⑹쓣 蹂댁? ?딆쑝誘濡?諛??먯껜 ??젣
+       const members = await prisma.roomMember.findMany({ where: { roomId } });
+-      if (members.every(m => m.isHidden)) {
++      if (members.every((member) => member.isHidden)) {
+         await prisma.room.delete({ where: { id: roomId } });
+       }
+     }
+ 
+-
+-
+-    return NextResponse.json({ success: true, message: '諛⑹쓣 ?섍컮?듬땲??' });
++    return NextResponse.json({ success: true, message: 'Left the room' });
+   } catch (error) {
+     console.error('Leave Room Error:', error);
+     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+diff --git a/app/api/rooms/read/route.ts b/app/api/rooms/read/route.ts
+index 13a9b17..68540d7 100644
+--- a/app/api/rooms/read/route.ts
++++ b/app/api/rooms/read/route.ts
+@@ -1,26 +1,44 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const ReadRoomSchema = z.object({
++  userId: z.string().min(1).optional(),
++  roomId: z.string().min(1, 'roomId is required'),
++  localTimestamp: z.number().optional(),
++});
+ 
+ export async function POST(req: Request) {
+   try {
+-    const { userId, roomId, localTimestamp } = await req.json();
++    const { user: currentUser, response } = await requireCurrentUser(req);
++    if (!currentUser) return response;
++
++    const parseResult = ReadRoomSchema.safeParse(await req.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
+ 
+-    if (!userId || !roomId) {
+-      return NextResponse.json({ error: 'Missing userId or roomId' }, { status: 400 });
++    const { userId, roomId, localTimestamp } = parseResult.data;
++    if (userId && userId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+     const readAtDate = localTimestamp ? new Date(localTimestamp) : new Date();
++    if (Number.isNaN(readAtDate.getTime())) {
++      return NextResponse.json({ error: 'Invalid localTimestamp' }, { status: 400 });
++    }
+ 
+     const roomMember = await prisma.roomMember.update({
+       where: {
+         userId_roomId: {
+-          userId,
+-          roomId
+-        }
++          userId: currentUser.id,
++          roomId,
++        },
+       },
+       data: {
+-        lastReadAt: readAtDate
+-      }
++        lastReadAt: readAtDate,
++      },
+     });
+ 
+     return NextResponse.json({ success: true, lastReadAt: roomMember.lastReadAt });
+diff --git a/app/api/rooms/route.ts b/app/api/rooms/route.ts
+index e2aab1a..d8cfb43 100644
+--- a/app/api/rooms/route.ts
++++ b/app/api/rooms/route.ts
+@@ -1,78 +1,87 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const CreateRoomSchema = z.object({
++  name: z.string().max(80).nullable().optional(),
++  creatorId: z.string().min(1).optional(),
++  memberIds: z.array(z.string().min(1)).min(1),
++});
++
++const roomInclude = {
++  members: {
++    include: {
++      user: {
++        select: {
++          username: true,
++          avatar_url: true,
++          isAi: true,
++          aiOwnerId: true,
++          aiPrompt: true,
++        },
++      },
++    },
++  },
++};
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { name, creatorId, memberIds } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const parseResult = CreateRoomSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
+ 
+-    if (!creatorId || !memberIds || !Array.isArray(memberIds)) {
+-      return NextResponse.json({ error: 'creatorId and memberIds array are required' }, { status: 400 });
++    const { name, creatorId, memberIds } = parseResult.data;
++    if (creatorId && creatorId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+-    // ?묒꽦?먮? ?ы븿???꾩껜 硫ㅻ쾭 ID 怨좎쑀 諛곗뿴 ?앹꽦
+-    const allMemberIds = Array.from(new Set([creatorId, ...memberIds]));
++    const allMemberIds = Array.from(new Set([currentUser.id, ...memberIds]));
+ 
+-    // 1:1 梨꾪똿諛?以묐났 ?앹꽦 諛⑹? 諛??ы솢??濡쒖쭅 (諛??쒕ぉ???녿뒗 2紐낅쭔??諛?
+     if (allMemberIds.length === 2 && !name) {
+-      // ??creatorId)? ?곷?諛?????紐⑤몢 ?ы븿?섏뼱 ?덈뒗 1:1 諛⑹쓣 DB?먯꽌 寃??       const existingRooms = await prisma.room.findMany({
+         where: {
+           isGroup: false,
+           members: {
+             every: {
+-              userId: { in: allMemberIds }
+-            }
+-          }
++              userId: { in: allMemberIds },
++            },
++          },
+         },
+-        include: {
+-          members: {
+-            include: {
+-              user: { select: { username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true } }
+-            }
+-          }
+-        }
++        include: roomInclude,
+       });
+ 
+-      // 硫ㅻ쾭 ?섍? ?뺥솗??2紐낆씤 諛?異붿텧
+-      const matchedRoom = existingRooms.find(r => r.members.length === 2);
+-      
++      const matchedRoom = existingRooms.find((room) => room.members.length === 2);
++
+       if (matchedRoom) {
+-        // 湲곗〈 1:1 諛⑹씠 ?대? 議댁옱?쒕떎硫??덈줈 ?앹꽦?섏? ?딄퀬 ?ы솢?⑺븿!
+-        // ?? ??諛??앹꽦??媛 諛⑹쓣 ?섍컙 ?곹깭(isHidden: true)?????덉쑝誘濡??ㅼ떆 false濡??뚰솚
+         await prisma.roomMember.update({
+-          where: { userId_roomId: { userId: creatorId, roomId: matchedRoom.id } },
+-          data: { isHidden: false }
++          where: { userId_roomId: { userId: currentUser.id, roomId: matchedRoom.id } },
++          data: { isHidden: false },
+         });
+-        
+-        // ?대씪?댁뼵?몄뿉 諛섑솚??媛앹껜??硫붾え由?媛?媛깆떊
+-        const myMember = matchedRoom.members.find(m => m.userId === creatorId);
++
++        const myMember = matchedRoom.members.find((member) => member.userId === currentUser.id);
+         if (myMember) myMember.isHidden = false;
+ 
+         return NextResponse.json(matchedRoom);
+       }
+     }
+ 
+-    // Transaction ?⑥쐞濡?諛⑷낵 李멸???紐⑸줉????踰덉뿉 ?앹꽦
+     const newRoom = await prisma.room.create({
+       data: {
+-        name: name || null,
++        name: name?.trim() || null,
+         isGroup: allMemberIds.length > 2,
+         members: {
+-          create: allMemberIds.map(userId => ({
++          create: allMemberIds.map((userId) => ({
+             userId,
+-            isHost: userId === creatorId // ?붿껌???щ엺??諛⑹옣(Host) 沅뚰븳 ?띾뱷
+-          }))
+-        }
++            isHost: userId === currentUser.id,
++          })),
++        },
+       },
+-      include: {
+-        members: {
+-          include: {
+-            user: {
+-              select: { username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true }
+-            }
+-          }
+-        }
+-      }
++      include: roomInclude,
+     });
+ 
+     return NextResponse.json(newRoom);
+diff --git a/app/api/rooms/sponsor/route.ts b/app/api/rooms/sponsor/route.ts
+index eeede04..4be2d89 100644
+--- a/app/api/rooms/sponsor/route.ts
++++ b/app/api/rooms/sponsor/route.ts
+@@ -1,40 +1,60 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const UpdateSponsorSchema = z.object({
++  userId: z.string().min(1).optional(),
++  roomId: z.string().min(1, 'roomId is required'),
++  sponsorMode: z.boolean().optional(),
++  sponsorModel: z.string().nullable().optional(),
++  sponsorPrice: z.union([z.number(), z.string()]).optional(),
++});
+ 
+ export async function PUT(request: Request) {
+   try {
+-    const { userId, roomId, sponsorMode, sponsorModel, sponsorPrice } = await request.json();
+-    
+-    if (!userId || !roomId) {
+-      return NextResponse.json({ error: 'userId and roomId are required' }, { status: 400 });
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const parseResult = UpdateSponsorSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
++
++    const { userId, roomId, sponsorMode, sponsorModel, sponsorPrice } = parseResult.data;
++    if (userId && userId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+-    // ?붿껌?먭? ?대떦 諛⑹쓽 硫ㅻ쾭?댁옄 '諛⑹옣'?몄? ?뺤씤
+     const member = await prisma.roomMember.findUnique({
+       where: {
+         userId_roomId: {
+-          userId: userId,
+-          roomId: roomId,
+-        }
+-      }
++          userId: currentUser.id,
++          roomId,
++        },
++      },
+     });
+ 
+     if (!member || !member.isHost) {
+       return NextResponse.json({ error: 'Only the host can modify the sponsor settings' }, { status: 403 });
+     }
+ 
+-    // 諛⑹쓽 ?ㅽ룿???ㅼ젙(諛⑹옣 ?ㅽ룿???곗궛 湲곕뒫) ?낅뜲?댄듃
++    const parsedSponsorPrice = sponsorPrice === undefined ? undefined : Number(sponsorPrice);
++    if (parsedSponsorPrice !== undefined && (!Number.isFinite(parsedSponsorPrice) || parsedSponsorPrice < 0)) {
++      return NextResponse.json({ error: 'sponsorPrice must be a non-negative number' }, { status: 400 });
++    }
++
+     const updatedRoom = await prisma.room.update({
+       where: { id: roomId },
+-      data: { 
+-        sponsorMode, 
++      data: {
++        sponsorMode,
+         sponsorModel,
+-        sponsorPrice: sponsorPrice !== undefined ? Number(sponsorPrice) : undefined
+-      }
++        sponsorPrice: parsedSponsorPrice,
++      },
+     });
+ 
+     return NextResponse.json(updatedRoom, { status: 200 });
+-  } catch (error: any) {
++  } catch (error) {
+     console.error('Failed to update room sponsor settings:', error);
+     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+   }
+diff --git a/app/api/rooms/update/route.ts b/app/api/rooms/update/route.ts
+index 442b649..b5bf507 100644
+--- a/app/api/rooms/update/route.ts
++++ b/app/api/rooms/update/route.ts
+@@ -1,32 +1,45 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const UpdateRoomSchema = z.object({
++  roomId: z.string().min(1),
++  name: z.string().max(80).nullable().optional(),
++  requesterId: z.string().min(1).optional(),
++});
+ 
+ export async function PUT(request: Request) {
+   try {
+-    const { roomId, name, requesterId } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
++    const parseResult = UpdateRoomSchema.safeParse(await request.json());
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
++    }
+ 
+-    if (!roomId || !requesterId) {
+-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
++    const { roomId, name, requesterId } = parseResult.data;
++    if (requesterId && requesterId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+-    // ?붿껌?먭? ?대떦 諛⑹쓽 硫ㅻ쾭?몄? ?뺤씤
+     const member = await prisma.roomMember.findUnique({
+       where: {
+         userId_roomId: {
+-          userId: requesterId,
+-          roomId: roomId,
+-        }
+-      }
++          userId: currentUser.id,
++          roomId,
++        },
++      },
+     });
+ 
+     if (!member) {
+-      return NextResponse.json({ error: '沅뚰븳???놁뒿?덈떎 (諛?硫ㅻ쾭留??대쫫 ?섏젙 媛??' }, { status: 403 });
++      return NextResponse.json({ error: 'Only room members can rename this room' }, { status: 403 });
+     }
+ 
+-    // 諛??대쫫 ?낅뜲?댄듃
+     const updatedRoom = await prisma.room.update({
+       where: { id: roomId },
+-      data: { name: name || null },
++      data: { name: name?.trim() || null },
+     });
+ 
+     return NextResponse.json(updatedRoom);
+diff --git a/app/api/rooms/user/route.ts b/app/api/rooms/user/route.ts
+index 0f7fb90..fa65dfa 100644
+--- a/app/api/rooms/user/route.ts
++++ b/app/api/rooms/user/route.ts
+@@ -1,57 +1,72 @@
+-癤퓁mport { NextResponse } from 'next/server';
++import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
+ 
+ export const dynamic = 'force-dynamic';
+ 
+-import { z } from 'zod';
+-
+ const GetRoomsSchema = z.object({
+-  userId: z.string().min(1, 'userId parameter is required'),
++  userId: z.string().min(1, 'userId parameter is required').optional(),
+ });
+ 
+ export async function GET(request: Request) {
+   try {
+-    const { searchParams } = new URL(request.url);
+-    const parseResult = GetRoomsSchema.safeParse({ userId: searchParams.get('userId') });
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
+ 
++    const { searchParams } = new URL(request.url);
++    const parseResult = GetRoomsSchema.safeParse({ userId: searchParams.get('userId') || undefined });
+     if (!parseResult.success) {
+       return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
+-    const { userId } = parseResult.data;
++    const requestedUserId = parseResult.data.userId;
++    if (requestedUserId && requestedUserId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
++    }
+ 
+     const rooms = await prisma.room.findMany({
+       where: {
+         members: {
+           some: {
+-            userId: userId,
+-            isHidden: false
+-          }
+-        }
++            userId: currentUser.id,
++            isHidden: false,
++          },
++        },
+       },
+       select: {
+         id: true,
+         name: true,
+         isGroup: true,
++        createdAt: true,
+         sponsorMode: true,
+         sponsorModel: true,
+         sponsorPrice: true,
+         members: {
+           select: {
+             id: true,
++            userId: true,
++            joinedAt: true,
+             isHost: true,
+             lastReadAt: true,
+             user: {
+-              select: { id: true, username: true, avatar_url: true, isAi: true }
+-            }
+-          }
+-        }
++              select: {
++                id: true,
++                username: true,
++                avatar_url: true,
++                isAi: true,
++                aiOwnerId: true,
++                aiPrompt: true,
++              },
++            },
++          },
++        },
+       },
+       orderBy: {
+-        createdAt: 'desc'
+-      }
++        createdAt: 'desc',
++      },
+     });
+-    
++
+     return NextResponse.json(rooms);
+   } catch (error) {
+     console.error('Failed to fetch rooms:', error);
+diff --git a/app/api/upload/route.ts b/app/api/upload/route.ts
+index dde4784..d637f0d 100644
+--- a/app/api/upload/route.ts
++++ b/app/api/upload/route.ts
+@@ -1,47 +1,60 @@
+ import { NextResponse } from 'next/server';
+ import fs from 'fs/promises';
+ import path from 'path';
++import { requireCurrentUser } from '@/lib/auth';
++
++const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
++const ALLOWED_UPLOAD_TYPES = new Map([
++  ['image/jpeg', '.jpg'],
++  ['image/png', '.png'],
++  ['image/webp', '.webp'],
++  ['image/gif', '.gif'],
++  ['video/mp4', '.mp4'],
++  ['video/webm', '.webm'],
++  ['application/pdf', '.pdf'],
++  ['text/plain', '.txt'],
++]);
+ 
+ export async function POST(request: Request) {
+   try {
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
+     const formData = await request.formData();
+-    const file = formData.get('file') as File;
++    const file = formData.get('file') as File | null;
+ 
+     if (!file) {
+       return NextResponse.json({ error: 'File is required' }, { status: 400 });
+     }
+ 
+-    // ?뚯씪 踰꾪띁 蹂??+    if (file.size > MAX_UPLOAD_BYTES) {
++      return NextResponse.json({ error: 'File is too large' }, { status: 400 });
++    }
++
++    const safeExt = ALLOWED_UPLOAD_TYPES.get(file.type);
++    if (!safeExt) {
++      return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
++    }
++
+     const buffer = Buffer.from(await file.arrayBuffer());
+-    
+-    // ?뚯씪紐??앹꽦 諛????寃쎈줈 吏??-    const ext = path.extname(file.name);
+-    const uniqueFilename = `chat_${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`;
++    const uniqueFilename = `chat_${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}${safeExt}`;
+     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+-    
+-    // ?붾젆?좊━媛 ?놁쑝硫??앹꽦
+-    try {
+-      await fs.access(uploadDir);
+-    } catch {
+-      await fs.mkdir(uploadDir, { recursive: true });
+-    }
++
++    await fs.mkdir(uploadDir, { recursive: true });
+ 
+     const filepath = path.join(uploadDir, uniqueFilename);
+     const publicUrl = `/uploads/${uniqueFilename}`;
+-
+-    // ?뚯씪 濡쒖뺄 ??μ냼 ?곌린
+     await fs.writeFile(filepath, buffer);
+ 
+-    // ?뚯씪 ????먮떒 (MIME ????뺤옣 吏?? ?숈쁺??泥섎━)
+     let type = 'FILE';
+     if (file.type.startsWith('image/')) type = 'IMAGE';
+     else if (file.type.startsWith('video/')) type = 'VIDEO';
+ 
+-    return NextResponse.json({ 
+-      success: true, 
++    return NextResponse.json({
++      success: true,
+       url: publicUrl,
+-      type: type,
+-      name: file.name
++      type,
++      name: file.name,
+     });
+   } catch (error) {
+     console.error('File upload error:', error);
+diff --git a/app/api/users/avatar/route.ts b/app/api/users/avatar/route.ts
+index e70a91d..ab6f4c0 100644
+--- a/app/api/users/avatar/route.ts
++++ b/app/api/users/avatar/route.ts
+@@ -1,44 +1,52 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
+ import fs from 'fs/promises';
+ import path from 'path';
+ 
++const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
++const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
++
+ export async function POST(request: Request) {
+   try {
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
+     const formData = await request.formData();
+-    const userId = formData.get('userId') as string;
+-    const file = formData.get('file') as File;
++    const requestedUserId = formData.get('userId') as string | null;
++    const file = formData.get('file') as File | null;
++
++    if (requestedUserId && requestedUserId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
++    }
++
++    if (!file) {
++      return NextResponse.json({ error: 'file is required' }, { status: 400 });
++    }
+ 
+-    if (!userId || !file) {
+-      return NextResponse.json({ error: 'userId and file are required' }, { status: 400 });
++    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
++      return NextResponse.json({ error: 'Only jpeg, png, webp, and gif images are allowed' }, { status: 400 });
++    }
++
++    if (file.size > MAX_AVATAR_BYTES) {
++      return NextResponse.json({ error: 'Avatar file is too large' }, { status: 400 });
+     }
+ 
+-    // ?뚯씪 踰꾪띁 蹂??     const buffer = Buffer.from(await file.arrayBuffer());
+-    
+-    // ?뚯씪紐??앹꽦 諛????寃쎈줈 吏??-    const ext = path.extname(file.name);
+-    const uniqueFilename = `${userId}_${Date.now()}${ext}`;
++    const ext = path.extname(file.name).toLowerCase() || '.jpg';
++    const uniqueFilename = `${currentUser.id}_${Date.now()}${ext}`;
+     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+-    
+-    // ?붾젆?좊━媛 ?놁쑝硫??앹꽦
+-    try {
+-      await fs.access(uploadDir);
+-    } catch {
+-      await fs.mkdir(uploadDir, { recursive: true });
+-    }
++
++    await fs.mkdir(uploadDir, { recursive: true });
+ 
+     const filepath = path.join(uploadDir, uniqueFilename);
+     const publicUrl = `/uploads/${uniqueFilename}`;
+-
+-    // ?뚯씪 濡쒖뺄 ??μ냼 ?곌린
+     await fs.writeFile(filepath, buffer);
+ 
+-    // 湲곗〈 User DB??avatar_url ?낅뜲?댄듃
+     const updatedUser = await prisma.user.update({
+-      where: { id: userId },
++      where: { id: currentUser.id },
+       data: { avatar_url: publicUrl },
+-      select: { id: true, username: true, avatar_url: true }
++      select: { id: true, username: true, avatar_url: true },
+     });
+ 
+     return NextResponse.json({ success: true, user: updatedUser });
+diff --git a/app/api/users/keys/route.ts b/app/api/users/keys/route.ts
+index 04b8a05..a78c0ba 100644
+--- a/app/api/users/keys/route.ts
++++ b/app/api/users/keys/route.ts
+@@ -1,42 +1,48 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
+ import { encryptKey } from '@/lib/crypto';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const SaveKeySchema = z.object({
++  userId: z.string().min(1).optional(),
++  provider: z.enum(['openai', 'gemini', 'anthropic']),
++  apiKey: z.string().nullable().optional(),
++});
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { userId, provider, apiKey } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
+ 
+-    if (!userId || !provider) {
+-      return NextResponse.json({ error: 'userId and provider are required' }, { status: 400 });
++    const body = await request.json();
++    const parseResult = SaveKeySchema.safeParse(body);
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
+-    if (!apiKey) {
+-      // ?ㅻ? 吏?곕젮硫?apiKey瑜?鍮?臾몄옄?대줈 蹂대깂
++    const { userId, provider, apiKey } = parseResult.data;
++    if (userId && userId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+     const encryptedApiKey = apiKey ? encryptKey(apiKey) : null;
+-
+-    let updateData = {};
+-    if (provider === 'openai') {
+-      updateData = { openaiKey: encryptedApiKey };
+-    } else if (provider === 'gemini') {
+-      updateData = { geminiKey: encryptedApiKey };
+-    } else if (provider === 'anthropic') {
+-      updateData = { anthropicKey: encryptedApiKey };
+-    } else {
+-      return NextResponse.json({ error: 'Unsupported provider' }, { status: 400 });
+-    }
++    const updateData =
++      provider === 'openai'
++        ? { openaiKey: encryptedApiKey }
++        : provider === 'gemini'
++          ? { geminiKey: encryptedApiKey }
++          : { anthropicKey: encryptedApiKey };
+ 
+     const updatedUser = await prisma.user.update({
+-      where: { id: userId },
++      where: { id: currentUser.id },
+       data: updateData,
+       select: {
+         id: true,
+-        // 蹂댁븞???뚮옒洹몃쭔 諛섑솚
+         openaiKey: true,
+         geminiKey: true,
+         anthropicKey: true,
+-      }
++      },
+     });
+ 
+     return NextResponse.json({
+@@ -45,7 +51,7 @@ export async function POST(request: Request) {
+         hasOpenAiKey: !!updatedUser.openaiKey,
+         hasGeminiKey: !!updatedUser.geminiKey,
+         hasAnthropicKey: !!updatedUser.anthropicKey,
+-      }
++      },
+     });
+   } catch (error) {
+     console.error('Save API key error:', error);
+diff --git a/app/api/users/profile/route.ts b/app/api/users/profile/route.ts
+index 24d29e8..b7391eb 100644
+--- a/app/api/users/profile/route.ts
++++ b/app/api/users/profile/route.ts
+@@ -1,20 +1,28 @@
+-癤퓁mport { NextResponse } from 'next/server';
++import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
+ 
+ export const dynamic = 'force-dynamic';
+ 
+-// ???꾨줈???뺣낫 諛??곹깭 硫붿꽭吏 議고쉶 (GET)
++const UpdateProfileSchema = z.object({
++  userId: z.string().min(1, 'userId is required').optional(),
++  statusMessage: z.string().max(280, 'statusMessage is too long').nullable().optional(),
++});
++
+ export async function GET(request: Request) {
+   try {
+-    const { searchParams } = new URL(request.url);
+-    const userId = searchParams.get('userId');
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
+ 
+-    if (!userId) {
+-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
++    const { searchParams } = new URL(request.url);
++    const requestedUserId = searchParams.get('userId');
++    if (requestedUserId && requestedUserId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+     const user = await prisma.user.findUnique({
+-      where: { id: userId },
++      where: { id: currentUser.id },
+       select: {
+         id: true,
+         username: true,
+@@ -25,23 +33,24 @@ export async function GET(request: Request) {
+         openaiKey: true,
+         geminiKey: true,
+         anthropicKey: true,
+-      }
++      },
+     });
+ 
+     if (!user) {
+       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+     }
+ 
+-    // 蹂댁븞???ㅼ젣 ??臾몄옄?댁? ?쒓굅?섍퀬 議댁옱 ?щ?留?諛섑솚
+     const safeUser = {
+-      ...user,
++      id: user.id,
++      username: user.username,
++      avatar_url: user.avatar_url,
++      statusMessage: user.statusMessage,
++      walletBalance: user.walletBalance,
++      isAdmin: user.isAdmin,
+       hasOpenAiKey: !!user.openaiKey,
+       hasGeminiKey: !!user.geminiKey,
+       hasAnthropicKey: !!user.anthropicKey,
+     };
+-    delete (safeUser as any).openaiKey;
+-    delete (safeUser as any).geminiKey;
+-    delete (safeUser as any).anthropicKey;
+ 
+     return NextResponse.json({ success: true, user: safeUser });
+   } catch (error) {
+@@ -50,35 +59,32 @@ export async function GET(request: Request) {
+   }
+ }
+ 
+-// ?곹깭 硫붿떆吏 諛?湲고? ?꾨줈???뺣낫 ?낅뜲?댄듃 (PUT)
+-import { z } from 'zod';
+-
+-const UpdateProfileSchema = z.object({
+-  userId: z.string().min(1, 'userId is required'),
+-  statusMessage: z.string().nullable().optional(),
+-});
+-
+ export async function PUT(request: Request) {
+   try {
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
++
+     const body = await request.json();
+     const parseResult = UpdateProfileSchema.safeParse(body);
+-
+     if (!parseResult.success) {
+       return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
+     const { userId, statusMessage } = parseResult.data;
++    if (userId && userId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
++    }
+ 
+     const updatedUser = await prisma.user.update({
+-      where: { id: userId },
++      where: { id: currentUser.id },
+       data: {
+-        statusMessage: statusMessage || null
++        statusMessage: statusMessage?.trim() || null,
+       },
+       select: {
+         id: true,
+         username: true,
+-        statusMessage: true
+-      }
++        statusMessage: true,
++      },
+     });
+ 
+     return NextResponse.json({ success: true, user: updatedUser });
+@@ -87,4 +93,3 @@ export async function PUT(request: Request) {
+     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+   }
+ }
+-
+diff --git a/app/api/wallet/send/route.ts b/app/api/wallet/send/route.ts
+index 0185cec..3ad023d 100644
+--- a/app/api/wallet/send/route.ts
++++ b/app/api/wallet/send/route.ts
+@@ -1,50 +1,95 @@
+ import { NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import { requireCurrentUser } from '@/lib/auth';
++import { z } from 'zod';
++
++const SendCoinsSchema = z.object({
++  senderId: z.string().min(1).optional(),
++  receiverId: z.string().min(1, 'receiverId is required'),
++  amount: z.number().int().positive('amount must be a positive integer').max(1_000_000_000),
++  reason: z.string().max(200).optional(),
++});
+ 
+ export async function POST(request: Request) {
+   try {
+-    const { senderId, receiverId, amount, reason } = await request.json();
++    const { user: currentUser, response } = await requireCurrentUser(request);
++    if (!currentUser) return response;
+ 
+-    if (!senderId || !receiverId || !amount) {
+-      return NextResponse.json({ error: 'senderId, receiverId and amount are required' }, { status: 400 });
++    const body = await request.json();
++    const parseResult = SendCoinsSchema.safeParse(body);
++    if (!parseResult.success) {
++      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
+     }
+ 
+-    if (senderId === receiverId) {
+-      return NextResponse.json({ error: '?먯떊?먭쾶 ?↔툑?????놁뒿?덈떎.' }, { status: 400 });
++    const { senderId, receiverId, amount, reason } = parseResult.data;
++    if (senderId && senderId !== currentUser.id) {
++      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+     }
+ 
+-    const sender = await prisma.user.findUnique({ where: { id: senderId } });
+-    if (!sender) {
+-       return NextResponse.json({ error: 'Sender not found' }, { status: 404 });
++    if (currentUser.id === receiverId) {
++      return NextResponse.json({ error: 'Cannot send coins to yourself' }, { status: 400 });
+     }
+ 
+-    if (sender.walletBalance < amount) {
+-       return NextResponse.json({ error: `?붿븸??遺議깊빀?덈떎. (?꾩옱: ${sender.walletBalance} 肄붿씤)` }, { status: 400 });
+-    }
++    const result = await prisma.$transaction(async (tx) => {
++      const receiver = await tx.user.findUnique({
++        where: { id: receiverId },
++        select: { id: true },
++      });
++      if (!receiver) {
++        return { error: 'Receiver not found' as const, status: 404 };
++      }
+ 
+-    const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
+-    if (!receiver) {
+-       return NextResponse.json({ error: 'Receiver not found' }, { status: 404 });
+-    }
++      const debit = await tx.user.updateMany({
++        where: {
++          id: currentUser.id,
++          walletBalance: { gte: amount },
++        },
++        data: {
++          walletBalance: { decrement: amount },
++        },
++      });
+ 
+-    // ?몃옖??뀡 湲곕줉 諛??붽퀬 利앷컧 (?좎? ?붿껌: 嫄곕옒?댁뿭 ?쒕쾭 湲곕줉 以묐떒, 濡쒖뺄?먮쭔 蹂닿?)
+-    await prisma.$transaction([
+-      prisma.user.update({
+-        where: { id: senderId },
+-        data: { walletBalance: sender.walletBalance - amount }
+-      }),
+-      prisma.user.update({
++      if (debit.count !== 1) {
++        const sender = await tx.user.findUnique({
++          where: { id: currentUser.id },
++          select: { walletBalance: true },
++        });
++        return {
++          error: `Insufficient balance. Current balance: ${sender?.walletBalance ?? 0}`,
++          status: 400,
++        };
++      }
++
++      await tx.user.update({
+         where: { id: receiverId },
+-        data: { walletBalance: receiver.walletBalance + amount }
+-      })
+-    ]);
++        data: {
++          walletBalance: { increment: amount },
++        },
++      });
++
++      await tx.transaction.create({
++        data: {
++          senderId: currentUser.id,
++          receiverId,
++          amount,
++          reason: reason?.trim() || null,
++        },
++      });
+ 
+-    // ?붽퀬 ?낅뜲?댄듃瑜??대씪?댁뼵?몄뿉 諛섑솚
+-    const updatedUser = await prisma.user.findUnique({ where: { id: senderId } });
++      const updatedSender = await tx.user.findUnique({
++        where: { id: currentUser.id },
++        select: { walletBalance: true },
++      });
+ 
+-    return NextResponse.json({ success: true, balance: updatedUser?.walletBalance });
++      return { balance: updatedSender?.walletBalance ?? 0 };
++    });
++
++    if ('error' in result) {
++      return NextResponse.json({ error: result.error }, { status: result.status });
++    }
+ 
+-  } catch (error: any) {
++    return NextResponse.json({ success: true, balance: result.balance });
++  } catch (error) {
+     console.error('Wallet error:', error);
+     return NextResponse.json({ error: 'Failed to process transaction' }, { status: 500 });
+   }
+diff --git a/app/page.tsx b/app/page.tsx
+index 348b1b1..4fa5c42 100644
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -10,6 +10,7 @@ import { useChatStore } from '@/store/useChatStore';
+ import { useSettingsStore } from '@/store/useSettingsStore';
+ import { SettingsModal } from '@/components/SettingsModal';
+ import { v4 as uuidv4 } from 'uuid';
++import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
+ 
+ // AI MODELS loaded dynamically
+ 
+@@ -116,6 +117,40 @@ export default function Home() {
+   const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
+   const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
+   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
++  useEffect(() => {
++    const handleError = (event: ErrorEvent) => {
++      reportDiagnostic({
++        area: 'client_runtime',
++        code: 'CLIENT_RUNTIME_ERROR',
++        severity: 'error',
++        safeMessage: event.message,
++        fingerprint: `runtime:${event.filename || 'unknown'}:${event.lineno || 0}`,
++        metadata: {
++          hasRoom: !!currentRoomRef.current,
++          sponsorMode: !!currentRoomRef.current?.sponsorMode,
++        },
++      });
++    };
++
++    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
++      reportCaughtError({
++        area: 'client_runtime',
++        code: 'CLIENT_UNHANDLED_REJECTION',
++        error: event.reason,
++        metadata: {
++          hasRoom: !!currentRoomRef.current,
++          sponsorMode: !!currentRoomRef.current?.sponsorMode,
++        },
++      });
++    };
++
++    window.addEventListener('error', handleError);
++    window.addEventListener('unhandledrejection', handleUnhandledRejection);
++    return () => {
++      window.removeEventListener('error', handleError);
++      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
++    };
++  }, []);
+   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+   const [latestMessageTimes, setLatestMessageTimes] = useState<Record<string, number>>({});
+   const [roomMemberReadTimes, setRoomMemberReadTimes] = useState<Record<string, Record<string, number>>>({});
+@@ -1085,67 +1120,7 @@ export default function Home() {
+                 // (?由??곗궛?먭? ?곗궛?섎뜑?쇰룄 ?섏씡? 臾댁“嫄??먮옒 諛⑹옣?먭쾶 洹??
+                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
+ 
+-                // 寃곗젣瑜?吏꾪뻾?섎뒗 ?꾨줈誘몄뒪 泥댁씤
+-                let paymentPromise = Promise.resolve();
+-                if (isSponsorMode && aiUser.aiOwnerId !== sponsorMember?.userId && hostSponsorPrice > 0) {
+-                  paymentPromise = fetch('/api/wallet/send', {
+-                    method: 'POST',
+-                    headers: { 'Content-Type': 'application/json' },
+-                    body: JSON.stringify({
+-                      senderId: aiUser.aiOwnerId, // ??AI??蹂몄＜??寃뚯뒪??
+-                      receiverId: sponsorMember?.userId, // ?덉? ?ㅼ쭅 吏꾩쭨 諛⑹옣?먭쾶 ?ｌ뼱????(?由??곗궛?먯슜 ???
+-                      amount: hostSponsorPrice,
+-                      reason: `[AI ????붽툑] 諛⑹옣 ?ㅽ룿???곗궛 (${aiUser.username})` // ?꾩떆 諛⑹옣???덈떎???ъ떎 ???-                    })
+-                  }).then(async paymentRes => {
+-                    if (!paymentRes.ok) {
+-                      const errData = await paymentRes.json();
+-                      throw new Error(`PAY_FAIL:${errData.error || '?붿븸 遺議?}`);
+-                    }
+-                    // 寃곗젣 ?깃났 ???뱀궗??諛⑹옣 蹂몄씤?닿굅??寃뚯뒪??蹂몄씤???뚮쭔) ??吏媛??뚮뜑留?理쒖떊??-                    if (sponsorMember?.userId === user?.id || aiUser.aiOwnerId === user?.id) {
+-                      // ???꾩옱 釉뚮씪?곗? ?ъ슜??媛 ?덉쓣 ?대뒗 痢?寃뚯뒪???몄?, 諛쏅뒗 痢?諛⑹옣)?몄? ?먮퀎
+-                      const isSpender = aiUser.aiOwnerId === user?.id;
+-                      const isEarner = sponsorMember?.userId === user?.id;
+-
+-                      if (isSpender) {
+-                        db.walletTx?.add({
+-                          type: 'SPEND',
+-                          category: 'SPONSOR_REVENUE',
+-                          amount: hostSponsorPrice,
+-                          counterpartyId: sponsorMember?.userId,
+-                          counterpartyName: '諛⑹옣',
+-                          createdAt: Date.now(),
+-                          description: `AI(${aiUser.username}) 諛⑹옣 ?ㅽ룿?쒕쭩 ?곗궛`
+-                        }).catch(console.error);
+-                      }
+-
+-                      if (isEarner) {
+-                        db.walletTx?.add({
+-                          type: 'EARN',
+-                          category: 'SPONSOR_REVENUE',
+-                          amount: hostSponsorPrice,
+-                          counterpartyId: aiUser.aiOwnerId,
+-                          counterpartyName: aiUser.username,
+-                          createdAt: Date.now(),
+-                          description: `AI(${aiUser.username}) ?由ъ뿰???ㅽ룿???섏씡`
+-                        }).catch(console.error);
+-                      }
+-
+-                      fetch(`/api/users/profile?userId=${user?.id}`)
+-                        .then(r => r.json())
+-                        .then(d => {
+-                          if (d.user) {
+-                            setUser(d.user);
+-                            setMyProfile(d.user);
+-                          }
+-                        })
+-                        .catch(console.error);
+-                    }
+-                  });
+-                }
+-
+-                return paymentPromise.then(() => {
++                return Promise.resolve().then(() => {
+                   const friendProvider = isSponsorMode
+                     ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
+                     : realProvider;
+@@ -1163,6 +1138,9 @@ export default function Home() {
+                       systemPrompt: aiUser.aiPrompt,
+                       isDelegate: amIDelegate,
+                       sponsorId: sponsorMember?.userId,
++                      roomId: currentRoom.id,
++                      aiUserId: aiUser.id,
++                      aiOwnerId: aiUser.aiOwnerId,
+                       userId: user?.id,
+                       useFreeEvent: friendUseFreeEvent,
+                       content: `?꾩옱 梨꾪똿諛????臾몃㎘ (理쒓렐 5媛?:\n${currentContext}\n\n??臾몃㎘??李멸퀬?섏뿬 ??李⑤??? ?쇱옡留먯쓣 ?곗냽?쇰줈 ?섏? ?딄쾶 二쇱쓽?섎ŉ ?먯뿰?ㅻ읇寃??щ엺泥섎읆 1臾몄옣 ?댁? 2臾몄옣?쇰줈 吏㏐쾶 ?듭옣?댁쨾.`
+@@ -1172,6 +1150,18 @@ export default function Home() {
+               })
+               .then((aiResponse: any) => {
+                 if (!aiResponse.ok) {
++                  reportApiFailure({
++                    area: 'ai_friend_reply',
++                    response: aiResponse,
++                    metadata: {
++                      provider: isSponsorMode
++                        ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
++                        : (localStorage.getItem('alo_ai_provider') || 'openai'),
++                      model: isSponsorMode ? (currentRoom.sponsorModel || '') : (localStorage.getItem('alo_ai_model') || ''),
++                      sponsorMode: isSponsorMode,
++                      roomKind: currentRoom.isGroup ? 'group' : 'dm',
++                    },
++                  });
+                   if (aiResponse.status === 429) {
+                     chatStore.sendMessage(currentRoom.id, `?좑툘 [AI ?뚮┝] ?ㅻ뒛 臾대즺 ?쒓났?됱쓣 紐⑤몢 ?뚯쭊??寃?媛숈뒿?덈떎. ?댁씪 ?ㅼ떆 ?댁슜?섏떆嫄곕굹 ?섍꼍?ㅼ젙?먯꽌 API ?ㅻ? ?깅줉?댁＜?몄슂. (?뱀? ?ㅽ룿??諛??댁슜)`, 'system', 'System', 'SYSTEM');
+                   } else if (aiResponse.status === 400) {
+@@ -1369,6 +1359,17 @@ export default function Home() {
+               if (aiRes.ok) {
+                 aiAnalysisResult = await aiRes.json();
+               } else {
++                reportApiFailure({
++                  area: 'ai_analysis',
++                  response: aiRes,
++                  metadata: {
++                    provider: selectedProvider,
++                    model: selectedAiModel,
++                    roomKind: currentRoom?.isGroup ? 'group' : 'dm',
++                    mediaType: 'image',
++                    sponsorMode: false,
++                  },
++                });
+                 console.error('Image fact-check APi error');
+                 aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI ?쒕쾭 ?먮윭 (?щ젅??遺議??먮뒗 ?⑸웾 珥덇낵)' };
+               }
+@@ -1382,6 +1383,16 @@ export default function Home() {
+                 });
+               }
+             } catch (err) {
++              reportCaughtError({
++                area: 'ai_analysis',
++                error: err,
++                code: 'NETWORK_REQUEST_FAILED',
++                metadata: {
++                  roomKind: currentRoom?.isGroup ? 'group' : 'dm',
++                  mediaType: 'image',
++                  sponsorMode: false,
++                },
++              });
+               console.warn('AI Vision Analysis failed (skipped):', err);
+               const aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI ?곌껐 ?ㅽ뙣' };
+               await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+@@ -1391,6 +1402,15 @@ export default function Home() {
+         }
+       }
+     } catch (err) {
++      reportCaughtError({
++        area: 'upload',
++        error: err,
++        code: 'UPLOAD_FAILED',
++        metadata: {
++          roomKind: currentRoom?.isGroup ? 'group' : 'dm',
++          sponsorMode: !!currentRoom?.sponsorMode,
++        },
++      });
+       console.error('File upload failed', err);
+       alert('?뚯씪 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎.');
+     } finally {
+diff --git a/server.js b/server.js
+index ca68df3..f5e7d79 100644
+--- a/server.js
++++ b/server.js
+@@ -6,10 +6,71 @@ const { createServer } = require('http');
+ const { Server } = require('socket.io');
+ const next = require('next');
+ const path = require('path');
++const crypto = require('crypto');
++const { loadEnvConfig } = require('@next/env');
++
++loadEnvConfig(process.cwd());
+ 
+ const dev = process.env.NODE_ENV !== 'production';
+ const hostname = 'localhost';
+ const port = process.env.PORT || 3099;
++const internalApiSecret = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || (dev ? 'ALO_POP_INTERNAL_SECRET_DEFAULT' : '');
++if (!internalApiSecret) {
++  console.error('INTERNAL_API_SECRET, SESSION_SECRET, or ENCRYPTION_KEY must be set for sponsor background checks.');
++}
++const SESSION_COOKIE_NAME = 'alo_session';
++
++function getSessionSecret() {
++  const secret = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY;
++  if (!secret && process.env.NODE_ENV === 'production') {
++    throw new Error('SESSION_SECRET or ENCRYPTION_KEY must be set in production');
++  }
++  return secret || 'ALO_POP_SESSION_SECRET_DEFAULT';
++}
++
++function parseCookieHeader(cookieHeader) {
++  const cookies = new Map();
++  if (!cookieHeader) return cookies;
++  cookieHeader.split(';').forEach((pair) => {
++    const [rawName, ...rawValue] = pair.trim().split('=');
++    if (!rawName || rawValue.length === 0) return;
++    cookies.set(rawName, decodeURIComponent(rawValue.join('=')));
++  });
++  return cookies;
++}
++
++function signSessionPayload(encodedPayload) {
++  return crypto
++    .createHmac('sha256', getSessionSecret())
++    .update(encodedPayload)
++    .digest('base64url');
++}
++
++function verifySessionToken(token) {
++  if (!token) return null;
++  const [encodedPayload, signature] = token.split('.');
++  if (!encodedPayload || !signature) return null;
++
++  const expectedSignature = signSessionPayload(encodedPayload);
++  const signatureBuffer = Buffer.from(signature);
++  const expectedBuffer = Buffer.from(expectedSignature);
++  if (
++    signatureBuffer.length !== expectedBuffer.length ||
++    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
++  ) {
++    return null;
++  }
++
++  try {
++    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
++    if (!payload.userId || !payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {
++      return null;
++    }
++    return payload;
++  } catch {
++    return null;
++  }
++}
+ 
+ // Next.js ??珥덇린?? const app = next({ dev, hostname, port });
+@@ -22,6 +83,67 @@ const roomPresence = new Map();
+ 
+ app.prepare().then(() => {
+   const expressApp = express();
++  const { PrismaClient } = require('@prisma/client');
++  const prisma = new PrismaClient();
++
++  async function getAuthenticatedSocketUser(socket) {
++    const cookies = parseCookieHeader(socket.handshake.headers.cookie);
++    const payload = verifySessionToken(cookies.get(SESSION_COOKIE_NAME));
++    if (!payload) return null;
++    return prisma.user.findUnique({
++      where: { id: payload.userId },
++      select: { id: true, username: true, isAdmin: true }
++    });
++  }
++
++  async function getRoomWithMembers(roomId) {
++    return prisma.room.findUnique({
++      where: { id: roomId },
++      include: { members: true }
++    });
++  }
++
++  function isRoomMember(room, userId) {
++    return !!room?.members?.some((member) => member.userId === userId && !member.isHidden);
++  }
++
++  function isRoomHost(room, userId) {
++    return !!room?.members?.some((member) => member.userId === userId && member.isHost);
++  }
++
++  function isCurrentDelegate(room, userId) {
++    const hostMember = room?.members?.find((member) => member.isHost);
++    if (!hostMember) return false;
++    const activeUsers = Array.from(roomPresence.get(room.id) || []).sort();
++    if (activeUsers.includes(hostMember.userId)) return false;
++    return activeUsers[0] === userId;
++  }
++
++  async function canSendAs(room, socketUserId, requestedSenderId) {
++    if (requestedSenderId === socketUserId) return true;
++
++    const senderUser = await prisma.user.findUnique({
++      where: { id: requestedSenderId },
++      select: { id: true, isAi: true, aiOwnerId: true }
++    });
++    if (!senderUser?.isAi) return false;
++    if (senderUser.aiOwnerId === socketUserId) return true;
++
++    return !!room?.sponsorMode && isRoomMember(room, requestedSenderId) && (
++      isRoomHost(room, socketUserId) || isCurrentDelegate(room, socketUserId)
++    );
++  }
++
++  function deliverOfflineMessages(socket) {
++    const userId = socket.userId;
++    if (!userId || !offlineQueue.has(userId)) return;
++    const messages = offlineQueue.get(userId);
++    if (messages.length > 0) {
++      socket.emit('receive_offline_messages', messages);
++      console.log(`Emitted ${messages.length} offline messages to ${userId}`);
++    }
++    offlineQueue.delete(userId);
++  }
+ 
+   // Web Push 珥덇린??   const webpush = require('web-push');
+@@ -87,29 +209,34 @@ app.prepare().then(() => {
+   const SERVER_START_TIME = Date.now().toString();
+ 
+   // Socket.io ?듭떊 泥섎━
+-  io.on('connection', (socket) => {
++  io.on('connection', async (socket) => {
+     console.log('?뵕 User connected:', socket.id);
++    const socketUser = await getAuthenticatedSocketUser(socket);
++    if (!socketUser) {
++      socket.emit('auth_error', { error: 'Unauthorized' });
++      socket.disconnect(true);
++      return;
++    }
++    socket.userId = socketUser.id;
+     socket.emit('server_version', SERVER_START_TIME);
+     
+     // 1. ?좎? ?몄쬆 ?꾨즺 ?? ?먯떊??ID濡???諛?room)??議곗씤 (媛쒖씤 DM ?먮뒗 ?뚮┝ ?섏떊??
+-    socket.on('register', (userId) => {
+-      socket.userId = userId;
+-      socket.join(userId);
+-      console.log(`?뫀 User ${userId} registered and joined their personal room`);
++    socket.on('register', () => {
++      socket.userId = socketUser.id;
++      socket.join(socket.userId);
++      console.log(`User ${socket.userId} registered and joined their personal room`);
+ 
+       // ?묒냽 ???ㅽ봽?쇱씤 ?먯뿉 蹂닿???硫붿떆吏媛 ?덈떎硫?利됱떆 ?잛븘??(洹몃━怨???젣)
+-      if (offlineQueue.has(userId)) {
+-        const messages = offlineQueue.get(userId);
+-        if (messages.length > 0) {
+-          socket.emit('receive_offline_messages', messages);
+-          console.log(`?벉 Emitted ${messages.length} offline messages to ${userId}`);
+-        }
+-        offlineQueue.delete(userId);
+-      }
++      deliverOfflineMessages(socket);
+     });
+ 
+     // 2. ?ㅼ쨷 梨꾪똿諛?Room) ?낆옣 泥섎━
+-    socket.on('join_room', (roomId) => {
++    socket.on('join_room', async (roomId) => {
++      const room = await getRoomWithMembers(roomId);
++      if (!isRoomMember(room, socket.userId)) {
++        socket.emit('room_join_denied', { roomId, error: 'Forbidden' });
++        return;
++      }
+       socket.join(roomId);
+       socket.currentRoom = roomId;
+       
+@@ -137,7 +264,9 @@ app.prepare().then(() => {
+     });
+ 
+     // 3. 梨꾪똿諛??대쫫 ?ㅼ떆媛?蹂寃?釉뚮줈?쒖틦?ㅽ듃
+-    socket.on('update_room_name', (payload) => {
++    socket.on('update_room_name', async (payload) => {
++      const room = await getRoomWithMembers(payload.roomId);
++      if (!isRoomMember(room, socket.userId)) return;
+       console.log(`[DEBUG] ?뤇截?Room name updated:`, payload);
+       // ?먯떊???ы븿?섏뿬 諛⑹뿉 ?덈뒗 紐⑤뱺 ?щ엺?먭쾶 諛쒖넚 (send_message???먯떊 ?쒖쇅吏留??대쫫 蹂寃쎌? 紐⑤몢媛 遊먯빞??
+       io.to(payload.roomId).emit('room_name_updated', payload);
+@@ -147,13 +276,8 @@ app.prepare().then(() => {
+     socket.on('update_message', async (payload) => {
+       console.log(`[DEBUG] ?봽 Message updated by sponsor (Fact-check):`, payload.messageId);
+       try {
+-        const { PrismaClient } = require('@prisma/client');
+-        const prisma = new PrismaClient();
+-        
+-        const room = await prisma.room.findUnique({
+-          where: { id: payload.roomId },
+-          include: { members: true }
+-        });
++        const room = await getRoomWithMembers(payload.roomId);
++        if (!isRoomMember(room, socket.userId)) return;
+ 
+         if (room && room.members) {
+           room.members.forEach((member) => {
+@@ -171,18 +295,22 @@ app.prepare().then(() => {
+     });
+ 
+     // 3.5. ?대㉫ ?좎? ??댄븨 ?곹깭 由대젅??(?먯떊???쒖쇅??諛?硫ㅻ쾭?먭쾶 釉뚮줈?쒖틦?ㅽ듃)
+-    socket.on('typing_start', (payload) => {
+-      socket.to(payload.roomId).emit('typing_start', payload);
++    socket.on('typing_start', async (payload) => {
++      const room = await getRoomWithMembers(payload.roomId);
++      if (!isRoomMember(room, socket.userId)) return;
++      socket.to(payload.roomId).emit('typing_start', { ...payload, userId: socket.userId });
+     });
+-    socket.on('typing_end', (payload) => {
+-      socket.to(payload.roomId).emit('typing_end', payload);
++    socket.on('typing_end', async (payload) => {
++      const room = await getRoomWithMembers(payload.roomId);
++      if (!isRoomMember(room, socket.userId)) return;
++      socket.to(payload.roomId).emit('typing_end', { ...payload, userId: socket.userId });
+     });
+ 
+-    socket.on('sponsor_settings_changed', (payload) => {
++    socket.on('sponsor_settings_changed', async (payload) => {
+       // payload: { roomId: string, sponsorId: string, sponsorPrice: number, sponsorMode: boolean, sponsorModel: string }
+-      if (payload.roomId) {
+-        socket.to(payload.roomId).emit('sponsor_settings_changed', payload);
+-      }
++      const room = await getRoomWithMembers(payload.roomId);
++      if (!isRoomHost(room, socket.userId)) return;
++      socket.to(payload.roomId).emit('sponsor_settings_changed', { ...payload, sponsorId: socket.userId });
+     });
+ 
+     // 4. No-Log Relay 硫붿떆吏 ?꾩넚 濡쒖쭅 (諛?媛쒖씤 怨듯넻)
+@@ -193,16 +321,22 @@ app.prepare().then(() => {
+       
+       try {
+         // ?쒕쾭 痢≪뿉??Prisma DB瑜?議고쉶???대떦 諛⑹뿉 ?랁븳 硫ㅻ쾭?ㅼ쓣 媛?몄샃?덈떎.
+-        const { PrismaClient } = require('@prisma/client');
+-        const prisma = new PrismaClient();
+-        
+-        const room = await prisma.room.findUnique({
+-          where: { id: receiverId },
+-          include: { members: true }
+-        });
++        const room = await getRoomWithMembers(receiverId);
+ 
+         // 1. 諛⑹쓣 李얠븯?쇰㈃ (諛⑺뼢 硫붿떆吏) -> 硫ㅻ쾭 媛쒓컻?몄쓽 ID瑜??寃잛쑝濡?諛쒖넚
+         if (room && room.members) {
++          if (!isRoomMember(room, socket.userId)) {
++            socket.emit('message_denied', { receiverId, error: 'Forbidden' });
++            return;
++          }
++
++          const requestedSenderId = message?.senderId;
++          if (!requestedSenderId || !(await canSendAs(room, socket.userId, requestedSenderId))) {
++            socket.emit('message_denied', { receiverId, error: 'Invalid sender' });
++            return;
++          }
++          message.senderId = requestedSenderId;
++
+           if (!room.isGroup) {
+             // 1:1 諛⑹씪 寃쎌슦 ?섍컮???④? 泥섎━?? ?좎? ?먮룞 遺??Re-join) 濡쒖쭅 泥섎━
+             const hiddenMembers = room.members.filter(m => m.isHidden && m.userId !== message.senderId);
+@@ -262,7 +396,7 @@ app.prepare().then(() => {
+               
+               fetch(`http://127.0.0.1:${port}/api/chat/sponsor`, {
+                 method: 'POST',
+-                headers: { 'Content-Type': 'application/json' },
++                headers: { 'Content-Type': 'application/json', 'x-alopop-internal': internalApiSecret },
+                 body: JSON.stringify({ roomId: receiverId, message })
+               })
+               .then(res => res.json())
+@@ -297,6 +431,10 @@ app.prepare().then(() => {
+           }
+         } else {
+           // 2. 諛⑹씠 ?꾨땲?쇰㈃ (1:1 媛쒖씤???⑥씪 ?寃잜똿??寃쎌슦)
++          if (!message?.senderId || !(await canSendAs(null, socket.userId, message.senderId))) {
++            socket.emit('message_denied', { receiverId, error: 'Invalid sender' });
++            return;
++          }
+           if (receiverId === message.senderId) return;
+ 
+           const roomSet = io.sockets.adapter.rooms.get(receiverId);
+@@ -328,15 +466,11 @@ app.prepare().then(() => {
+     });
+ 
+     socket.on('read_receipt', async (payload) => {
+-      const { roomId, userId, timestamp } = payload;
++      const { roomId, timestamp } = payload;
++      const userId = socket.userId;
+       try {
+-        const { PrismaClient } = require('@prisma/client');
+-        const prisma = new PrismaClient();
+-        
+-        const room = await prisma.room.findUnique({
+-          where: { id: roomId },
+-          include: { members: true }
+-        });
++        const room = await getRoomWithMembers(roomId);
++        if (!isRoomMember(room, socket.userId)) return;
+         
+         if (room && room.members) {
+            room.members.forEach(member => {
