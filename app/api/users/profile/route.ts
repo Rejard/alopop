@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -51,18 +51,28 @@ export async function GET(request: Request) {
 }
 
 // 상태 메시지 및 기타 프로필 정보 업데이트 (PUT)
+import { z } from 'zod';
+
+const UpdateProfileSchema = z.object({
+  userId: z.string().min(1, 'userId is required'),
+  statusMessage: z.string().nullable().optional(),
+});
+
 export async function PUT(request: Request) {
   try {
-    const { userId, statusMessage } = await request.json();
+    const body = await request.json();
+    const parseResult = UpdateProfileSchema.safeParse(body);
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
+
+    const { userId, statusMessage } = parseResult.data;
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        statusMessage: statusMessage || null // 빈 문자열인 경우 null 처리
+        statusMessage: statusMessage || null
       },
       select: {
         id: true,
@@ -77,3 +87,4 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

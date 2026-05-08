@@ -1,18 +1,25 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
+import { z } from 'zod';
+
+const GetRoomsSchema = z.object({
+  userId: z.string().min(1, 'userId parameter is required'),
+});
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const parseResult = GetRoomsSchema.safeParse({ userId: searchParams.get('userId') });
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId parameter is required' }, { status: 400 });
+    if (!parseResult.success) {
+      return NextResponse.json({ error: parseResult.error.issues[0].message }, { status: 400 });
     }
 
-    // 내가 참여 중인 방이면서 숨김 처리되지 않은 목록과 각 방의 멤버 정보를 가져옴
+    const { userId } = parseResult.data;
+
     const rooms = await prisma.room.findMany({
       where: {
         members: {
@@ -22,11 +29,20 @@ export async function GET(request: Request) {
           }
         }
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        isGroup: true,
+        sponsorMode: true,
+        sponsorModel: true,
+        sponsorPrice: true,
         members: {
-          include: {
+          select: {
+            id: true,
+            isHost: true,
+            lastReadAt: true,
             user: {
-              select: { id: true, username: true, avatar_url: true, isAi: true, aiOwnerId: true, aiPrompt: true }
+              select: { id: true, username: true, avatar_url: true, isAi: true }
             }
           }
         }
