@@ -292,7 +292,7 @@ export default function Home() {
   // AI 자율 응답 작성 중(Typing...) 상태
   const [typingAIs, setTypingAIs] = useState<Record<string, { aiId: string, aiName: string }[]>>({});
 
-  // 바이브 코딩 자율 작업 진행 중 상태
+  // 바이브 워킹 자율 작업 진행 중 상태
   const [vibeCodingAIs, setVibeCodingAIs] = useState<Record<string, { aiId: string, aiName: string }[]>>({});
 
   // 현재 방에 접속 중인 유저 명단 (스텔스 고스트 임시 방장용)
@@ -3743,7 +3743,7 @@ export default function Home() {
                 return (
                   <div className="absolute bottom-[76px] left-4 bg-zinc-800/95 backdrop-blur-md px-4 py-2.5 rounded-2xl rounded-bl-sm shadow-xl border border-zinc-700/50 flex flex-col items-start gap-1.5 z-10 animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200">
                     <span className="text-[11px] font-bold text-zinc-400">
-                      <strong className="text-purple-400 font-extrabold">{vibeAIsNames.join(', ')}</strong> 님이 바이브 코딩 작업중...
+                      <strong className="text-purple-400 font-extrabold">{vibeAIsNames.join(', ')}</strong> 님이 바이브 워킹 작업중...
                     </span>
                     <div className="flex gap-1 h-2 items-center ml-1">
                       <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>

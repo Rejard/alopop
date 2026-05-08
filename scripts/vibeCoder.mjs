@@ -95,7 +95,7 @@ async function main() {
       })
     };
 
-    const systemPrompt = `당신은 사용자의 원격 PC를 자율적으로 제어하여 개발 업무를 수행하는 OpenAlo 바이브 코딩 에이전트입니다.
+    const systemPrompt = `당신은 사용자의 원격 PC를 자율적으로 제어하여 개발 업무를 수행하는 OpenAlo 바이브 워킹 에이전트입니다.
 [기본 작업 디렉토리] ${aiUser.agentPath || process.cwd()}
 - 반드시 위 작업 디렉토리를 기준으로 절대 경로를 사용하여 도구를 실행하세요.
 - 파일 탐색이나 읽기는 다른 경로에서 할 수 있지만, **새로운 파일을 생성하거나 결과물을 저장할 때는 무조건 [기본 작업 디렉토리] 내부에 저장해야 합니다.** (예외 없음)
@@ -141,7 +141,7 @@ async function main() {
     // Save final completion message to DB via vibe-notify
     console.log(`[VibeCoder] Task finished. Sending message to room...`);
     const messageId = uuidv4();
-    const finalMsgContent = `🚀 [바이브 코딩 완료 보고서]\n\n${finalReply}`;
+    const finalMsgContent = `🚀 [바이브 워킹 완료 보고서]\n\n${finalReply}`;
     
     const messageObj = {
       messageId,
@@ -179,7 +179,7 @@ async function main() {
       );
 
       const payload = JSON.stringify({
-        title: '🚀 바이브 코딩 작업 완료',
+        title: '🚀 바이브 워킹 작업 완료',
         body: 'OpenAlo가 요청하신 백그라운드 자율 작업을 완료했습니다!',
         icon: '/icon.png',
         url: '/'

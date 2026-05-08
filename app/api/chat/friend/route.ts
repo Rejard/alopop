@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       const p = doSpawn(cp, process.cwd(), currentUser.id, roomId || '', aiUserId || '', currentProvider, apiKey, finalAiModel, content);
       p.unref();
 
-      return NextResponse.json({ reply: '🚀 바이브 코딩 작업을 백그라운드에서 시작했습니다. 완료되면 전체 알림을 드립니다!' });
+      return NextResponse.json({ reply: '🚀 바이브 워킹 작업을 백그라운드에서 시작했습니다. 완료되면 전체 알림을 드립니다!' });
     }
 
     let modelInstance;
