@@ -67,6 +67,7 @@ socket.on("execute_tool", async (data, callback) => {
     let result = null;
     
     if (tool === "run_command") {
+      if (!toolArgs || !toolArgs.command) throw new Error("Missing required argument: command");
       result = await new Promise((resolve) => {
         exec(toolArgs.command, { cwd: process.cwd() }, (error, stdout, stderr) => {
           resolve({
@@ -78,11 +79,13 @@ socket.on("execute_tool", async (data, callback) => {
       });
     } 
     else if (tool === "read_file") {
+      if (!toolArgs || !toolArgs.path) throw new Error("Missing required argument: path");
       const filePath = path.resolve(process.cwd(), toolArgs.path);
       const content = fs.readFileSync(filePath, "utf-8");
       result = { content: content.substring(0, 10000) }; // Limit return size
     } 
     else if (tool === "write_file") {
+      if (!toolArgs || !toolArgs.path || toolArgs.content === undefined) throw new Error("Missing required argument: path or content");
       const filePath = path.resolve(process.cwd(), toolArgs.path);
       if (!filePath.toLowerCase().startsWith(process.cwd().toLowerCase())) {
         throw new Error("Access denied: Cannot write files outside of the configured working directory.");
@@ -91,7 +94,7 @@ socket.on("execute_tool", async (data, callback) => {
       result = { success: true, message: `File written to ${filePath}` };
     } 
     else if (tool === "list_dir") {
-      const dirPath = path.resolve(process.cwd(), toolArgs.path || ".");
+      const dirPath = path.resolve(process.cwd(), (toolArgs && toolArgs.path) ? toolArgs.path : ".");
       const files = fs.readdirSync(dirPath, { withFileTypes: true });
       const list = files.map(f => `${f.isDirectory() ? "[DIR]" : "[FILE]"} ${f.name}`);
       result = { files: list };

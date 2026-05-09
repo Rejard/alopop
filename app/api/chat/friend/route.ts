@@ -190,7 +190,8 @@ export async function POST(request: Request) {
           body: JSON.stringify({ aiUserId, tool: toolName, args })
         });
         if (!res.ok) {
-          throw new Error(await res.text());
+          const errText = await res.text();
+          return { error: `[Agent Disconnected] 해당 PC가 오프라인 상태이거나 명령을 수행할 수 없습니다: ${errText}` };
         }
         return res.json();
       };
@@ -233,7 +234,7 @@ export async function POST(request: Request) {
     const messages: any[] = [{ role: 'user', content }];
 
     for (let step = 0; step < (isAgent ? 3 : 1); step++) {
-      const { text, toolCalls, toolResults } = await generateText({
+      const { text, toolCalls } = await generateText({
         model: modelInstance,
         system: finalSystemPrompt,
         messages: messages,
@@ -241,14 +242,27 @@ export async function POST(request: Request) {
         tools: isAgent ? agentTools : undefined,
       });
 
-      if (toolResults && toolResults.length > 0) {
+      if (toolCalls && toolCalls.length > 0) {
+        const manualToolResults = [];
+        for (const call of toolCalls) {
+           const toolFunc = agentTools[call.toolName];
+           if (toolFunc && toolFunc.execute) {
+               try {
+                   const callArgs = (call as any).args || (call as any).arguments || {};
+                   const res = await toolFunc.execute(callArgs);
+                   manualToolResults.push({ tool: call.toolName, result: res });
+               } catch (e: any) {
+                   manualToolResults.push({ tool: call.toolName, error: String(e) });
+               }
+           }
+        }
         messages.push({
           role: 'assistant',
           content: text || '도구를 실행했습니다.',
         });
         messages.push({
           role: 'user',
-          content: `[시스템 알림: 도구 실행 결과]\n${JSON.stringify(toolResults, null, 2)}\n\n이 도구 실행 결과를 바탕으로 이전 질문에 대한 답변을 제공하세요.`
+          content: `[시스템 알림: 도구 실행 결과]\n${JSON.stringify(manualToolResults, null, 2)}\n\n이 도구 실행 결과를 바탕으로 이전 질문에 대한 답변을 제공하세요.`
         });
       } else {
         finalReply = text;
