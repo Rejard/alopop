@@ -654,11 +654,12 @@ app.prepare().then(() => {
     
     try {
       // Emit the message to the bridge
+      console.log(`[DEBUG] Emitting agent_task to socket ${targetSocket.id} for AI ${aiUserId}`);
       targetSocket.emit('agent_task', { message, roomId });
       
       // Tell everyone in the room that the AI is typing!
       if (roomId && aiUserId) {
-         io.to(roomId).emit('typing_start', { roomId, userId: aiUserId, userName: aiUserName || 'AI' });
+        io.to(roomId).emit('typing_start', { roomId, userId: aiUserId, userName: aiUserName || 'AI' });
       }
 
       return res.status(200).json({ success: true, message: "Task sent to OpenClaw" });

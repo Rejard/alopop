@@ -2342,10 +2342,9 @@ export default function Home() {
   const lockedModelName = `🔒 ${foundModelName}`;
 
   const getOpenClawCommand = () => {
-    const cdCmd = openAloPathValue.trim() ? `cd '${openAloPathValue.trim()}'\n` : '';
+    const dir = openAloPathValue.trim() || 'c:\\home';
     const serverUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3099';
-    const downloadCmd = `Invoke-WebRequest -Uri "${serverUrl}/openclaw-bridge.js?v=$([DateTimeOffset]::Now.ToUnixTimeSeconds())" -OutFile "openclaw-bridge.js" -UseBasicParsing; `;
-    return `${cdCmd}${downloadCmd}node openclaw-bridge.js --server=${serverUrl} --token=${createdOpenAloToken}`;
+    return `cd '${dir}'; Invoke-WebRequest -Uri '${serverUrl}/openclaw-bridge.js?v=$([DateTimeOffset]::Now.ToUnixTimeSeconds())' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=${serverUrl} --token=${createdOpenAloToken}`;
   };
 
   return (
@@ -4266,10 +4265,11 @@ export default function Home() {
                     <div className="bg-zinc-900 p-4 rounded-xl border border-rose-500/30">
                       <h4 className="text-rose-400 font-bold mb-2 flex items-center gap-2">
                         <CheckCircle2 size={18} />
-                        생성 성공! PC를 연동하세요.
+                        생성 성공! PC에 연동하세요.
                       </h4>
                       <p className="text-sm text-zinc-300 mb-4">
-                        아래 명령어를 복사하여 원격 제어할 PC의 <strong className="text-white">PowerShell</strong> 에 붙여넣고 실행하세요. 실행 즉시 친구 목록에 있는 봇이 응답을 시작합니다.
+                        아래 명령어를 <strong className="text-white">한 번에 복사</strong>하여 PC의 <strong className="text-white">PowerShell</strong>에 붙여넣고 실행하세요.<br/>
+                        <span className="text-zinc-400 text-xs">에이전트가 멈추면 채팅에서 <strong className="text-yellow-400">!중지</strong>를 입력하세요. (120초 무응답 시 자동 복구)</span>
                       </p>
                       <div className="relative">
                         <pre className="text-[12px] text-emerald-400 font-mono overflow-x-auto p-3 pt-8 bg-black rounded-lg whitespace-pre-wrap break-all border border-zinc-700">
@@ -4296,8 +4296,8 @@ export default function Home() {
                     <form onSubmit={handleCreateOpenAloSubmit} className="space-y-4">
                       <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl mb-4">
                         <p className="text-xs text-rose-200">
-                          내 컴퓨터나 회사 PC를 알로팝 채팅으로 제어할 수 있는 봇을 만듭니다. 명령어(PowerShell) 복사 및 1회 실행만으로 쉽게 연동됩니다.<br />
-                          <span className="text-rose-300 font-medium">※ 주의: 연동된 PowerShell 창을 닫으면 봇 작동이 멈춥니다. 다시 작동하려면 창을 열고 명령어를 한 번 더 입력하세요.</span>
+                          내 PC에서 OpenClaw AI 에이전트를 실행하여 알로팝 채팅으로 작업을 지시할 수 있는 봇을 만듭니다. 한 줄짜리 명령어를 PowerShell에 복사/붙여넣기 한 번이면 연동 완료!<br />
+                          <span className="text-rose-300 font-medium">※ PowerShell 창을 닫으면 봇이 멈춥니다. 다시 명령어를 실행하면 즉시 복구됩니다.</span>
                         </p>
                       </div>
 

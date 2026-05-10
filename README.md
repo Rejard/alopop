@@ -102,9 +102,13 @@ To support up to 10,000 concurrent users without the operational overhead of ext
 - **In-Memory Rate Limiting**: A lightweight custom rate limiter (3 requests/sec) shields the expensive AI Sponsor APIs from malicious bot floods or DDOS attempts, completely independent of external dependencies.
 - **Integrated Chaos Monkey**: The Admin Dashboard features a built-in 'Chaos Monkey' training ground. Administrators can deploy hundreds of automated "Ghost Agents" that mercilessly spam sockets and APIs to continuously validate infrastructure stability and ensure zero downtime.
 
-### 10. Fully Autonomous Vibe Working Agent (OpenAlo Sandbox) 💻
-Going beyond traditional chat, Alopop features a built-in **OpenAlo Vibe Working** agent capable of linking directly to the user's remote PC to autonomously perform coding tasks and system operations.
-- **Real-Time Socket/UI Rendering**: The background agent's task lifecycle (start, progress, and completion reports) is instantly rendered to the chat UI via sockets, including input-box indicators and native message bubbles.
+### 10. Fully Autonomous AI Agent Integration (OpenClaw Bridge) 💻
+Going beyond traditional chat, Alopop features a built-in **OpenClaw AI Agent** bridge capable of linking directly to the user's local PC to autonomously perform coding tasks, browser automation, and system operations—all controllable via the Alopop chat interface.
+- **One-Line Deployment**: A single semicolon-separated PowerShell command downloads the latest bridge script, connects to the Alopop server, and establishes a persistent WebSocket link to the local OpenClaw Gateway—zero configuration required.
+- **Browser Automation**: The agent can autonomously navigate websites, fill forms, search products, and perform complex multi-step browser workflows using the integrated Chromium CDP bridge.
+- **Real-Time Socket/UI Rendering**: The agent's task lifecycle (start, progress, and completion reports) is instantly rendered to the chat UI via sockets, including input-box indicators and native message bubbles.
+- **Message Cleaning Engine**: A robust filtering pipeline strips accumulated system noise and stale context from chat history, ensuring the agent always receives clean, actionable user commands.
+- **Auto-Timeout Recovery**: If the agent stalls (e.g., due to model API hangs), a 5-minute inactivity watchdog automatically kills the stuck process and frees the bridge for new commands. Users can also manually send `!중지` (stop) in the chat to force-kill at any time.
 - **Physical Sandbox Isolation**: A hardcoded physical sandbox is enforced at the local agent script level. While it allows free path traversal for reading/listing files, **all write/modify/delete operations are strictly quarantined** to the user-designated 'working directory', guaranteeing a 100% safe autonomous AI control environment.
 
 ---
