@@ -4,6 +4,8 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 
+let globalChild = null;
+
 // Auto-install dependencies and restart if needed
 let missingDeps = false;
 try { require.resolve("socket.io-client"); require.resolve("ws"); require.resolve("screenshot-desktop"); } catch (e) { missingDeps = true; }
@@ -191,8 +193,6 @@ alopopSocket.on("agent_task", (data) => {
   globalChild = child;
 });
 
-let globalChild = null;
-
 // Ensure child processes are killed when the user presses Ctrl+C or the bridge exits
 process.on("SIGINT", () => {
   if (globalChild) {
@@ -206,7 +206,6 @@ process.on("exit", () => {
   if (globalChild) {
     globalChild.kill();
   }
-});
 });
 
 alopopSocket.on("execute_claw", (data, callback) => {
