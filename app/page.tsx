@@ -2384,7 +2384,7 @@ export default function Home() {
               <X size={20} />
             </button>
             <h2 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><Sparkles className="text-primary" size={24} /> 알로팝 초보자 가이드</h2>
-            <p className="text-xs text-zinc-400 mb-6 font-medium">실시간 AI 팩트 필터 & 나만의 AI 챗봇 사용 설명서</p>
+            <p className="text-xs text-zinc-400 mb-6 font-medium">AI 팩트체크 · AI 에이전트 · AI 스튜디오 · 미니게임 포털 사용 설명서</p>
 
             <div className="space-y-6">
               <section>
@@ -2551,6 +2551,67 @@ export default function Home() {
                     <ul className="list-disc pl-5 mt-1 space-y-1">
                       <li><strong>송금 (코인 이체):</strong> 우측 멤버 탭에서 <strong>[💸 송금]</strong> 아이콘을 누르면, 원하는 친구에게 수수료 없이 나의 알로팝 코인을 즉시 이체할 수 있습니다.</li>
                       <li><strong>AI 팩트 필터 스위치:</strong> 대화창 텍스트 입력 칸 우측 상단의 <strong>(🟢 / ⛔) 버튼</strong>을 누르면 언제든지 실시간 팩트체크 요정의 개입을 끄고 켤 수 있습니다.</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-rose-400 flex items-center gap-1.5 mb-2"><Bot size={16} /> 7. OpenClaw AI 에이전트 연동 (내 PC 자동화)</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-2">
+                  <ol className="list-decimal pl-5 space-y-1.5 marker:text-rose-500 marker:font-bold">
+                    <li>좌측 하단의 <strong>[+ 친구 추가]</strong> 버튼을 누르고 <strong>&apos;내 PC 연동 (OpenClaw)&apos;</strong> 탭을 선택합니다.</li>
+                    <li>봇 이름과 작업 경로를 입력한 뒤 <strong>[내 PC 연동 명령어 생성]</strong> 버튼을 눌러 토큰을 발급받습니다.</li>
+                    <li>표시된 <strong>PowerShell 명령어 한 줄</strong>을 복사하여 내 PC의 PowerShell 창에 붙여넣으면 연동 완료!</li>
+                    <li>이후 알로팝 채팅에서 &quot;네이버쇼핑에서 로션 찾아줘&quot; 같은 명령을 보내면 <strong>AI가 내 PC에서 자동으로 브라우저를 열고 작업</strong>합니다.</li>
+                  </ol>
+                  <div className="flex items-center gap-2 mt-2 p-2 bg-rose-500/10 border border-rose-500/20 rounded-md">
+                    <ShieldAlert size={16} className="text-rose-400 shrink-0" />
+                    <span className="text-rose-200/80 text-[11px]">에이전트가 멈추면 채팅에서 <strong>!중지</strong>를 입력하세요. 5분간 무응답 시 자동으로 복구됩니다. 사전에 PC에 <strong>OpenClaw</strong>와 <strong>Node.js</strong>가 설치되어 있어야 합니다.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-orange-400 flex items-center gap-1.5 mb-2"><Gamepad2 size={16} /> 8. 미니게임 포털 즐기기</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-2">
+                  <ol className="list-decimal pl-5 space-y-1.5 marker:text-orange-500 marker:font-bold">
+                    <li>좌측 상단의 <strong>🎮 게임</strong> 메뉴를 누르면 미니게임 포털이 열립니다.</li>
+                    <li>블록 블라스트, 테트리스, 2048, 동물합치기 등 <strong>다양한 HTML5 게임</strong>을 즐길 수 있습니다.</li>
+                    <li>모바일/PC 모두 풀스크린 몰입 플레이를 지원합니다.</li>
+                  </ol>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-bold text-cyan-400 flex items-center gap-1.5 mb-2"><Building2 size={16} /> 9. Alopop AI Studio (게임 연구소)</h3>
+                <div className="text-xs text-zinc-300 leading-relaxed bg-surface-container-high p-3 rounded-lg border border-outline-variant/20 space-y-3">
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">🤖 4명의 AI 에이전트 팀이 게임을 만들어 줍니다</strong>
+                    <ul className="list-disc pl-5 mt-1 space-y-1 marker:text-cyan-500/50">
+                      <li><strong className="text-rose-400">Alice (기획자)</strong>: 게임 구조와 시나리오를 설계합니다.</li>
+                      <li><strong className="text-fuchsia-400">Carol (디자이너)</strong>: UI/UX와 컬러, 애니메이션을 담당합니다.</li>
+                      <li><strong className="text-blue-400">Bob (개발자)</strong>: 실제 코드를 작성하고 빌드합니다.</li>
+                      <li><strong className="text-emerald-400">Dave (QA 테스터)</strong>: 완성된 결과물의 버그를 검수합니다.</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">🚀 사용 방법</strong>
+                    <ol className="list-decimal pl-5 space-y-1.5 marker:text-cyan-500 marker:font-bold">
+                      <li>좌측 사이드바의 <strong>🏢 AI Studio</strong> 아이콘을 클릭하여 스튜디오에 진입합니다.</li>
+                      <li>하단 입력창에 원하는 게임을 설명합니다. (예: &quot;테트리스 만들어줘&quot;, &quot;2048 퍼즐 게임&quot;)</li>
+                      <li>이미지나 참고 자료를 <strong>📎 첨부</strong>하거나 <strong>Ctrl+V</strong>로 붙여넣을 수도 있습니다.</li>
+                      <li>전송하면 4명의 에이전트가 <strong>회의 → 기획 → 디자인 → 개발 → QA</strong> 순서로 자동 진행합니다.</li>
+                    </ol>
+                  </div>
+                  <div>
+                    <strong className="text-zinc-100 mb-1 block">✏️ 수정 · QA · 배포</strong>
+                    <ul className="list-disc pl-5 mt-1 space-y-1 marker:text-cyan-500/50">
+                      <li><strong>수정 지시</strong>: 결과물이 나온 뒤 피드백을 입력하면 에이전트가 즉시 수정 작업에 들어갑니다.</li>
+                      <li><strong>새 작업지시 (🌠)</strong>: 현재 결과물을 초기화하고 완전히 새로운 게임 제작을 시작합니다.</li>
+                      <li><strong>QA 검수 (✅)</strong>: Dave가 결과물을 자동으로 테스트하고 버그 리포트를 작성합니다.</li>
+                      <li><strong>소스코드 편집</strong>: 📂 작업 기록에서 직접 HTML/JS 코드를 열어 수동 수정이 가능합니다.</li>
+                      <li><strong>배포 (🚀)</strong>: 완성된 게임을 알로팝 미니게임 포털에 원클릭으로 즉시 배포합니다.</li>
                     </ul>
                   </div>
                 </div>
