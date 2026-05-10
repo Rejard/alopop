@@ -157,16 +157,16 @@ alopopSocket.on("agent_task", (data) => {
       const openclawScript = path.join(npmRoot, 'openclaw', 'openclaw.mjs');
       const crypto = require('crypto');
       const sessionId = crypto.randomUUID();
-      child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--session-id', sessionId, '-m', finalMessage]);
+      child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '3600', '-m', finalMessage]);
     } catch (err) {
       console.log("⚠️ Could not find global openclaw.mjs. Falling back to openclaw.cmd...");
       // Fallback
-      child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--session-id", require('crypto').randomUUID(), "-m", finalMessage], { shell: true });
+      child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--session-id", require('crypto').randomUUID(), "--timeout", "3600", "-m", finalMessage], { shell: true });
     }
   } else {
     const crypto = require('crypto');
     const sessionId = crypto.randomUUID();
-    child = spawn('openclaw', ['agent', '--agent', 'main', '--session-id', sessionId, '-m', finalMessage]);
+    child = spawn('openclaw', ['agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '3600', '-m', finalMessage]);
   }
 
   let finalOutput = "";
