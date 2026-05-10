@@ -58,6 +58,8 @@ let clawSocket = null;
 let isClawConnected = false;
 let canvasHostUrl = null;
 let canvasInterval = null;
+let clawRetryCount = 0;
+const CLAW_MAX_RETRIES = 3;
 
 function sendScreenshot() {
   screenshot({ format: "jpeg", quality: 60 }).then((img) => {
@@ -69,10 +71,16 @@ function sendScreenshot() {
 }
 
 function connectClaw() {
-  console.log(`🔌 Connecting to local OpenClaw Gateway: ${clawUrl}...`);
+  if (clawRetryCount >= CLAW_MAX_RETRIES) {
+    console.log(`ℹ️ OpenClaw Gateway 연결 ${CLAW_MAX_RETRIES}회 실패 → 스크린 스트리밍 없이 Agent-Only 모드로 동작합니다.`);
+    return;
+  }
+  clawRetryCount++;
+  console.log(`🔌 Connecting to local OpenClaw Gateway (${clawRetryCount}/${CLAW_MAX_RETRIES}): ${clawUrl}...`);
   clawSocket = new WebSocket(clawUrl);
 
   clawSocket.on("open", () => {
+    clawRetryCount = 0; // 연결 성공 시 카운터 리셋
     console.log("🔄 Sending WS Handshake to OpenClaw Gateway...");
   });
 
@@ -113,18 +121,28 @@ function connectClaw() {
     isClawConnected = false;
     clearInterval(canvasInterval);
     canvasInterval = null;
-    console.log("❌ Disconnected from OpenClaw Gateway. Reconnecting in 5s...");
-    setTimeout(connectClaw, 5000);
+    if (clawRetryCount < CLAW_MAX_RETRIES) {
+      console.log(`❌ OpenClaw Gateway 연결 끊김. ${5}초 후 재시도...`);
+      setTimeout(connectClaw, 5000);
+    } else {
+      console.log(`ℹ️ OpenClaw Gateway 연결 ${CLAW_MAX_RETRIES}회 실패 → Agent-Only 모드로 전환.`);
+    }
   });
 
   clawSocket.on("error", (err) => {
-    console.error("❌ OpenClaw WebSocket error:", err.message);
+    // 에러는 close 이벤트에서 재시도하므로 여기서는 조용히 로깅만
+    if (clawRetryCount <= 1) console.error("❌ OpenClaw Gateway 연결 실패:", err.message);
   });
 }
 
 alopopSocket.on("connect", () => {
   console.log(`✅ Connected to Alopop Server successfully!`);
-  if (!isClawConnected) connectClaw();
+  console.log(`🤖 OpenClaw Agent 대기 중... 알로팝에서 명령을 보내주세요!`);
+  // Gateway 연결은 --claw 플래그로 명시적으로 요청한 경우에만 시도
+  const hasClawFlag = args.some(a => a.startsWith("--claw="));
+  if (hasClawFlag && !isClawConnected) {
+    connectClaw();
+  }
 });
 
 alopopSocket.on("auth_error", (data) => {
@@ -135,6 +153,24 @@ alopopSocket.on("auth_error", (data) => {
 alopopSocket.on("disconnect", (reason) => {
   console.log(`\n❌ Disconnected from Alopop server: ${reason}`);
 });
+
+// 채팅방별 세션 ID 저장소 (대화 연속성 유지)
+const roomSessions = new Map();
+
+function getSessionId(roomId) {
+  if (!roomId) return require('crypto').randomUUID();
+  if (!roomSessions.has(roomId)) {
+    roomSessions.set(roomId, require('crypto').randomUUID());
+  }
+  return roomSessions.get(roomId);
+}
+
+function resetSession(roomId) {
+  if (roomId && roomSessions.has(roomId)) {
+    roomSessions.delete(roomId);
+    console.log(`🔄 세션 리셋: ${roomId}`);
+  }
+}
 
 // Listen for chat messages
 alopopSocket.on("agent_task", (data) => {
@@ -185,9 +221,9 @@ alopopSocket.on("agent_task", (data) => {
   console.log(`💬 [Alopop -> OpenClaw] 타겟 명령 수신됨!!`);
   console.log(`정제된 명령: ${cleanedMessage}`);
   console.log(`======================================================\n`);
+  // Gateway 연결 여부와 무관하게 agent는 child_process로 직접 실행
   if (!isClawConnected) {
-    console.error("❌ OpenClaw is not connected.");
-    return;
+    console.log("ℹ️ OpenClaw Gateway 미연결 상태 (스크린 스트리밍 비활성). Agent는 직접 실행합니다.");
   }
 
   const baseMessage = role ? `[당신의 페르소나 및 역할 지시사항: ${role}]\n\n${cleanedMessage}` : cleanedMessage;
@@ -204,7 +240,6 @@ alopopSocket.on("agent_task", (data) => {
       } catch(e) {}
       globalChild = null;
       alopopSocket.emit("claw_message", { content: "🛑 에이전트 작업이 사용자에 의해 강제 중지되었습니다." });
-      // Tell the server the task is 'complete' so the UI stops loading state
       if (roomId) alopopSocket.emit("claw_task_complete", { roomId, finalOutput: "🛑 강제 중지됨" });
       return;
     }
@@ -217,23 +252,36 @@ alopopSocket.on("agent_task", (data) => {
     return;
   }
 
+  // !새대화 명령으로 세션 리셋
+  if (cleanedMessage === '!새대화' || cleanedMessage === '!reset') {
+    resetSession(roomId);
+    alopopSocket.emit("claw_message", { content: "🔄 새로운 대화 세션을 시작합니다!" });
+    if (roomId) alopopSocket.emit("claw_task_complete", { roomId, finalOutput: "🔄 세션 리셋 완료" });
+    return;
+  }
+
+  // 채팅방 기반 세션 ID (같은 방에서는 대화 기억 유지)
+  const sessionId = getSessionId(roomId);
+  console.log(`🧠 세션: ${sessionId.substring(0, 8)}... (방: ${roomId || 'none'})`);
+
   let child;
   if (process.platform === 'win32') {
     try {
       const npmRoot = execSync('npm root -g').toString().trim();
       const openclawScript = path.join(npmRoot, 'openclaw', 'openclaw.mjs');
-      const crypto = require('crypto');
-      const sessionId = crypto.randomUUID();
-      child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'off', '--verbose', 'on', '-m', finalMessage]);
+      child = spawn('node', [openclawScript, 'agent', '--local', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'off', '--verbose', 'on', '-m', finalMessage]);
     } catch (err) {
       console.log("⚠️ Could not find global openclaw.mjs. Falling back to openclaw.cmd...");
-      // Fallback
-      child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--session-id", require('crypto').randomUUID(), "--timeout", "600", "--thinking", "off", "--verbose", "on", "-m", finalMessage], { shell: true });
+      child = spawn('openclaw.cmd', ["agent", "--local", "--agent", "main", "--session-id", sessionId, "--timeout", "600", "--thinking", "off", "--verbose", "on", "-m", finalMessage], { shell: true });
     }
   } else {
-    const crypto = require('crypto');
-    const sessionId = crypto.randomUUID();
-    child = spawn('openclaw', ['agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'off', '-m', finalMessage]);
+    child = spawn('openclaw', ['agent', '--local', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'off', '-m', finalMessage]);
+  }
+
+  // 🖥️ 에이전트 작업 중 실시간 스크린 스트리밍 시작 (gateway 불필요)
+  if (!canvasInterval) {
+    console.log(`📺 실시간 스크린 스트리밍 시작...`);
+    canvasInterval = setInterval(sendScreenshot, 3000);
   }
 
   let finalOutput = "";
@@ -267,19 +315,40 @@ alopopSocket.on("agent_task", (data) => {
     }, INACTIVITY_TIMEOUT_MS);
   }
 
+  // OpenClaw 내부 노이즈 로그 필터 (사용자에게 불필요한 진단 메시지 차단)
+  function isNoiseLine(line) {
+    const lower = line.toLowerCase().trim();
+    if (!lower) return true;
+    if (lower.includes('[plugins] loading')) return true;
+    if (lower.includes('[plugins] loaded')) return true;
+    if (lower.includes('registered plugin command:')) return true;
+    if (lower.includes('[diagnostic]')) return true;
+    if (lower.includes('[agent/embedded]')) return true;
+    if (lower.includes('[agents/harness]')) return true;
+    if (lower.startsWith('gateway client error:')) return true;
+    if (lower.startsWith('embedded fallback:')) return true;
+    if (lower.startsWith('gateway target:')) return true;
+    if (lower.startsWith('source:')) return true;
+    if (lower.startsWith('config:')) return true;
+    if (lower.startsWith('bind:')) return true;
+    if (lower.startsWith('possible causes:')) return true;
+    if (lower.startsWith('- gateway')) return true;
+    if (lower.startsWith('- tls mismatch')) return true;
+    if (lower.includes('run `openclaw doctor`')) return true;
+    if (lower.includes('gatewatransporterror')) return true;
+    if (lower.includes('gateway closed')) return true;
+    if (lower.includes('no close reason')) return true;
+    if (lower.includes('abnormal closure')) return true;
+    return false;
+  }
+
   child.stdout.on("data", (chunk) => {
-    resetInactivityTimer(); // 출력이 오면 타이머 리셋
+    resetInactivityTimer();
     stdoutBuffer += chunk.toString();
     let lines = stdoutBuffer.split('\n');
-    stdoutBuffer = lines.pop(); // Keep the last incomplete line
+    stdoutBuffer = lines.pop();
 
-    let filteredLines = lines.filter(line => {
-      const lower = line.toLowerCase();
-      if (lower.includes('[plugins] loading')) return false;
-      if (lower.includes('[plugins] loaded')) return false;
-      if (lower.includes('registered plugin command:')) return false;
-      return true;
-    });
+    let filteredLines = lines.filter(line => !isNoiseLine(line));
 
     if (filteredLines.length > 0) {
       const out = filteredLines.join('\n') + '\n';
@@ -290,18 +359,12 @@ alopopSocket.on("agent_task", (data) => {
   });
 
   child.stderr.on("data", (chunk) => {
-    resetInactivityTimer(); // 출력이 오면 타이머 리셋
+    resetInactivityTimer();
     stderrBuffer += chunk.toString();
     let lines = stderrBuffer.split('\n');
-    stderrBuffer = lines.pop(); // Keep the last incomplete line
+    stderrBuffer = lines.pop();
 
-    let filteredLines = lines.filter(line => {
-      const lower = line.toLowerCase();
-      if (lower.includes('[plugins] loading')) return false;
-      if (lower.includes('[plugins] loaded')) return false;
-      if (lower.includes('registered plugin command:')) return false;
-      return true;
-    });
+    let filteredLines = lines.filter(line => !isNoiseLine(line));
 
     if (filteredLines.length > 0) {
       const out = filteredLines.join('\n') + '\n';
@@ -314,23 +377,24 @@ alopopSocket.on("agent_task", (data) => {
     // 타임아웃 타이머 정리
     clearTimeout(inactivityTimer);
 
-    // Flush remaining buffers
-    if (stdoutBuffer) {
-      const lower = stdoutBuffer.toLowerCase();
-      if (!lower.includes('[plugins] loading') && !lower.includes('[plugins] loaded') && !lower.includes('registered plugin command:')) {
-        const out = stdoutBuffer + '\n';
-        process.stdout.write(out);
-        finalOutput += out;
-        alopopSocket.emit("claw_message", { content: out });
-      }
+    // 🖥️ 스크린 스트리밍 중지
+    if (canvasInterval) {
+      clearInterval(canvasInterval);
+      canvasInterval = null;
+      console.log(`📺 스크린 스트리밍 종료.`);
     }
-    if (stderrBuffer) {
-      const lower = stderrBuffer.toLowerCase();
-      if (!lower.includes('[plugins] loading') && !lower.includes('[plugins] loaded') && !lower.includes('registered plugin command:')) {
-        const out = stderrBuffer + '\n';
-        process.stderr.write(out);
-        alopopSocket.emit("claw_message", { content: out });
-      }
+
+    // Flush remaining buffers
+    if (stdoutBuffer && !isNoiseLine(stdoutBuffer)) {
+      const out = stdoutBuffer + '\n';
+      process.stdout.write(out);
+      finalOutput += out;
+      alopopSocket.emit("claw_message", { content: out });
+    }
+    if (stderrBuffer && !isNoiseLine(stderrBuffer)) {
+      const out = stderrBuffer + '\n';
+      process.stderr.write(out);
+      alopopSocket.emit("claw_message", { content: out });
     }
 
     console.log(`✅ Task finished with code ${code}`);
