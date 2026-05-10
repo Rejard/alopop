@@ -2,6 +2,7 @@
 const { spawn, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const http = require("http");
 
 let globalChild = null;
@@ -63,18 +64,62 @@ const CLAW_MAX_RETRIES = 3;
 
 let screenCaptureFailCount = 0;
 const SCREEN_CAPTURE_MAX_FAILS = 3;
+let usePowershellCapture = false;
+
+// PowerShell .NET 기반 스크린 캡처 (Device Guard 환경 대응)
+function powershellScreenshot() {
+  return new Promise((resolve, reject) => {
+    const tmpFile = path.join(os.tmpdir(), `alopop_screen_${Date.now()}.jpg`);
+    const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$b = New-Object System.Drawing.Bitmap($s.Width, $s.Height)
+$g = [System.Drawing.Graphics]::FromImage($b)
+$g.CopyFromScreen($s.Location, [System.Drawing.Point]::Empty, $s.Size)
+$enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+$p = New-Object System.Drawing.Imaging.EncoderParameters(1)
+$p.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, 50)
+$b.Save('${tmpFile.replace(/\\/g, '\\\\')}', $enc, $p)
+$g.Dispose(); $b.Dispose()
+`.trim();
+    const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript]);
+    child.on('close', (code) => {
+      if (code === 0 && fs.existsSync(tmpFile)) {
+        const buf = fs.readFileSync(tmpFile);
+        try { fs.unlinkSync(tmpFile); } catch(e) {}
+        resolve(buf);
+      } else {
+        reject(new Error(`PowerShell 캡처 실패 (code: ${code})`));
+      }
+    });
+    child.on('error', reject);
+  });
+}
 
 function sendScreenshot() {
-  if (screenCaptureFailCount >= SCREEN_CAPTURE_MAX_FAILS) return; // 이미 비활성화됨
-  screenshot({ format: "jpeg", quality: 60 }).then((img) => {
-    screenCaptureFailCount = 0; // 성공 시 리셋
+  if (screenCaptureFailCount >= SCREEN_CAPTURE_MAX_FAILS) return;
+
+  const capturePromise = usePowershellCapture
+    ? powershellScreenshot()
+    : screenshot({ format: "jpeg", quality: 60 });
+
+  capturePromise.then((img) => {
+    screenCaptureFailCount = 0;
     const base64Image = "data:image/jpeg;base64," + img.toString("base64");
     alopopSocket.emit("claw_canvas", { data: base64Image });
   }).catch((err) => {
-    screenCaptureFailCount++;
-    if (screenCaptureFailCount >= SCREEN_CAPTURE_MAX_FAILS) {
-      console.log(`⚠️ 스크린 캡처 ${SCREEN_CAPTURE_MAX_FAILS}회 연속 실패 → 스트리밍 자동 비활성화. (사유: ${err.message?.substring(0, 80) || '알 수 없음'})`);
-      if (canvasInterval) { clearInterval(canvasInterval); canvasInterval = null; }
+    if (!usePowershellCapture) {
+      // screenshot-desktop 실패 → PowerShell fallback 시도
+      console.log(`🔄 기본 캡처 차단됨 → PowerShell 캡처로 전환 시도...`);
+      usePowershellCapture = true;
+      screenCaptureFailCount = 0; // 리셋하고 PowerShell로 재시도
+    } else {
+      screenCaptureFailCount++;
+      if (screenCaptureFailCount >= SCREEN_CAPTURE_MAX_FAILS) {
+        console.log(`⚠️ 스크린 캡처 불가 → 스트리밍 비활성화. (사유: ${err.message?.substring(0, 60) || '알 수 없음'})`);
+        if (canvasInterval) { clearInterval(canvasInterval); canvasInterval = null; }
+      }
     }
   });
 }
