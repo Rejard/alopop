@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       const p = doSpawn(cp, process.cwd(), currentUser.id, roomId || '', aiUserId || '', currentProvider, apiKey, finalAiModel, content);
       p.unref();
 
-      return NextResponse.json({ reply: '🚀 바이브 워킹 작업을 백그라운드에서 시작했습니다. 완료되면 전체 알림을 드립니다!' });
+      return NextResponse.json({ reply: '🚀 AI 에이전트 작업을 백그라운드에서 시작했습니다. 완료되면 알림을 드립니다!' });
     }
 
     let modelInstance;
@@ -250,7 +250,7 @@ export async function POST(request: Request) {
     }
 
     const finalSystemPrompt = isAgent
-      ? (systemPrompt || '당신은 사용자의 원격 PC를 제어하고 관리하는 전문적인 개발자용 OpenAlo 에이전트 터미널입니다.') + injectedSearchContext + 
+      ? (systemPrompt || '당신은 사용자의 PC에서 작업을 수행하는 전문적인 OpenClaw AI 에이전트입니다.') + injectedSearchContext + 
         `\n\n[기본 작업 디렉토리] ${agentPath}\n- 사용자가 파일이나 폴더를 탐색/수정할 때 반드시 이 디렉토리를 절대 경로로 명시하여 작업하세요.` +
         '\n\n[중요] 사용자가 시스템 정보, 폴더 리스트, 터미널 명령어 등을 요청하면 반드시 제공된 도구를 사용하여 실제 PC의 상태를 확인한 후 대답하세요.\n[규칙 1] 도구 실행 결과는 절대로 대충 요약하거나 생략하지 마세요. 개발자가 꼼꼼히 확인할 수 있도록 터미널 출력 결과나 파일 리스트를 가감 없이 원본 그대로 모두 출력하세요.\n[규칙 2] 친근한 말투나 불필요한 대화(~있네요, ~할까요? 등)는 절대 사용하지 말고, 시스템 콘솔처럼 건조하고 정확하게 결괏값만 전문적으로 전달하세요.'
       : (systemPrompt || '당신은 알로팝 메신저의 친근한 AI 친구입니다.') + injectedSearchContext;

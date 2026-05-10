@@ -292,7 +292,7 @@ export default function Home() {
   // AI 자율 응답 작성 중(Typing...) 상태
   const [typingAIs, setTypingAIs] = useState<Record<string, { aiId: string, aiName: string }[]>>({});
 
-  // 바이브 워킹 자율 작업 진행 중 상태
+  // OpenClaw AI 에이전트 자율 작업 진행 중 상태
 
 
   // 현재 방에 접속 중인 유저 명단 (스텔스 고스트 임시 방장용)
@@ -2063,7 +2063,7 @@ export default function Home() {
     }
   };
 
-  // OpenAlo 원격 PC 에이전트 생성 및 수정
+  // OpenClaw AI 에이전트 생성 및 수정
   const handleCreateOpenAloSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!openAloNameValue.trim() || !user?.id) return;

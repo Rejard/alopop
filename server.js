@@ -669,7 +669,7 @@ app.prepare().then(() => {
     }
   });
 
-  // ---- OpenAlo 바이브 코딩 알림 및 메시지 브로드캐스트 로직 ----
+  // ---- OpenClaw AI 에이전트 알림 및 메시지 브로드캐스트 로직 ----
   expressApp.use('/api/internal/vibe-notify', express.json(), async (req, res) => {
     const { action, roomId, aiUserId, aiUserName, message } = req.body;
     if (!action || !roomId || !aiUserId) return res.status(400).json({ error: 'Missing parameters' });
