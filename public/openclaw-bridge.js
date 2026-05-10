@@ -61,12 +61,21 @@ let canvasInterval = null;
 let clawRetryCount = 0;
 const CLAW_MAX_RETRIES = 3;
 
+let screenCaptureFailCount = 0;
+const SCREEN_CAPTURE_MAX_FAILS = 3;
+
 function sendScreenshot() {
+  if (screenCaptureFailCount >= SCREEN_CAPTURE_MAX_FAILS) return; // 이미 비활성화됨
   screenshot({ format: "jpeg", quality: 60 }).then((img) => {
+    screenCaptureFailCount = 0; // 성공 시 리셋
     const base64Image = "data:image/jpeg;base64," + img.toString("base64");
     alopopSocket.emit("claw_canvas", { data: base64Image });
   }).catch((err) => {
-    console.error("Screen capture failed:", err);
+    screenCaptureFailCount++;
+    if (screenCaptureFailCount >= SCREEN_CAPTURE_MAX_FAILS) {
+      console.log(`⚠️ 스크린 캡처 ${SCREEN_CAPTURE_MAX_FAILS}회 연속 실패 → 스트리밍 자동 비활성화. (사유: ${err.message?.substring(0, 80) || '알 수 없음'})`);
+      if (canvasInterval) { clearInterval(canvasInterval); canvasInterval = null; }
+    }
   });
 }
 
@@ -339,6 +348,10 @@ alopopSocket.on("agent_task", (data) => {
     if (lower.includes('gateway closed')) return true;
     if (lower.includes('no close reason')) return true;
     if (lower.includes('abnormal closure')) return true;
+    if (lower.includes('[skills] skipping escaped skill path')) return true;
+    if (lower.includes('screen capture failed')) return true;
+    if (lower.includes('screencapture_')) return true;
+    if (lower.includes('device guard')) return true;
     return false;
   }
 
