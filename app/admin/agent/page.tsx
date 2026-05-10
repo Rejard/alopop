@@ -78,10 +78,10 @@ export default function AgentSetupPage() {
                 <p className="text-sm font-semibold mb-2">💻 아래 명령어를 복사해서 PC 터미널(PowerShell)에 붙여넣으세요.</p>
                 <div className="relative">
                   <pre className="text-xs text-blue-400 font-mono overflow-x-auto p-3 bg-gray-950 rounded-lg">
-                    {`powershell -Command "cd 'c:\\home\\openAlo'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=${Date.now()}' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${agent.agentToken}"`}
+                    {`powershell -Command "cd 'c:\\home\\openAlo'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=$([DateTimeOffset]::Now.ToUnixTimeSeconds())' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${agent.agentToken}"`}
                   </pre>
                   <button 
-                    onClick={() => navigator.clipboard.writeText(`powershell -Command "cd 'c:\\home\\openAlo'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=${Date.now()}' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${agent.agentToken}"`)}
+                    onClick={() => navigator.clipboard.writeText(`powershell -Command "cd 'c:\\home\\openAlo'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=$([DateTimeOffset]::Now.ToUnixTimeSeconds())' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${agent.agentToken}"`)}
                     className="absolute top-2 right-2 p-1.5 bg-gray-800 hover:bg-gray-700 rounded-md text-white text-xs"
                   >
                     복사

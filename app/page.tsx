@@ -2344,7 +2344,7 @@ export default function Home() {
   const getOpenClawCommand = () => {
     const cdCmd = openAloPathValue.trim() ? `cd '${openAloPathValue.trim()}'\n` : '';
     const serverUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3099';
-    const downloadCmd = `Invoke-WebRequest -Uri "${serverUrl}/openclaw-bridge.js?v=${Date.now()}" -OutFile "openclaw-bridge.js" -UseBasicParsing; `;
+    const downloadCmd = `Invoke-WebRequest -Uri "${serverUrl}/openclaw-bridge.js?v=$([DateTimeOffset]::Now.ToUnixTimeSeconds())" -OutFile "openclaw-bridge.js" -UseBasicParsing; `;
     return `${cdCmd}${downloadCmd}node openclaw-bridge.js --server=${serverUrl} --token=${createdOpenAloToken}`;
   };
 
