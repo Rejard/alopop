@@ -155,14 +155,18 @@ alopopSocket.on("agent_task", (data) => {
     try {
       const npmRoot = execSync('npm root -g').toString().trim();
       const openclawScript = path.join(npmRoot, 'openclaw', 'openclaw.mjs');
-      child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--new', '-m', finalMessage]);
+      const crypto = require('crypto');
+      const sessionId = crypto.randomUUID();
+      child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--session-id', sessionId, '-m', finalMessage]);
     } catch (err) {
       console.log("⚠️ Could not find global openclaw.mjs. Falling back to openclaw.cmd...");
       // Fallback
-      child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--new", "-m", finalMessage], { shell: true });
+      child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--session-id", require('crypto').randomUUID(), "-m", finalMessage], { shell: true });
     }
   } else {
-    child = spawn('openclaw', ['agent', '--agent', 'main', '--new', '-m', finalMessage]);
+    const crypto = require('crypto');
+    const sessionId = crypto.randomUUID();
+    child = spawn('openclaw', ['agent', '--agent', 'main', '--session-id', sessionId, '-m', finalMessage]);
   }
 
   let finalOutput = "";
