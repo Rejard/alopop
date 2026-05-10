@@ -182,6 +182,31 @@ export async function POST(request: Request) {
     }
 
     if (isAgent) {
+      // OpenClaw Agent: Bypass Alopop AI SDK and send directly to OpenClaw via internal socket API.
+      const port = process.env.PORT || 3099;
+      const aiUser = await prisma.user.findUnique({ where: { id: aiUserId }, select: { username: true } });
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/internal/claw-message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ aiUserId, aiUserName: aiUser?.username, message: content, roomId })
+        });
+        
+        if (!res.ok) {
+          try {
+            const errJson = await res.json();
+            return NextResponse.json({ reply: `[시스템 오류] OpenClaw Agent 통신 실패: ${errJson.error || '알 수 없는 오류'}` });
+          } catch(e) {
+            return NextResponse.json({ reply: "[시스템 오류] OpenClaw Gateway 연결에 실패했습니다." });
+          }
+        } else {
+          // Success. We return empty string directly so no system message is created, and rely on typing indicator synchronization.
+          return NextResponse.json({ reply: '' });
+        }
+      } catch (e) {
+        return NextResponse.json({ reply: `[시스템 안내] 내부 통신 오류: ${String(e)}` });
+      }
+    } else {
       const executeAgentTool = async (toolName: string, args: any) => {
         const port = process.env.PORT || 3099;
         const res = await fetch(`http://127.0.0.1:${port}/api/internal/agent-tool`, {

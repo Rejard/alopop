@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   const { user } = await requireCurrentUser(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { name, path } = await request.json();
+  const { name, path, role } = await request.json();
   if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
 
   const token = randomBytes(24).toString('hex');
@@ -33,6 +33,7 @@ export async function POST(request: Request) {
       aiOwnerId: user.id,
       agentToken: token,
       agentPath: path || null,
+      statusMessage: role || null,
       avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}&colors=blue`
     }
   });
@@ -51,7 +52,7 @@ export async function PUT(request: Request) {
   const { user } = await requireCurrentUser(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, name, path, avatarUrl } = await request.json();
+  const { id, name, path, avatarUrl, role } = await request.json();
   if (!id || !name) return NextResponse.json({ error: 'ID and Name are required' }, { status: 400 });
 
   const existingAgent = await prisma.user.findUnique({ where: { id } });
@@ -62,6 +63,7 @@ export async function PUT(request: Request) {
   const updateData: any = {
     username: name,
     agentPath: path || null,
+    statusMessage: role || null,
   };
 
   if (avatarUrl !== undefined) {

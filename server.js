@@ -354,6 +354,60 @@ app.prepare().then(() => {
       socket.to(payload.roomId).emit('sponsor_settings_changed', { ...payload, sponsorId: socket.userId });
     });
 
+    // ---- OpenClaw Bridge 이벤트 처리 ----
+    socket.on('claw_canvas', (payload) => {
+      socket.broadcast.emit('claw_canvas_update', { aiId: socket.userId, data: payload.data });
+    });
+
+    socket.on('claw_message', (payload) => {
+      socket.broadcast.emit('claw_message_update', { aiId: socket.userId, content: payload.content });
+    });
+
+    socket.on('claw_log', (payload) => {
+      socket.broadcast.emit('claw_log_update', { aiId: socket.userId, log: payload.log });
+    });
+
+    socket.on('claw_task_complete', async (payload) => {
+      const { roomId, finalOutput } = payload;
+      if (!roomId || !finalOutput) return;
+      const aiUserId = socket.userId;
+      
+      const message = {
+        messageId: 'claw_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
+        senderId: aiUserId,
+        receiverId: roomId,
+        messageType: 'TEXT',
+        content: finalOutput.trim() || "[작업 완료]",
+        createdAt: Date.now(),
+        unreadCount: 0
+      };
+
+      // Turn off the typing indicator now that the response is ready
+      io.to(roomId).emit('typing_end', { roomId, userId: aiUserId });
+
+      const room = await getRoomWithMembers(roomId);
+      if (room && room.members) {
+        room.members.forEach((member) => {
+          const targetId = member.userId;
+          if (targetId === aiUserId) return;
+          const roomSet = io.sockets.adapter.rooms.get(targetId);
+          if (roomSet && roomSet.size > 0) {
+            io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
+              if (err || !responses || Object.keys(responses).length === 0) {
+                await prisma.offlineMessage.create({
+                  data: { receiverId: targetId, payload: JSON.stringify(message) }
+                }).catch(e => console.error('Offline msg save err:', e));
+              }
+            });
+          } else {
+            prisma.offlineMessage.create({
+              data: { receiverId: targetId, payload: JSON.stringify(message) }
+            }).catch(e => console.error('Offline msg save err:', e));
+          }
+        });
+      }
+    });
+
     // 4. No-Log Relay 메시지 전송 로직 (방/개인 공통)
     // 3. No-Log Relay 메시지 전송 로직 (방/개인 공통)
     socket.on('send_message', async (payload) => {
@@ -580,10 +634,10 @@ app.prepare().then(() => {
     proxyReq.end();
   });
 
-  // ---- OpenAlo 내부 API 릴레이 로직 ----
-  expressApp.use('/api/internal/agent-tool', express.json(), async (req, res) => {
-    const { aiUserId, tool, args } = req.body;
-    if (!aiUserId || !tool) return res.status(400).json({ error: 'Missing parameters' });
+  // ---- OpenClaw 내부 API 릴레이 로직 ----
+  expressApp.use('/api/internal/claw-message', express.json(), async (req, res) => {
+    const { aiUserId, message, roomId, aiUserName } = req.body;
+    if (!aiUserId || !message) return res.status(400).json({ error: 'Missing parameters' });
     
     // Find the socket connected by this agent
     let targetSocket = null;
@@ -595,16 +649,22 @@ app.prepare().then(() => {
     }
     
     if (!targetSocket) {
-      return res.status(404).json({ error: 'Agent is not currently connected' });
+      return res.status(404).json({ error: 'OpenClaw Agent is not currently connected' });
     }
     
     try {
-      // Emit the tool command and wait for a response for up to 30 seconds
-      const response = await targetSocket.timeout(30000).emitWithAck('execute_tool', { tool, args });
-      return res.json(response);
+      // Emit the message to the bridge
+      targetSocket.emit('agent_task', { message, roomId });
+      
+      // Tell everyone in the room that the AI is typing!
+      if (roomId && aiUserId) {
+         io.to(roomId).emit('typing_start', { roomId, userId: aiUserId, userName: aiUserName || 'AI' });
+      }
+
+      return res.status(200).json({ success: true, message: "Task sent to OpenClaw" });
     } catch (e) {
-      console.error('Agent tool execution error:', e);
-      return res.status(504).json({ error: 'Agent did not respond in time or an error occurred', details: String(e) });
+      console.error('OpenClaw Bridge execution error:', e);
+      return res.status(504).json({ error: 'OpenClaw Gateway did not respond in time or an error occurred', details: String(e) });
     }
   });
 

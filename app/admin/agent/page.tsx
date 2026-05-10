@@ -35,12 +35,12 @@ export default function AgentSetupPage() {
         <Link href="/" className="mr-4 text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
         </Link>
-        <h1 className="text-xl font-bold">OpenAlo 원격 PC 연동</h1>
+        <h1 className="text-xl font-bold">OpenClaw 원격 PC 연동</h1>
       </div>
       <div className="p-4 max-w-2xl mx-auto space-y-6">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
           <h2 className="text-lg font-bold mb-2">새로운 원격 PC 봇 만들기</h2>
-          <p className="text-sm text-gray-500 mb-4">내 PC를 원격으로 제어할 수 있는 OpenAlo 봇을 생성합니다.</p>
+          <p className="text-sm text-gray-500 mb-4">내 PC를 원격으로 제어할 수 있는 OpenClaw 봇을 생성합니다.</p>
           <div className="flex gap-2">
             <input 
               type="text" 
@@ -60,7 +60,7 @@ export default function AgentSetupPage() {
         </div>
 
         <div className="space-y-4">
-          <h2 className="text-lg font-bold px-2">나의 OpenAlo 봇 목록</h2>
+          <h2 className="text-lg font-bold px-2">나의 OpenClaw 봇 목록</h2>
           {agents.length === 0 && <p className="text-gray-500 px-2">등록된 봇이 없습니다.</p>}
           {agents.map(agent => (
             <div key={agent.id} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
@@ -78,10 +78,10 @@ export default function AgentSetupPage() {
                 <p className="text-sm font-semibold mb-2">💻 아래 명령어를 복사해서 PC 터미널(PowerShell)에 붙여넣으세요.</p>
                 <div className="relative">
                   <pre className="text-xs text-blue-400 font-mono overflow-x-auto p-3 bg-gray-950 rounded-lg">
-                    {`powershell -Command "Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${agent.agentToken}"`}
+                    {`powershell -Command "cd 'c:\\home\\openAlo'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=${Date.now()}' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${agent.agentToken}"`}
                   </pre>
                   <button 
-                    onClick={() => navigator.clipboard.writeText(`powershell -Command "Invoke-WebRequest -Uri https://alopop.alonics.com/openalop.js -OutFile openalop.js; node openalop.js --token=${agent.agentToken}"`)}
+                    onClick={() => navigator.clipboard.writeText(`powershell -Command "cd 'c:\\home\\openAlo'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=${Date.now()}' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${agent.agentToken}"`)}
                     className="absolute top-2 right-2 p-1.5 bg-gray-800 hover:bg-gray-700 rounded-md text-white text-xs"
                   >
                     복사

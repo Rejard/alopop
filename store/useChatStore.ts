@@ -131,6 +131,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       window.dispatchEvent(new CustomEvent('sponsor_settings_changed', { detail: payload }));
     });
 
+    // ---- OpenClaw Bridge Events ----
+    socket.on('claw_canvas_update', (payload) => {
+      window.dispatchEvent(new CustomEvent('claw_canvas_update', { detail: payload }));
+    });
+
+    socket.on('claw_message_update', (payload) => {
+      window.dispatchEvent(new CustomEvent('claw_message_update', { detail: payload }));
+    });
+
+    socket.on('claw_log_update', (payload) => {
+      window.dispatchEvent(new CustomEvent('claw_log_update', { detail: payload }));
+    });
+
     // 오프라인 상태에서 밀린 큐 메시지 뭉치 수신 이벤트
     socket.on('receive_offline_messages', async (messages: ChatMessage[]) => {
       console.log(`Received offline messages: ${messages.length}`);
