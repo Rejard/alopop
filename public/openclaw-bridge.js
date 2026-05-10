@@ -70,27 +70,32 @@ let usePowershellCapture = false;
 function powershellScreenshot() {
   return new Promise((resolve, reject) => {
     const tmpFile = path.join(os.tmpdir(), `alopop_screen_${Date.now()}.jpg`);
-    const psScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$b = New-Object System.Drawing.Bitmap($s.Width, $s.Height)
-$g = [System.Drawing.Graphics]::FromImage($b)
-$g.CopyFromScreen($s.Location, [System.Drawing.Point]::Empty, $s.Size)
-$enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
-$p = New-Object System.Drawing.Imaging.EncoderParameters(1)
-$p.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, 50)
-$b.Save('${tmpFile.replace(/\\/g, '\\\\')}', $enc, $p)
-$g.Dispose(); $b.Dispose()
-`.trim();
-    const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', psScript]);
+    const psFile = path.join(os.tmpdir(), `alopop_capture.ps1`);
+    // PowerShell 스크립트를 파일로 저장 (명령줄 파싱 문제 방지)
+    const savePath = tmpFile.replace(/\\/g, '/'); // forward slash로 변환 (Windows도 지원)
+    const psScript = [
+      'Add-Type -AssemblyName System.Windows.Forms',
+      'Add-Type -AssemblyName System.Drawing',
+      '$s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+      '$b = New-Object System.Drawing.Bitmap($s.Width, $s.Height)',
+      '$g = [System.Drawing.Graphics]::FromImage($b)',
+      '$g.CopyFromScreen($s.Location, [System.Drawing.Point]::Empty, $s.Size)',
+      `$b.Save("${savePath}", [System.Drawing.Imaging.ImageFormat]::Jpeg)`,
+      '$g.Dispose(); $b.Dispose()'
+    ].join('\n');
+    fs.writeFileSync(psFile, psScript, 'utf8');
+
+    let stderrData = '';
+    const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', psFile]);
+    child.stderr.on('data', (d) => { stderrData += d.toString(); });
     child.on('close', (code) => {
+      try { fs.unlinkSync(psFile); } catch(e) {}
       if (code === 0 && fs.existsSync(tmpFile)) {
         const buf = fs.readFileSync(tmpFile);
         try { fs.unlinkSync(tmpFile); } catch(e) {}
         resolve(buf);
       } else {
-        reject(new Error(`PowerShell 캡처 실패 (code: ${code})`));
+        reject(new Error(`PS 캡처 실패 (code:${code}) ${stderrData.trim().substring(0, 100)}`));
       }
     });
     child.on('error', reject);
