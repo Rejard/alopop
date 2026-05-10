@@ -182,7 +182,31 @@ alopopSocket.on("agent_task", (data) => {
       const out = finalOutput.trim() ? finalOutput.trim() : `✅ 바탕화면 제어 작업이 완료되었습니다. (종료 코드: ${code})\n(에이전트가 반환한 텍스트 메시지가 없습니다.)`;
       alopopSocket.emit("claw_task_complete", { roomId, finalOutput: out });
     }
+    
+    // Remove the global child reference once finished
+    if (globalChild === child) globalChild = null;
   });
+  
+  // Store a global reference to kill it on SIGINT
+  globalChild = child;
+});
+
+let globalChild = null;
+
+// Ensure child processes are killed when the user presses Ctrl+C or the bridge exits
+process.on("SIGINT", () => {
+  if (globalChild) {
+    console.log("\n⚠️ Caught SIGINT! Killing running openclaw agent to prevent zombie processes...");
+    globalChild.kill();
+  }
+  process.exit();
+});
+
+process.on("exit", () => {
+  if (globalChild) {
+    globalChild.kill();
+  }
+});
 });
 
 alopopSocket.on("execute_claw", (data, callback) => {
