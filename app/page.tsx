@@ -4328,10 +4328,13 @@ export default function Home() {
                         <CheckCircle2 size={18} />
                         생성 성공! PC에 연동하세요.
                       </h4>
-                      <p className="text-sm text-zinc-300 mb-4">
+                      <p className="text-sm text-zinc-300 mb-2">
                         아래 명령어를 <strong className="text-white">한 번에 복사</strong>하여 PC의 <strong className="text-white">PowerShell</strong>에 붙여넣고 실행하세요.<br/>
                         <span className="text-zinc-400 text-xs">에이전트가 멈추면 채팅에서 <strong className="text-yellow-400">!중지</strong>를 입력하세요. (120초 무응답 시 자동 복구)</span>
                       </p>
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 mb-4">
+                        <p className="text-[11px] text-amber-300">⚠️ <strong>OpenClaw Gateway</strong>가 PC에서 실행 중이어야 합니다. 미실행 시 <code className="bg-black/30 px-1 rounded text-amber-200">openclaw gateway install</code> → <code className="bg-black/30 px-1 rounded text-amber-200">openclaw gateway start</code>로 먼저 시작하세요.</p>
+                      </div>
                       <div className="relative">
                         <pre className="text-[12px] text-emerald-400 font-mono overflow-x-auto p-3 pt-8 bg-black rounded-lg whitespace-pre-wrap break-all border border-zinc-700">
                           {getOpenClawCommand()}
@@ -4359,6 +4362,13 @@ export default function Home() {
                         <p className="text-xs text-rose-200">
                           내 PC에서 OpenClaw AI 에이전트를 실행하여 알로팝 채팅으로 작업을 지시할 수 있는 봇을 만듭니다. 한 줄짜리 명령어를 PowerShell에 복사/붙여넣기 한 번이면 연동 완료!<br />
                           <span className="text-rose-300 font-medium">※ PowerShell 창을 닫으면 봇이 멈춥니다. 다시 명령어를 실행하면 즉시 복구됩니다.</span>
+                        </p>
+                      </div>
+                      <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl mb-4">
+                        <p className="text-xs text-amber-200 font-medium mb-1">⚠️ 필수: OpenClaw Gateway 실행</p>
+                        <p className="text-[11px] text-amber-300/80">
+                          이 기능은 PC에서 <strong className="text-amber-200">OpenClaw Gateway</strong>가 반드시 실행 중이어야 합니다.<br />
+                          설치: <code className="bg-black/30 px-1 rounded text-amber-200">openclaw gateway install</code> → <code className="bg-black/30 px-1 rounded text-amber-200">openclaw gateway start</code>
                         </p>
                       </div>
 

@@ -26,7 +26,7 @@ const screenshot = require("screenshot-desktop");
 
 const args = process.argv.slice(2);
 let token = null;
-let serverUrl = "http://localhost:3000"; // Default local
+let serverUrl = "http://localhost:3099"; // Default local
 let clawUrl = "ws://127.0.0.1:18789";
 let role = null;
 
@@ -131,8 +131,16 @@ function sendScreenshot() {
 
 function connectClaw() {
   if (clawRetryCount >= CLAW_MAX_RETRIES) {
-    console.log(`ℹ️ OpenClaw Gateway 연결 ${CLAW_MAX_RETRIES}회 실패 → 스크린 스트리밍 없이 Agent-Only 모드로 동작합니다.`);
-    return;
+    console.error(`\n❌ OpenClaw Gateway 연결 실패! (${CLAW_MAX_RETRIES}회 시도)`);
+    console.error(`\n   게이트웨이가 실행 중이지 않습니다.`);
+    console.error(`   아래 방법 중 하나로 게이트웨이를 먼저 실행해 주세요:\n`);
+    console.error(`   [방법 1] 서비스 설치 (권장, 1회만):`);
+    console.error(`     openclaw gateway install`);
+    console.error(`     openclaw gateway start\n`);
+    console.error(`   [방법 2] 수동 실행 (PowerShell 새 창):`);
+    console.error(`     openclaw gateway run\n`);
+    console.error(`   게이트웨이 실행 후 이 명령어를 다시 실행하세요.\n`);
+    process.exit(1);
   }
   clawRetryCount++;
   console.log(`🔌 Connecting to local OpenClaw Gateway (${clawRetryCount}/${CLAW_MAX_RETRIES}): ${clawUrl}...`);
@@ -181,10 +189,12 @@ function connectClaw() {
     clearInterval(canvasInterval);
     canvasInterval = null;
     if (clawRetryCount < CLAW_MAX_RETRIES) {
-      console.log(`❌ OpenClaw Gateway 연결 끊김. ${5}초 후 재시도...`);
+      console.log(`❌ OpenClaw Gateway 연결 끊김. 5초 후 재시도...`);
       setTimeout(connectClaw, 5000);
     } else {
-      console.log(`ℹ️ OpenClaw Gateway 연결 ${CLAW_MAX_RETRIES}회 실패 → Agent-Only 모드로 전환.`);
+      console.error(`\n❌ OpenClaw Gateway 연결이 끊어지고 재시도에 실패했습니다.`);
+      console.error(`   게이트웨이 상태를 확인하세요: openclaw gateway status\n`);
+      process.exit(1);
     }
   });
 
@@ -197,9 +207,8 @@ function connectClaw() {
 alopopSocket.on("connect", () => {
   console.log(`✅ Connected to Alopop Server successfully!`);
   console.log(`🤖 OpenClaw Agent 대기 중... 알로팝에서 명령을 보내주세요!`);
-  // Gateway 연결은 --claw 플래그로 명시적으로 요청한 경우에만 시도
-  const hasClawFlag = args.some(a => a.startsWith("--claw="));
-  if (hasClawFlag && !isClawConnected) {
+  // 항상 게이트웨이 연결 시도 (게이트웨이 모드)
+  if (!isClawConnected) {
     connectClaw();
   }
 });
@@ -328,13 +337,13 @@ alopopSocket.on("agent_task", (data) => {
     try {
       const npmRoot = execSync('npm root -g').toString().trim();
       const openclawScript = path.join(npmRoot, 'openclaw', 'openclaw.mjs');
-      child = spawn('node', [openclawScript, 'agent', '--local', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'off', '--verbose', 'on', '-m', finalMessage]);
+      child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'medium', '--verbose', 'on', '-m', finalMessage]);
     } catch (err) {
       console.log("⚠️ Could not find global openclaw.mjs. Falling back to openclaw.cmd...");
-      child = spawn('openclaw.cmd', ["agent", "--local", "--agent", "main", "--session-id", sessionId, "--timeout", "600", "--thinking", "off", "--verbose", "on", "-m", finalMessage], { shell: true });
+      child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--session-id", sessionId, "--timeout", "600", "--thinking", "medium", "--verbose", "on", "-m", finalMessage], { shell: true });
     }
   } else {
-    child = spawn('openclaw', ['agent', '--local', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'off', '-m', finalMessage]);
+    child = spawn('openclaw', ['agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'medium', '-m', finalMessage]);
   }
 
   // 🖥️ 에이전트 작업 중 실시간 스크린 스트리밍 시작 (gateway 불필요)

@@ -92,6 +92,9 @@ export default function AgentSetupPage() {
                   * 에이전트가 멈추면 채팅에서 <strong className="text-yellow-400">!중지</strong> 를 입력하세요. (5분 무응답 시 자동 복구됩니다)<br/>
                   * PowerShell 창을 닫으면 봇이 멈춥니다. 다시 시작하려면 명령어를 다시 실행하세요.
                 </p>
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 mt-3">
+                  <p className="text-[11px] text-amber-600 dark:text-amber-300">⚠️ <strong>필수:</strong> PC에서 <strong>OpenClaw Gateway</strong>가 실행 중이어야 합니다. 미설치 시 <code className="bg-black/20 dark:bg-black/30 px-1 rounded">openclaw gateway install</code> → <code className="bg-black/20 dark:bg-black/30 px-1 rounded">openclaw gateway start</code></p>
+                </div>
               </div>
             </div>
           ))}
