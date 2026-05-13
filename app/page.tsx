@@ -695,6 +695,14 @@ export default function Home() {
         const roomTypers = prev[roomId] || [];
         return { ...prev, [roomId]: roomTypers.filter(t => t.userId !== userId) };
       });
+      // 오픈클로 봇 등 서버에서 typing_end를 보낸 경우 typingAIs에서도 제거
+      setTypingAIs(prev => {
+        const roomAIs = prev[roomId] || [];
+        if (roomAIs.some(a => a.aiId === userId)) {
+          return { ...prev, [roomId]: roomAIs.filter(a => a.aiId !== userId) };
+        }
+        return prev;
+      });
     };
 
     const handleClawCanvasUpdate = (e: any) => {
