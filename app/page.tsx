@@ -280,21 +280,26 @@ export default function Home() {
     }
   }, [currentRoom?.id, markRoomAsRead, user?.id]);
 
-  // [모바일 PWA] 시스템 뒤로가기 버튼 → 채팅방 닫기 (앱 종료 방지)
+  // [모바일 PWA] 시스템 뒤로가기 버튼 → 채팅방 닫기 / 탭 복귀 (앱 종료·404 방지)
   useEffect(() => {
-    if (currentRoom?.id) {
-      window.history.pushState({ chatRoom: currentRoom.id }, '');
+    // 채팅방 진입 또는 서브 탭 이동 시 히스토리 엔트리 추가
+    if (currentRoom?.id || currentTab !== 'chats') {
+      window.history.pushState({ chatRoom: currentRoom?.id || null, tab: currentTab }, '');
     }
     const handlePopState = () => {
       if (currentRoomRef.current) {
+        // 채팅방 열려있으면 → 채팅 목록으로 복귀
         setCurrentRoom(null);
         setIsDrawerOpen(false);
+      } else if (currentTab !== 'chats') {
+        // 서브 탭(pet365care, aistudio 등)이면 → chats 탭으로 복귀
+        setCurrentTab('chats');
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRoom?.id]);
+  }, [currentRoom?.id, currentTab]);
 
   // 파일 첨부 관련 상태
   const [isUploading, setIsUploading] = useState(false);
