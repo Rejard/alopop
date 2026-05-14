@@ -3509,7 +3509,7 @@ export default function Home() {
               {currentTab === 'pet365care' && (
                 <div className="flex-1 w-full h-full flex flex-col relative bg-surface-container-lowest">
                   {pet365careUrl ? (
-                    <iframe src={pet365careUrl} className="absolute inset-0 w-full h-full border-none" allowFullScreen />
+                    <iframe src={pet365careUrl} className="absolute inset-0 w-full h-full border-none" allowFullScreen allow="geolocation" />
                   ) : (
                     <div className="flex-1 flex items-center justify-center text-on-surface-variant">
                       <div className="flex flex-col items-center gap-3">

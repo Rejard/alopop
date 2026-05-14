@@ -634,6 +634,43 @@ app.prepare().then(() => {
     proxyReq.end();
   });
 
+  // ---- Pet365Care 내부 소켓 릴레이 로직 ----
+  expressApp.use('/api/internal/pet365-relay', express.json(), async (req, res) => {
+    const internalHeader = req.headers['x-alopop-internal'];
+    if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
+
+    const { targetUserId, message } = req.body;
+    if (!targetUserId || !message) return res.status(400).json({ error: 'Missing parameters' });
+
+    const roomSet = io.sockets.adapter.rooms.get(targetUserId);
+
+    if (roomSet && roomSet.size > 0) {
+      // 유저가 온라인 — 소켓으로 직접 전송 (ACK 대기)
+      try {
+        io.to(targetUserId).timeout(3000).emit('receive_message', message, async (err, responses) => {
+          if (err || !responses || Object.keys(responses).length === 0) {
+            console.log(`[Pet365-Relay] ⚠️ ACK timeout for ${targetUserId}, treating as offline`);
+            await prisma.offlineMessage.create({
+              data: { receiverId: targetUserId, payload: JSON.stringify(message) }
+            }).catch(e => console.error('Offline msg save err:', e));
+            sendWebPush(targetUserId, message).catch(console.error);
+            return res.json({ delivered: false });
+          }
+          console.log(`[Pet365-Relay] ✅ Delivered to ${targetUserId} via socket`);
+          return res.json({ delivered: true });
+        });
+      } catch (e) {
+        console.error('[Pet365-Relay] Socket emit error:', e);
+        return res.json({ delivered: false });
+      }
+    } else {
+      // 유저가 오프라인 — OfflineMessage DB에 저장 + 푸시 알림
+      console.log(`[Pet365-Relay] 📥 User ${targetUserId} is offline`);
+      sendWebPush(targetUserId, message).catch(console.error);
+      return res.json({ delivered: false });
+    }
+  });
+
   // ---- OpenClaw 내부 API 릴레이 로직 ----
   expressApp.use('/api/internal/claw-message', express.json(), async (req, res) => {
     const { aiUserId, message, roomId, aiUserName } = req.body;
