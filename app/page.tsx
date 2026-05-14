@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Terminal, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2 } from 'lucide-react';
+import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Terminal, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2, PawPrint } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ChatMessage } from '@/lib/db';
@@ -165,8 +165,9 @@ export default function Home() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
-  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio'>('chats'); // 좌측 LNB 탭 상태
+  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
+  const [pet365careUrl, setPet365careUrl] = useState<string | null>(null); // Pet365Care SSO iframe URL
 
   // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
   useEffect(() => {
@@ -2911,7 +2912,7 @@ export default function Home() {
                   className="absolute left-0 w-1 bg-gradient-to-b from-primary to-primary-dim shadow-[0_0_10px_rgba(204,151,255,0.8)] rounded-r-lg transition-all duration-300 ease-in-out"
                   style={{
                     height: '24px',
-                    top: currentTab === 'chats' ? '36px' : currentTab === 'friends' ? '108px' : currentTab === 'wallet' ? '180px' : currentTab === 'games' ? '252px' : currentTab === 'aistudio' ? '324px' : '36px'
+                    top: currentTab === 'chats' ? '36px' : currentTab === 'friends' ? '108px' : currentTab === 'wallet' ? '180px' : currentTab === 'games' ? '252px' : currentTab === 'aistudio' ? '324px' : currentTab === 'pet365care' ? '396px' : '36px'
                   }}
                 />
 
@@ -2963,6 +2964,28 @@ export default function Home() {
                   title="Alopop AI Studio"
                 >
                   <Building2 size={24} strokeWidth={currentTab === 'aistudio' ? 2.5 : 2} />
+                </button>
+
+
+
+                {/* Pet365Care 내부 서비스 */}
+                <button
+                  onClick={async () => {
+                    setCurrentTab('pet365care');
+                    if (!pet365careUrl) {
+                      try {
+                        const res = await fetch('/api/integrations/pet365care?embed=1');
+                        const data = await res.json();
+                        if (data.url) setPet365careUrl(data.url);
+                      } catch (e) {
+                        console.error('Pet365Care SSO failed:', e);
+                      }
+                    }
+                  }}
+                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'pet365care' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  title="Pet365Care"
+                >
+                  <PawPrint size={24} strokeWidth={currentTab === 'pet365care' ? 2.5 : 2} />
                 </button>
 
                 {/* 👑 관리자 대시보드 버튼 (isAdmin이 true일 때만 렌더링) */}
@@ -3480,6 +3503,21 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {currentTab === 'pet365care' && (
+                <div className="flex-1 w-full h-full flex flex-col relative bg-surface-container-lowest">
+                  {pet365careUrl ? (
+                    <iframe src={pet365careUrl} className="absolute inset-0 w-full h-full border-none" allowFullScreen />
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-on-surface-variant">
+                      <div className="flex flex-col items-center gap-3">
+                        <PawPrint size={48} className="opacity-40" />
+                        <p className="text-sm font-medium">Pet365Care 로딩 중...</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
