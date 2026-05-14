@@ -168,6 +168,7 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
   const [pet365careUrl, setPet365careUrl] = useState<string | null>(null); // Pet365Care SSO iframe URL
+  const pet365iframeRef = useRef<HTMLIFrameElement>(null); // Pet365Care iframe ref (postMessage 브릿지용)
 
   // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
   useEffect(() => {
@@ -811,6 +812,67 @@ export default function Home() {
     window.addEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
     window.addEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
 
+    // ---- Pet365Care postMessage 브릿지 ----
+    const handlePet365PostMessage = async (event: MessageEvent) => {
+      if (event.data?.source !== 'pet365care') return;
+
+      // 1. 인증 요청: Pet365Care iframe이 로드 후 유저 정보를 요청
+      if (event.data.event === 'auth:request') {
+        const iframe = pet365iframeRef.current;
+        const currentUser = myProfile || parsedUser;
+        if (iframe?.contentWindow && currentUser) {
+          iframe.contentWindow.postMessage({
+            source: 'alopop',
+            event: 'auth:user',
+            data: {
+              user: {
+                id: currentUser.id,
+                username: currentUser.username,
+                avatar_url: (currentUser as any).avatar_url || null,
+                email: (currentUser as any).email || null,
+                isAdmin: (currentUser as any).isAdmin || false,
+              }
+            }
+          }, '*');
+          console.log('[Pet365Care Bridge] Sent auth:user to iframe');
+        }
+      }
+
+      // 2. 알림 수신: 반려동물 등록/접종 등 이벤트
+      if (event.data.event === 'pet365:notify') {
+        const { type, petName, species, roomName, message: notifyMsg } = event.data.data || {};
+        if (!notifyMsg) return;
+        console.log('[Pet365Care Bridge] Received pet365:notify:', type, petName);
+
+        try {
+          const res = await fetch('/api/integrations/pet365care/notify-pm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, petName, species, roomName, message: notifyMsg }),
+          });
+          const data = await res.json();
+          if (data.success && data.chatMessage) {
+            console.log('[Pet365Care Bridge] Notification processed: roomId=' + data.roomId);
+            try {
+              const exists = await db.messages.where('messageId').equals(data.chatMessage.messageId).first();
+              if (!exists) {
+                await db.messages.add(data.chatMessage);
+                window.dispatchEvent(new CustomEvent('new_chat_message', { detail: data.chatMessage }));
+              }
+            } catch (dbErr) {
+              console.error('[Pet365Care Bridge] IndexedDB save error:', dbErr);
+            }
+            loadData(parsedUser.id);
+          } else {
+            console.error('[Pet365Care Bridge] Notify API error:', data.error);
+          }
+        } catch (e) {
+          console.error('[Pet365Care Bridge] Notify fetch failed:', e);
+        }
+      }
+    };
+    window.addEventListener('message', handlePet365PostMessage);
+
     return () => {
       window.removeEventListener('new_chat_message', handleNewMessage);
       window.removeEventListener('room_read_update', handleReadUpdateEvent);
@@ -824,6 +886,7 @@ export default function Home() {
       window.removeEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
       window.removeEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
       window.removeEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
+      window.removeEventListener('message', handlePet365PostMessage);
 
       // 언마운트 시엔 연결 끊기
       chatStore.disconnectSocket();
@@ -3509,7 +3572,7 @@ export default function Home() {
               {currentTab === 'pet365care' && (
                 <div className="flex-1 w-full h-full flex flex-col relative bg-surface-container-lowest">
                   {pet365careUrl ? (
-                    <iframe src={pet365careUrl} className="absolute inset-0 w-full h-full border-none" allowFullScreen allow="geolocation" />
+                    <iframe ref={pet365iframeRef} src={pet365careUrl} className="absolute inset-0 w-full h-full border-none" allowFullScreen allow="geolocation" />
                   ) : (
                     <div className="flex-1 flex items-center justify-center text-on-surface-variant">
                       <div className="flex flex-col items-center gap-3">

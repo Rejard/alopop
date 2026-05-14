@@ -1,35 +1,32 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
 
-const PET365_SECRET = process.env.PET365CARE_NOTIFY_SECRET || 'pet365care-notify-secret-key';
 const BOT_USERNAME = 'Pet365Care 🐾';
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || 'ALO_POP_INTERNAL_SECRET_DEFAULT';
 const SERVER_PORT = process.env.PORT || 3099;
 
+/**
+ * postMessage 기반 Pet365Care 알림 처리 API
+ * 클라이언트(iframe postMessage)에서 호출되며, 인증된 유저의 세션 쿠키로 자동 인증됩니다.
+ * 기존 /api/integrations/pet365care/notify (시크릿 키 방식)의 postMessage 대응 버전입니다.
+ */
 export async function POST(request: Request) {
   try {
-    // 시크릿 키 인증
-    const authHeader = request.headers.get('x-pet365-secret');
-    if (authHeader !== PET365_SECRET) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // 세션 쿠키 기반 인증 (postMessage → 클라이언트 → 이 API)
+    const { user, response } = await requireCurrentUser(request);
+    if (!user) return response;
 
-    const { userId, message, petName, type, roomName, botEmoji } = await request.json();
+    const { type, petName, species, roomName, message } = await request.json();
 
-    if (!userId || !message) {
-      return NextResponse.json({ error: 'userId and message are required' }, { status: 400 });
+    if (!message) {
+      return NextResponse.json({ error: 'message is required' }, { status: 400 });
     }
 
     // Bot 유저 찾기
     const bot = await prisma.user.findFirst({ where: { username: BOT_USERNAME, isAi: true } });
     if (!bot) {
       return NextResponse.json({ error: 'Pet365Care bot not found' }, { status: 500 });
-    }
-
-    // 대상 유저 확인
-    const targetUser = await prisma.user.findUnique({ where: { id: userId } });
-    if (!targetUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     // 펫별 채팅방 찾기 또는 생성
@@ -40,7 +37,7 @@ export async function POST(request: Request) {
         where: {
           name: roomName,
           members: {
-            some: { userId: userId },
+            some: { userId: user.id },
           },
         },
         include: { members: true },
@@ -53,7 +50,7 @@ export async function POST(request: Request) {
         where: {
           isGroup: false,
           members: {
-            every: { userId: { in: [bot.id, userId] } },
+            every: { userId: { in: [bot.id, user.id] } },
           },
         },
         include: { members: true },
@@ -69,7 +66,7 @@ export async function POST(request: Request) {
           members: {
             create: [
               { userId: bot.id, isHost: true },
-              { userId: userId, isHost: false },
+              { userId: user.id, isHost: false },
             ],
           },
         },
@@ -103,24 +100,24 @@ export async function POST(request: Request) {
           'Content-Type': 'application/json',
           'x-alopop-internal': INTERNAL_API_SECRET,
         },
-        body: JSON.stringify({ targetUserId: userId, message: chatMessage }),
+        body: JSON.stringify({ targetUserId: user.id, message: chatMessage }),
       });
       const relayResult = await relayRes.json();
       delivered = relayResult.delivered === true;
-      console.log(`[Pet365Care Notify] Socket relay result: delivered=${delivered}`);
+      console.log(`[Pet365Care PostMessage] Socket relay result: delivered=${delivered}`);
     } catch (relayErr) {
-      console.error('[Pet365Care Notify] Socket relay failed, falling back to OfflineMessage:', relayErr);
+      console.error('[Pet365Care PostMessage] Socket relay failed, falling back to OfflineMessage:', relayErr);
     }
 
     // 소켓 전달 실패(오프라인)인 경우에만 OfflineMessage DB에 저장
     if (!delivered) {
       await prisma.offlineMessage.create({
         data: {
-          receiverId: userId,
+          receiverId: user.id,
           payload: JSON.stringify(chatMessage),
         },
       });
-      console.log(`[Pet365Care Notify] Saved to OfflineMessage DB for user ${userId}`);
+      console.log(`[Pet365Care PostMessage] Saved to OfflineMessage DB for user ${user.id}`);
     }
 
     return NextResponse.json({
@@ -128,9 +125,10 @@ export async function POST(request: Request) {
       roomId: room.id,
       botId: bot.id,
       delivered,
+      chatMessage,
     });
   } catch (error) {
-    console.error('[Pet365Care Notify] Error:', error);
+    console.error('[Pet365Care PostMessage] Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
