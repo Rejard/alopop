@@ -1,0 +1,440 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Syringe, Plus } from "lucide-react";
+import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
+import Link from "next/link";
+import {
+  getPets, addPet as addPetStore, updatePet as updatePetStore,
+  deletePet as deletePetStore, addVaccination as addVaxStore,
+  deleteVaccination as deleteVaxStore,
+  type Pet, type Vaccination,
+} from "@/lib/pet365care/local-store";
+import { notifyPetRegistered, notifyPetUpdated, notifyPetDeleted, notifyVaccination } from "@/lib/pet365care/notify";
+
+type PetWithVax = Pet;
+
+const SPECIES = [
+  { value: "dog", label: "강아지", emoji: "🐶" },
+  { value: "cat", label: "고양이", emoji: "🐱" },
+  { value: "rabbit", label: "토끼", emoji: "🐰" },
+  { value: "hamster", label: "햄스터", emoji: "🐹" },
+  { value: "bird", label: "새/앵무새", emoji: "🦜" },
+  { value: "turtle", label: "거북이", emoji: "🐢" },
+  { value: "duck", label: "오리", emoji: "🦆" },
+  { value: "hedgehog", label: "고슴도치", emoji: "🦔" },
+  { value: "fish", label: "물고기", emoji: "🐟" },
+  { value: "other", label: "기타", emoji: "🐾" },
+];
+const getEmoji = (s: string) => SPECIES.find(x => x.value === s)?.emoji || "🐾";
+
+export default function ProfilePage() {
+  const { user, logout } = usePet365Auth();
+  
+  const [pets, setPets] = useState<PetWithVax[]>([]);
+  const [loadingPets, setLoadingPets] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [selectedPet, setSelectedPet] = useState<PetWithVax | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [isVaxModalOpen, setIsVaxModalOpen] = useState(false);
+  const [vaxForm, setVaxForm] = useState({ name: "", date: "", nextDate: "", hospital: "", memo: "" });
+
+  const emptyForm = { name: "", species: "dog", breed: "", age: "", gender: "male", birthday: "", weight: "", isNeutered: false, allergies: "", memo: "" };
+  const [form, setForm] = useState(emptyForm);
+
+  useEffect(() => {
+    if (user?.id) {
+      setLoadingPets(true);
+      setPets(getPets());
+      setLoadingPets(false);
+    }
+  }, [user]);
+
+  const handleAddPet = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id) return;
+    setIsAdding(true);
+    try {
+      const newPet = addPetStore({
+        name: form.name, species: form.species, breed: form.breed,
+        age: Number(form.age) || 0, gender: form.gender,
+        birthday: form.birthday || null, weight: form.weight ? Number(form.weight) : null,
+        isNeutered: !!form.isNeutered, allergies: form.allergies || null, memo: form.memo || null,
+      });
+      setPets([newPet, ...pets]);
+      setIsAddModalOpen(false);
+      setForm(emptyForm);
+      notifyPetRegistered(newPet.name, newPet.species, newPet.breed);
+    } finally { setIsAdding(false); }
+  };
+
+  const handleUpdatePet = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPet) return;
+    setIsAdding(true);
+    try {
+      const updated = updatePetStore(selectedPet.id, {
+        name: form.name, species: form.species, breed: form.breed,
+        age: Number(form.age) || 0, gender: form.gender,
+        birthday: form.birthday || null, weight: form.weight ? Number(form.weight) : null,
+        isNeutered: !!form.isNeutered, allergies: form.allergies || null, memo: form.memo || null,
+      });
+      if (updated) {
+        const fullPet = getPets().find(p => p.id === updated.id)!;
+        setPets(pets.map(p => p.id === fullPet.id ? fullPet : p));
+        setSelectedPet(fullPet);
+        setEditMode(false);
+        notifyPetUpdated(fullPet.name, fullPet.species);
+      }
+    } finally { setIsAdding(false); }
+  };
+
+  const handleDeletePet = () => {
+    if (!selectedPet || !confirm(`정말 ${selectedPet.name}을(를) 삭제하시겠어요?`)) return;
+    deletePetStore(selectedPet.id);
+    notifyPetDeleted(selectedPet.name, selectedPet.species);
+    setPets(pets.filter(p => p.id !== selectedPet.id));
+    setSelectedPet(null);
+  };
+
+  const handleAddVax = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPet) return;
+    const vax = addVaxStore(selectedPet.id, {
+      name: vaxForm.name, date: vaxForm.date,
+      nextDate: vaxForm.nextDate || null, hospital: vaxForm.hospital || null, memo: vaxForm.memo || null,
+    });
+    if (vax) {
+      const updatedPet = getPets().find(p => p.id === selectedPet.id)!;
+      setSelectedPet(updatedPet);
+      setPets(pets.map(p => p.id === updatedPet.id ? updatedPet : p));
+      setIsVaxModalOpen(false);
+      setVaxForm({ name: "", date: "", nextDate: "", hospital: "", memo: "" });
+      notifyVaccination(selectedPet.name, selectedPet.species, vaxForm.name, vaxForm.nextDate || null);
+    }
+  };
+
+  const handleDeleteVax = (vacId: string) => {
+    if (!selectedPet || !confirm("이 접종 기록을 삭제하시겠어요?")) return;
+    deleteVaxStore(selectedPet.id, vacId);
+    const updatedPet = getPets().find(p => p.id === selectedPet.id)!;
+    setSelectedPet(updatedPet);
+    setPets(pets.map(p => p.id === updatedPet.id ? updatedPet : p));
+  };
+
+  const openEdit = (pet: PetWithVax) => {
+    setForm({ name: pet.name, species: pet.species, breed: pet.breed, age: String(pet.age), gender: pet.gender, birthday: pet.birthday || "", weight: pet.weight ? String(pet.weight) : "", isNeutered: pet.isNeutered, allergies: pet.allergies || "", memo: pet.memo || "" });
+    setEditMode(true);
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* Header */}
+      <header className="flex items-center justify-center p-6 bg-white rounded-b-[40px] shadow-sm">
+        <h1 className="text-gray-900 font-extrabold text-xl tracking-tight">내 정보</h1>
+      </header>
+
+      {/* Main Content */}
+      <main className="px-6 flex flex-col gap-6 mt-6">
+        
+        {/* Profile Info */}
+        <section className="bg-white rounded-[32px] p-6 shadow-sm flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100">
+          <div className="flex items-center gap-4">
+             <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-4 border-gray-100 shadow-sm relative">
+               {user?.avatar_url ? (
+                 // eslint-disable-next-line @next/next/no-img-element -- Alopop avatar URLs may be authenticated by the host app.
+                 <img src={user.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+               ) : (
+                 <span className="text-3xl">🐱</span>
+               )}
+               <div className="absolute inset-0 bg-black/10"></div>
+             </div>
+             <div>
+                <h2 className="font-bold text-xl text-gray-900 leading-tight">
+                  {user ? `${user.username} 님` : "행복한 맥스 님"}
+                </h2>
+                <p className="text-sm text-gray-500 font-medium">Pet365Care 회원</p>
+             </div>
+          </div>
+          <ChevronRight className="text-gray-400" />
+        </section>
+
+        {/* Pet Profiles */}
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between px-1">
+             <h3 className="font-bold text-gray-900 text-lg">나의 반려동물</h3>
+             <button onClick={() => setIsAddModalOpen(true)} className="text-sm font-semibold text-[#FF7B6E]">+ 추가하기</button>
+          </div>
+          
+          {loadingPets ? (
+             <div className="flex justify-center p-4"><Loader2 className="animate-spin text-[#FF7B6E]" /></div>
+          ) : pets.length === 0 ? (
+             <div className="bg-white rounded-[32px] p-6 flex flex-col items-center justify-center text-center shadow-sm">
+                <span className="text-4xl mb-3">🐶</span>
+                <p className="text-sm text-gray-500 font-medium">등록된 가족이 없습니다.<br/>새로운 반려동물을 등록해보세요!</p>
+             </div>
+          ) : (
+             pets.map((pet) => (
+                <div key={pet.id} onClick={() => { setSelectedPet(pet); setEditMode(false); }} className="bg-white rounded-[32px] p-5 flex items-center gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer active:scale-[0.98] transition-all">
+                   <div className="w-12 h-12 bg-[#FFF3CD] rounded-2xl flex items-center justify-center text-xl">{getEmoji(pet.species)}</div>
+                   <div className="flex-1">
+                     <h4 className="font-bold text-gray-900 text-[15px]">{pet.name}</h4>
+                     <p className="text-xs text-gray-500 font-medium mt-0.5">{pet.breed} · {pet.age}살 · {pet.gender === 'male' ? '♂' : '♀'}{pet.weight ? ` · ${pet.weight}kg` : ''}</p>
+                   </div>
+                   <div className="flex items-center gap-1">
+                     {pet.vaccinations?.length > 0 && <span className="text-[10px] bg-emerald-50 text-emerald-600 font-bold px-2 py-0.5 rounded-full">💉{pet.vaccinations.length}</span>}
+                     <ChevronRight size={16} className="text-gray-400" />
+                   </div>
+                </div>
+             ))
+          )}
+        </section>
+
+        {/* Settings Menu */}
+        <section className="bg-white rounded-[32px] p-2 shadow-sm flex flex-col">
+
+          <Link href="/pet365care/hospitals" className="flex items-center gap-4 p-4 hover:bg-gray-50 rounded-2xl transition-colors text-left group">
+            <div className="w-10 h-10 bg-rose-50 rounded-full flex items-center justify-center text-rose-500 group-hover:bg-rose-100 transition-colors">
+               <Heart size={20} />
+            </div>
+            <div className="flex-1 font-semibold text-[15px] text-gray-800">동물 병원 찾기</div>
+            <ChevronRight size={18} className="text-gray-400" />
+          </Link>
+          {user?.isAdmin && (
+            <>
+              <div className="h-px bg-gray-100 my-1 mx-4"></div>
+              <Link href="/pet365care/admin" className="flex items-center gap-4 p-4 hover:bg-blue-50 rounded-2xl transition-colors text-left group">
+                <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-blue-500 group-hover:bg-blue-100 transition-colors">
+                   <BarChart3 size={20} />
+                </div>
+                <div className="flex-1 font-semibold text-[15px] text-blue-600">관리자 대시보드</div>
+                <ChevronRight size={18} className="text-gray-400" />
+              </Link>
+            </>
+          )}
+        </section>
+
+      </main>
+
+      {/* Add Pet Bottom Sheet Modal */}
+      {isAddModalOpen && (
+         <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsAddModalOpen(false)}></div>
+            <div className="bg-white w-full rounded-t-[40px] px-6 py-8 relative z-10 animate-in slide-in-from-bottom-full duration-300 shadow-2xl flex flex-col max-h-[90vh]">
+               <button onClick={() => setIsAddModalOpen(false)} className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
+                 <X size={20} />
+               </button>
+               
+               <h2 className="text-2xl font-black text-gray-900 mb-6">동물 등록하기</h2>
+               
+               <form onSubmit={handleAddPet} className="flex flex-col gap-4 overflow-y-auto hide-scrollbar pb-6">
+                  <div className="flex flex-col gap-2">
+                     <label className="text-sm font-bold text-gray-700 ml-1">이름 *</label>
+                     <input type="text" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="초코" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                     <div className="flex flex-col gap-2">
+                        <label className="text-sm font-bold text-gray-700 ml-1">동물 종류 *</label>
+                        <select value={form.species} onChange={e => setForm({...form, species: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 appearance-none cursor-pointer">
+                           {SPECIES.map(s => <option key={s.value} value={s.value}>{s.label} {s.emoji}</option>)}
+                        </select>
+                     </div>
+                     <div className="flex flex-col gap-2">
+                        <label className="text-sm font-bold text-gray-700 ml-1">성별 *</label>
+                        <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 appearance-none cursor-pointer">
+                           <option value="male">왕자님 ♂</option>
+                           <option value="female">공주님 ♀</option>
+                        </select>
+                     </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                     <label className="text-sm font-bold text-gray-700 ml-1">품종 *</label>
+                     <input type="text" required value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} placeholder="푸들, 말티즈 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                     <div className="flex flex-col gap-2">
+                        <label className="text-sm font-bold text-gray-700 ml-1">나이 *</label>
+                        <input type="number" min="0" max="30" required value={form.age} onChange={e => setForm({...form, age: e.target.value})} placeholder="3" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                     </div>
+                     <div className="flex flex-col gap-2">
+                        <label className="text-sm font-bold text-gray-700 ml-1">체중 (kg)</label>
+                        <input type="number" step="0.1" min="0" value={form.weight} onChange={e => setForm({...form, weight: e.target.value})} placeholder="5.2" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                     </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                     <label className="text-sm font-bold text-gray-700 ml-1">생년월일</label>
+                     <input type="date" value={form.birthday} onChange={e => setForm({...form, birthday: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <label className="flex items-center gap-3 bg-gray-50 rounded-2xl px-5 py-3.5 cursor-pointer">
+                     <input type="checkbox" checked={form.isNeutered} onChange={e => setForm({...form, isNeutered: e.target.checked})} className="w-5 h-5 rounded accent-[#FF7B6E]" />
+                     <span className="font-medium text-gray-700">중성화 완료</span>
+                  </label>
+                  <div className="flex flex-col gap-2">
+                     <label className="text-sm font-bold text-gray-700 ml-1">알레르기</label>
+                     <input type="text" value={form.allergies} onChange={e => setForm({...form, allergies: e.target.value})} placeholder="닭고기, 소고기 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                     <label className="text-sm font-bold text-gray-700 ml-1">메모/특이사항</label>
+                     <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} placeholder="특이사항을 자유롭게 기록하세요" rows={2} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30 resize-none" />
+                  </div>
+                  
+                  {/* Submit Button */}
+                  <button type="submit" disabled={isAdding} className="w-full bg-gradient-to-r from-[#FF7B6E] to-[#FF6B6B] text-white font-bold text-lg rounded-2xl py-4 mt-2 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-transform flex items-center justify-center">
+                     {isAdding ? <Loader2 className="animate-spin" /> : "저장하기"}
+                  </button>
+               </form>
+            </div>
+         </div>
+      )}
+
+      {/* Pet Detail Modal */}
+      {selectedPet && (
+        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setSelectedPet(null); setEditMode(false); }}></div>
+          <div className="bg-white w-full rounded-t-[40px] px-6 py-8 relative z-10 shadow-2xl flex flex-col max-h-[90vh]">
+            <button onClick={() => { setSelectedPet(null); setEditMode(false); }} className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><X size={20} /></button>
+
+            {editMode ? (
+              <>
+                <h2 className="text-2xl font-black text-gray-900 mb-6">{selectedPet.name} 수정</h2>
+                <form onSubmit={handleUpdatePet} className="flex flex-col gap-4 overflow-y-auto hide-scrollbar pb-6">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-bold text-gray-700 ml-1">이름 *</label>
+                    <input type="text" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-gray-700 ml-1">동물 종류</label>
+                      <select value={form.species} onChange={e => setForm({...form, species: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none appearance-none cursor-pointer">
+                        {SPECIES.map(s => <option key={s.value} value={s.value}>{s.label} {s.emoji}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-gray-700 ml-1">성별</label>
+                      <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none appearance-none cursor-pointer">
+                        <option value="male">왕자님 ♂</option><option value="female">공주님 ♀</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-bold text-gray-700 ml-1">품종</label>
+                    <input type="text" required value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-gray-700 ml-1">나이</label>
+                      <input type="number" min="0" max="30" required value={form.age} onChange={e => setForm({...form, age: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-gray-700 ml-1">체중 (kg)</label>
+                      <input type="number" step="0.1" min="0" value={form.weight} onChange={e => setForm({...form, weight: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-bold text-gray-700 ml-1">생년월일</label>
+                    <input type="date" value={form.birthday} onChange={e => setForm({...form, birthday: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <label className="flex items-center gap-3 bg-gray-50 rounded-2xl px-5 py-3.5 cursor-pointer">
+                    <input type="checkbox" checked={form.isNeutered} onChange={e => setForm({...form, isNeutered: e.target.checked})} className="w-5 h-5 rounded accent-[#FF7B6E]" />
+                    <span className="font-medium text-gray-700">중성화 완료</span>
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-bold text-gray-700 ml-1">알레르기</label>
+                    <input type="text" value={form.allergies} onChange={e => setForm({...form, allergies: e.target.value})} placeholder="닭고기, 소고기 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-bold text-gray-700 ml-1">메모</label>
+                    <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} rows={2} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30 resize-none" />
+                  </div>
+                  <button type="submit" disabled={isAdding} className="w-full bg-gradient-to-r from-[#FF7B6E] to-[#FF6B6B] text-white font-bold text-lg rounded-2xl py-4 mt-2 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-transform flex items-center justify-center">
+                    {isAdding ? <Loader2 className="animate-spin" /> : "수정 완료"}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="overflow-y-auto hide-scrollbar pb-6">
+                {/* Pet Header */}
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-[#FFF3CD] rounded-3xl flex items-center justify-center text-3xl">{getEmoji(selectedPet.species)}</div>
+                  <div className="flex-1">
+                    <h2 className="text-2xl font-black text-gray-900">{selectedPet.name}</h2>
+                    <p className="text-sm text-gray-500 font-medium">{SPECIES.find(s => s.value === selectedPet.species)?.label} · {selectedPet.breed}</p>
+                  </div>
+                  <button onClick={() => openEdit(selectedPet)} className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-blue-500"><Pencil size={18} /></button>
+                  <button onClick={handleDeletePet} className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center text-red-400"><Trash2 size={18} /></button>
+                </div>
+
+                {/* Info Grid */}
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">나이</p><p className="font-bold text-gray-900">{selectedPet.age}살</p></div>
+                  <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">성별</p><p className="font-bold text-gray-900">{selectedPet.gender === 'male' ? '♂ 남아' : '♀ 여아'}</p></div>
+                  <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">체중</p><p className="font-bold text-gray-900">{selectedPet.weight ? `${selectedPet.weight}kg` : '-'}</p></div>
+                  <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">중성화</p><p className="font-bold text-gray-900">{selectedPet.isNeutered ? '✅ 완료' : '❌ 미완료'}</p></div>
+                  {selectedPet.birthday && <div className="bg-gray-50 rounded-2xl p-4 col-span-2"><p className="text-xs text-gray-400 font-bold mb-1">생일</p><p className="font-bold text-gray-900">🎂 {selectedPet.birthday}</p></div>}
+                  {selectedPet.allergies && <div className="bg-amber-50 rounded-2xl p-4 col-span-2"><p className="text-xs text-amber-500 font-bold mb-1">⚠️ 알레르기</p><p className="font-bold text-gray-900">{selectedPet.allergies}</p></div>}
+                  {selectedPet.memo && <div className="bg-gray-50 rounded-2xl p-4 col-span-2"><p className="text-xs text-gray-400 font-bold mb-1">메모</p><p className="text-sm text-gray-700">{selectedPet.memo}</p></div>}
+                </div>
+
+                {/* Vaccination Records */}
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-900 flex items-center gap-2"><Syringe size={18} className="text-emerald-500" /> 접종 기록</h3>
+                  <button onClick={() => setIsVaxModalOpen(true)} className="text-sm font-semibold text-emerald-500 flex items-center gap-1"><Plus size={14} /> 추가</button>
+                </div>
+                {selectedPet.vaccinations.length === 0 ? (
+                  <div className="bg-gray-50 rounded-2xl p-6 text-center"><p className="text-sm text-gray-400">아직 접종 기록이 없습니다.</p></div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {selectedPet.vaccinations.map(v => (
+                      <div key={v.id} className="bg-emerald-50/50 rounded-2xl p-4 flex items-start gap-3">
+                        <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 mt-0.5 shrink-0">💉</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-gray-900 text-sm">{v.name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{v.date}{v.hospital ? ` · ${v.hospital}` : ''}</p>
+                          {v.nextDate && <p className="text-xs text-emerald-600 font-medium mt-0.5">다음 접종: {v.nextDate}</p>}
+                          {v.memo && <p className="text-xs text-gray-400 mt-0.5">{v.memo}</p>}
+                        </div>
+                        <button onClick={() => handleDeleteVax(v.id)} className="text-gray-300 hover:text-red-400 shrink-0"><X size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Vaccination Modal */}
+      {isVaxModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setIsVaxModalOpen(false)}></div>
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 relative z-10 shadow-2xl">
+            <h3 className="text-xl font-black text-gray-900 mb-5">💉 접종 기록 추가</h3>
+            <form onSubmit={handleAddVax} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-bold text-gray-700">접종명 *</label>
+                <input type="text" required value={vaxForm.name} onChange={e => setVaxForm({...vaxForm, name: e.target.value})} placeholder="광견병, DHPPL 등" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-bold text-gray-700">접종일 *</label>
+                  <input type="date" required value={vaxForm.date} onChange={e => setVaxForm({...vaxForm, date: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-bold text-gray-700">다음 접종</label>
+                  <input type="date" value={vaxForm.nextDate} onChange={e => setVaxForm({...vaxForm, nextDate: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-bold text-gray-700">병원</label>
+                <input type="text" value={vaxForm.hospital} onChange={e => setVaxForm({...vaxForm, hospital: e.target.value})} placeholder="○○동물병원" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
+              </div>
+              <button type="submit" className="w-full bg-gradient-to-r from-emerald-500 to-emerald-400 text-white font-bold rounded-xl py-3 mt-1 active:scale-[0.98] transition-transform">저장하기</button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -167,8 +167,7 @@ export default function Home() {
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
   const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
-  const [pet365careUrl, setPet365careUrl] = useState<string | null>(null); // Pet365Care SSO iframe URL
-  const pet365iframeRef = useRef<HTMLIFrameElement>(null); // Pet365Care iframe ref (postMessage 브릿지용)
+  // Pet365Care: 내부 라우트 /pet365care (iframe 임베딩)
 
   // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
   useEffect(() => {
@@ -280,6 +279,22 @@ export default function Home() {
       setShowScrollBottomBtn(false);
     }
   }, [currentRoom?.id, markRoomAsRead, user?.id]);
+
+  // [모바일 PWA] 시스템 뒤로가기 버튼 → 채팅방 닫기 (앱 종료 방지)
+  useEffect(() => {
+    if (currentRoom?.id) {
+      window.history.pushState({ chatRoom: currentRoom.id }, '');
+    }
+    const handlePopState = () => {
+      if (currentRoomRef.current) {
+        setCurrentRoom(null);
+        setIsDrawerOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRoom?.id]);
 
   // 파일 첨부 관련 상태
   const [isUploading, setIsUploading] = useState(false);
@@ -812,66 +827,7 @@ export default function Home() {
     window.addEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
     window.addEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
 
-    // ---- Pet365Care postMessage 브릿지 ----
-    const handlePet365PostMessage = async (event: MessageEvent) => {
-      if (event.data?.source !== 'pet365care') return;
-
-      // 1. 인증 요청: Pet365Care iframe이 로드 후 유저 정보를 요청
-      if (event.data.event === 'auth:request') {
-        const iframe = pet365iframeRef.current;
-        const currentUser = myProfile || parsedUser;
-        if (iframe?.contentWindow && currentUser) {
-          iframe.contentWindow.postMessage({
-            source: 'alopop',
-            event: 'auth:user',
-            data: {
-              user: {
-                id: currentUser.id,
-                username: currentUser.username,
-                avatar_url: (currentUser as any).avatar_url || null,
-                email: (currentUser as any).email || null,
-                isAdmin: (currentUser as any).isAdmin || false,
-              }
-            }
-          }, '*');
-          console.log('[Pet365Care Bridge] Sent auth:user to iframe');
-        }
-      }
-
-      // 2. 알림 수신: 반려동물 등록/접종 등 이벤트
-      if (event.data.event === 'pet365:notify') {
-        const { type, petName, species, roomName, message: notifyMsg } = event.data.data || {};
-        if (!notifyMsg) return;
-        console.log('[Pet365Care Bridge] Received pet365:notify:', type, petName);
-
-        try {
-          const res = await fetch('/api/integrations/pet365care/notify-pm', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type, petName, species, roomName, message: notifyMsg }),
-          });
-          const data = await res.json();
-          if (data.success && data.chatMessage) {
-            console.log('[Pet365Care Bridge] Notification processed: roomId=' + data.roomId);
-            try {
-              const exists = await db.messages.where('messageId').equals(data.chatMessage.messageId).first();
-              if (!exists) {
-                await db.messages.add(data.chatMessage);
-                window.dispatchEvent(new CustomEvent('new_chat_message', { detail: data.chatMessage }));
-              }
-            } catch (dbErr) {
-              console.error('[Pet365Care Bridge] IndexedDB save error:', dbErr);
-            }
-            loadData(parsedUser.id);
-          } else {
-            console.error('[Pet365Care Bridge] Notify API error:', data.error);
-          }
-        } catch (e) {
-          console.error('[Pet365Care Bridge] Notify fetch failed:', e);
-        }
-      }
-    };
-    window.addEventListener('message', handlePet365PostMessage);
+    // Pet365Care: 내부 라우트 — postMessage 브릿지 불필요 (제거됨)
 
     return () => {
       window.removeEventListener('new_chat_message', handleNewMessage);
@@ -886,7 +842,7 @@ export default function Home() {
       window.removeEventListener('sponsor_settings_changed', handleSponsorSettingsChanged as EventListener);
       window.removeEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
       window.removeEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
-      window.removeEventListener('message', handlePet365PostMessage);
+
 
       // 언마운트 시엔 연결 끊기
       chatStore.disconnectSocket();
@@ -3033,18 +2989,7 @@ export default function Home() {
 
                 {/* Pet365Care 내부 서비스 */}
                 <button
-                  onClick={async () => {
-                    setCurrentTab('pet365care');
-                    if (!pet365careUrl) {
-                      try {
-                        const res = await fetch('/api/integrations/pet365care?embed=1');
-                        const data = await res.json();
-                        if (data.url) setPet365careUrl(data.url);
-                      } catch (e) {
-                        console.error('Pet365Care SSO failed:', e);
-                      }
-                    }
-                  }}
+                  onClick={() => setCurrentTab('pet365care')}
                   className={`relative p-3 rounded-xl transition-all ${currentTab === 'pet365care' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="Pet365Care"
                 >
@@ -3195,14 +3140,32 @@ export default function Home() {
                           className="w-full flex items-center justify-between p-4 bg-surface-container hover:bg-surface-container-high rounded-xl transition-all text-left group border border-outline-variant/15 hover:border-outline-variant/30 cursor-pointer shadow-ambient"
                         >
                           <div className="flex items-center gap-4 min-w-0">
-                            <div className="relative w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shrink-0 shadow-inner">
-                              <MessageSquare size={22} />
+                            {(() => {
+                              // 상대방(1:1) 또는 호스트의 프로필 사진 표시
+                              const otherMember = room.members.find((m: any) => m.userId !== user?.id);
+                              const hostMember = room.members.find((m: any) => m.isHost);
+                              const displayMember = otherMember || hostMember;
+                              const memberAvatar = displayMember?.user?.avatar_url;
+                              const roomDisplayName = room.name || displayMember?.user?.username || '?';
+                              const firstChar = [...roomDisplayName][0] || '?';
+                              return (
+                            <div className="relative w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shrink-0 shadow-inner overflow-hidden">
+                              {memberAvatar ? (
+                                <>
+                                  <img src={memberAvatar} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; el.parentElement!.querySelector('[data-fallback]')!.classList.remove('hidden'); }} />
+                                  <span data-fallback="" className="text-xl hidden">{firstChar}</span>
+                                </>
+                              ) : (
+                                <span className="text-xl">{firstChar}</span>
+                              )}
                               {unreadCounts[room.id] > 0 && (
                                 <span className="absolute -top-1.5 -right-1.5 bg-secondary border-2 border-dark-bg text-dark-bg text-[10px] sm:text-xs font-bold leading-none min-w-[22px] h-[22px] px-1 flex items-center justify-center rounded-full z-10 shadow-[0_0_10px_rgba(98,250,227,0.5)]">
                                   {unreadCounts[room.id] > 99 ? '99+' : unreadCounts[room.id]}
                                 </span>
                               )}
                             </div>
+                              );
+                            })()}
                             <div className="flex-1 overflow-hidden">
                               <div className="font-semibold text-[15px] text-zinc-100 truncate mb-1">
                                 {getRoomName(room, user?.id)}
@@ -3570,17 +3533,8 @@ export default function Home() {
               )}
 
               {currentTab === 'pet365care' && (
-                <div className="flex-1 w-full h-full flex flex-col relative bg-surface-container-lowest">
-                  {pet365careUrl ? (
-                    <iframe ref={pet365iframeRef} src={pet365careUrl} className="absolute inset-0 w-full h-full border-none" allowFullScreen allow="geolocation" />
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-on-surface-variant">
-                      <div className="flex flex-col items-center gap-3">
-                        <PawPrint size={48} className="opacity-40" />
-                        <p className="text-sm font-medium">Pet365Care 로딩 중...</p>
-                      </div>
-                    </div>
-                  )}
+                <div className="flex-1 w-full h-full flex flex-col relative bg-[#F4F4F6]">
+                  <iframe src="/pet365care" className="absolute inset-0 w-full h-full border-none" allowFullScreen allow="geolocation" />
                 </div>
               )}
 

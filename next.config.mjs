@@ -24,11 +24,7 @@ const nextConfig = {
         source: '/game-proxy/3010/:path*',
         destination: 'http://127.0.0.1:3010/:path*'
       },
-      // Pet365Care: 모바일에서 localhost 대신 Alopop 도메인 경유
-      {
-        source: '/pet365care/:path*',
-        destination: 'http://127.0.0.1:3065/:path*'
-      }
+      // Pet365Care: 이제 Alopop 내부 라우트로 운영 (프록시 제거됨)
     ];
   },
 };
