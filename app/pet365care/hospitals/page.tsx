@@ -178,7 +178,7 @@ export default function HospitalsPage() {
       <header className="bg-white rounded-b-[32px] shadow-sm px-6 pt-6 pb-5">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <Link href="/profile" className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600"><ArrowLeft size={20} /></Link>
+            <Link href="/pet365care/profile" className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600"><ArrowLeft size={20} /></Link>
             <h1 className="text-gray-900 font-extrabold text-xl tracking-tight">동물 병원 찾기</h1>
           </div>
           <div className="flex items-center gap-2">

@@ -89,7 +89,7 @@ export default function AdminPage() {
     <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center gap-3 p-6">
-        <Link href="/profile" className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-gray-600">
+        <Link href="/pet365care/profile" className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-gray-600">
           <ArrowLeft size={20} />
         </Link>
         <h1 className="text-gray-900 font-extrabold text-xl tracking-tight">관리자 대시보드</h1>
