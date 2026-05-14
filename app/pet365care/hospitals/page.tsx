@@ -44,6 +44,14 @@ const DISTANCE_FILTERS = [
   { key: "far", label: "5km", km: 5 },
 ];
 
+// 거리 필터 → 카카오맵 줌 레벨 매핑 (여유 있게)
+const ZOOM_LEVELS: Record<string, number> = {
+  near: 5,   // 1km 반경 → level 5 (~1.5km 표시)
+  mid: 7,    // 3km 반경 → level 7 (~4km 표시)
+  far: 8,    // 5km 반경 → level 8 (~8km 표시)
+  all: 9,    // 전체 → level 9 (~20km 반경)
+};
+
 const KAKAO_KEY = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY;
 
 export default function HospitalsPage() {
@@ -51,7 +59,7 @@ export default function HospitalsPage() {
   const [hospitals, setHospitals] = useState<HospitalWithDist[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [distanceFilter, setDistanceFilter] = useState("all");
+  const [distanceFilter, setDistanceFilter] = useState("near");
   const [emergencyOnly, setEmergencyOnly] = useState(false);
   const [userLat, setUserLat] = useState(0);
   const [userLng, setUserLng] = useState(0);
@@ -127,7 +135,8 @@ export default function HospitalsPage() {
       const center = userLat && userLng
         ? new window.kakao.maps.LatLng(userLat, userLng)
         : new window.kakao.maps.LatLng(37.5000, 126.7700);
-      const map = new window.kakao.maps.Map(mapContainerRef.current!, { center, level: 5 });
+      const level = ZOOM_LEVELS[distanceFilter] || 7;
+      const map = new window.kakao.maps.Map(mapContainerRef.current!, { center, level });
       mapInstanceRef.current = map;
 
       hospitals.forEach(h => {
@@ -158,7 +167,7 @@ export default function HospitalsPage() {
         }).setMap(map);
       }
     });
-  }, [hospitals, userLat, userLng]);
+  }, [hospitals, userLat, userLng, distanceFilter]);
 
   useEffect(() => {
     if (viewMode === "map" && mapReady && !loading) setTimeout(initMap, 100);
@@ -235,6 +244,7 @@ export default function HospitalsPage() {
               <input
                 type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 placeholder="병원 이름으로 검색"
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLElement).blur(); }}
                 className="w-full bg-gray-50 rounded-2xl pl-11 pr-4 py-3.5 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-rose-200 transition-all border border-transparent focus:border-rose-200"
               />
             </div>
@@ -257,8 +267,11 @@ export default function HospitalsPage() {
 
       {/* Map View */}
       {viewMode === "map" && (
-        <div className="px-4 mt-4">
-          <div ref={mapContainerRef} className="w-full h-[50vh] rounded-[24px] overflow-hidden shadow-md border border-gray-200" />
+        <div className="px-4 mt-4" onTouchStart={() => { (document.activeElement as HTMLElement)?.blur(); }}>
+          {/* Wrapper: 둥근 모서리 + overflow-hidden 분리 → 맵 타일 렌더링 충돌 방지 */}
+          <div className="rounded-[24px] overflow-hidden shadow-md border border-gray-200" style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}>
+            <div ref={mapContainerRef} className="w-full h-[50vh]" style={{ transform: 'translateZ(0)', willChange: 'transform', touchAction: 'pan-x pan-y' }} />
+          </div>
           {selectedHospital && (
             <div className="bg-white rounded-[24px] p-5 shadow-sm mt-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
@@ -279,7 +292,7 @@ export default function HospitalsPage() {
 
       {/* List View */}
       {viewMode === "list" && dbCount > 0 && (
-        <main className="px-6 mt-5 flex flex-col gap-3">
+        <main className="px-6 mt-5 flex flex-col gap-3" onTouchStart={() => { (document.activeElement as HTMLElement)?.blur(); }}>
           {gpsStatus === "denied" && (
             <div className="bg-amber-50 rounded-2xl p-3 flex items-center gap-2 border border-amber-100">
               <Navigation size={14} className="text-amber-500 shrink-0" />

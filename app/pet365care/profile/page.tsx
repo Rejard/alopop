@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Syringe, Plus } from "lucide-react";
+import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Syringe, Plus, Download, Upload, CloudDownload } from "lucide-react";
 import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
 import Link from "next/link";
 import {
   getPets, addPet as addPetStore, updatePet as updatePetStore,
   deletePet as deletePetStore, addVaccination as addVaxStore,
   deleteVaccination as deleteVaxStore,
+  exportStore, importStore, getBackupStats,
   type Pet, type Vaccination,
 } from "@/lib/pet365care/local-store";
 import { notifyPetRegistered, notifyPetUpdated, notifyPetDeleted, notifyVaccination } from "@/lib/pet365care/notify";
+import LZString from "lz-string";
 
 type PetWithVax = Pet;
 
@@ -42,14 +44,64 @@ export default function ProfilePage() {
 
   const emptyForm = { name: "", species: "dog", breed: "", age: "", gender: "male", birthday: "", weight: "", isNeutered: false, allergies: "", memo: "" };
   const [form, setForm] = useState(emptyForm);
+  const [recovering, setRecovering] = useState(false);
+  const [recoverMsg, setRecoverMsg] = useState("");
+
+  // 백업 상태
+  const [backupInfo, setBackupInfo] = useState<{ size: number; petCount: number; version: number; updatedAt: string } | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupMsg, setBackupMsg] = useState("");
 
   useEffect(() => {
     if (user?.id) {
       setLoadingPets(true);
       setPets(getPets());
       setLoadingPets(false);
+      // 서버 백업 상태 조회
+      fetch('/api/pet365care/backup').then(r => r.json()).then(d => {
+        if (d.success && d.data) setBackupInfo(d.data);
+      }).catch(() => {});
     }
   }, [user]);
+
+  // 채팅방 봇에서 반려동물 복구
+  const handleRecoverPets = async () => {
+    setRecovering(true);
+    setRecoverMsg('');
+    try {
+      const r = await fetch('/api/pet365care/recover-pets');
+      const d = await r.json();
+      if (!d.success || !d.data?.pets?.length) {
+        setRecoverMsg('복구할 반려동물이 없습니다.');
+        return;
+      }
+      const existingPets = getPets();
+      let added = 0;
+      for (const bot of d.data.pets) {
+        // 이미 같은 이름이 있으면 스킵
+        if (existingPets.some(p => p.name === bot.name)) continue;
+        addPetStore({
+          name: bot.name,
+          species: bot.species,
+          breed: '',
+          age: 0,
+          gender: 'male',
+          birthday: null,
+          weight: null,
+          isNeutered: false,
+          allergies: null,
+          memo: '채팅방에서 자동 복구됨',
+        });
+        added++;
+      }
+      setPets(getPets());
+      setRecoverMsg(added > 0 ? `✅ ${added}마리 복구 완료! 상세 정보를 수정해주세요.` : '이미 모두 등록되어 있습니다.');
+    } catch {
+      setRecoverMsg('❌ 복구에 실패했습니다.');
+    } finally {
+      setRecovering(false);
+    }
+  };
 
   const handleAddPet = (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,6 +225,14 @@ export default function ProfilePage() {
              <div className="bg-white rounded-[32px] p-6 flex flex-col items-center justify-center text-center shadow-sm">
                 <span className="text-4xl mb-3">🐶</span>
                 <p className="text-sm text-gray-500 font-medium">등록된 가족이 없습니다.<br/>새로운 반려동물을 등록해보세요!</p>
+                <button
+                  onClick={handleRecoverPets}
+                  disabled={recovering}
+                  className="mt-4 flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-400 text-white font-bold text-sm px-5 py-2.5 rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+                >
+                  {recovering ? <><Loader2 size={16} className="animate-spin" /> 복구 중...</> : <><Download size={16} /> 채팅방에서 불러오기</>}
+                </button>
+                {recoverMsg && <p className="text-xs font-medium text-gray-600 mt-3">{recoverMsg}</p>}
              </div>
           ) : (
              pets.map((pet) => (
@@ -213,6 +273,87 @@ export default function ProfilePage() {
               </Link>
             </>
           )}
+        </section>
+
+        {/* ☁️ 데이터 백업/복원 */}
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="font-bold text-gray-900 text-lg">☁️ 데이터 백업</h3>
+          </div>
+          <div className="bg-white rounded-[32px] p-5 shadow-sm">
+            {backupInfo ? (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-bold bg-emerald-50 text-emerald-600 px-2.5 py-0.5 rounded-full">💾 세이브 슬롯</span>
+                  <span className="text-[10px] font-semibold text-gray-400">v{backupInfo.version}</span>
+                </div>
+                <p className="text-xs text-gray-500 font-medium">
+                  마지막 백업: {new Date(backupInfo.updatedAt).toLocaleString('ko-KR')} · 펫 {backupInfo.petCount}마리 · {(backupInfo.size / 1024).toFixed(1)}KB
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 font-medium mb-4">아직 백업이 없습니다. 폰 교체 전에 백업하세요!</p>
+            )}
+
+            <div className="flex gap-2">
+              {/* 서버에 백업 */}
+              <button
+                onClick={async () => {
+                  setBackupLoading(true); setBackupMsg('');
+                  try {
+                    const raw = exportStore();
+                    const stats = getBackupStats();
+                    const compressed = LZString.compressToUTF16(raw);
+                    const r = await fetch('/api/pet365care/backup', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ compressed, originalSize: stats.sizeBytes, petCount: stats.petCount }),
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                      setBackupInfo(d.data);
+                      const ratio = Math.round((1 - compressed.length / raw.length) * 100);
+                      setBackupMsg(`✅ 백업 완료! (${(stats.sizeBytes / 1024).toFixed(1)}KB → ${(compressed.length * 2 / 1024).toFixed(1)}KB, ${ratio}% 압축)`);
+                    } else setBackupMsg(`❌ ${d.error}`);
+                  } catch { setBackupMsg('❌ 백업 실패'); }
+                  finally { setBackupLoading(false); }
+                }}
+                disabled={backupLoading}
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-blue-500 to-blue-400 text-white font-bold text-sm rounded-2xl active:scale-[0.98] transition-transform disabled:opacity-50"
+              >
+                {backupLoading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                백업
+              </button>
+
+              {/* 서버에서 복원 */}
+              <button
+                onClick={async () => {
+                  if (!confirm('서버 백업 데이터로 복원합니다.\n현재 로컬 데이터를 덮어씁니다. 계속하시겠습니까?')) return;
+                  setBackupLoading(true); setBackupMsg('');
+                  try {
+                    const r = await fetch('/api/pet365care/backup', { method: 'PUT' });
+                    const d = await r.json();
+                    if (d.success && d.data?.compressed) {
+                      const raw = LZString.decompressFromUTF16(d.data.compressed);
+                      if (!raw) { setBackupMsg('❌ 데이터 해제 실패'); return; }
+                      const result = importStore(raw);
+                      setPets(getPets());
+                      setBackupMsg(`✅ 복원 완료! ${result.petCount}마리 반려동물 로드됨`);
+                    } else setBackupMsg(`❌ ${d.error || '백업이 없습니다'}`);
+                  } catch { setBackupMsg('❌ 복원 실패'); }
+                  finally { setBackupLoading(false); }
+                }}
+                disabled={backupLoading || !backupInfo}
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-emerald-400 text-white font-bold text-sm rounded-2xl active:scale-[0.98] transition-transform disabled:opacity-50"
+              >
+                {backupLoading ? <Loader2 size={16} className="animate-spin" /> : <CloudDownload size={16} />}
+                복원
+              </button>
+            </div>
+
+            {backupMsg && <p className="text-xs font-medium text-gray-600 mt-3 text-center">{backupMsg}</p>}
+            <p className="text-[10px] text-gray-400 mt-2 text-center">⚠️ 복원 시 현재 로컬 데이터를 덮어씁니다</p>
+          </div>
         </section>
 
       </main>

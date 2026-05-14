@@ -209,3 +209,52 @@ model OfflineMessage {
   
   @@index([receiverId])
 }
+
+// =============================================
+// Pet365Care 관련 모델
+// =============================================
+
+// 동물병원 정보 (공공데이터 동기화)
+model Hospital {
+  id          String   @id @default(uuid())
+  name        String
+  address     String
+  phone       String
+  website     String?
+  lat         Float    // 위도
+  lng         Float    // 경도
+  openHours   String?  // 진료시간 (예: "09:00-21:00")
+  specialties String?  // 전문 분야 (콤마 구분)
+  isEmergency Boolean  @default(false) // 24시간/응급 가능 여부
+  createdAt   DateTime @default(now())
+
+  @@index([lat, lng])
+}
+
+// Pet365Care AI 분석 로그
+model Pet365ApiLog {
+  id        String   @id @default(uuid())
+  type      String   // 'AI_SUCCESS' | 'AI_FAIL' | 'AI_FALLBACK'
+  endpoint  String   // '/api/pet365care/ai'
+  detail    String?  // 에러 메시지 (PII 제외)
+  model     String?  // 사용된 AI 모델명
+  userId    String?  // 요청한 유저 ID
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+}
+
+// Pet365Care 데이터 백업 (게임 세이브 슬롯 방식, 유저당 1개)
+model Pet365Backup {
+  id        String   @id @default(uuid())
+  userId    String   @unique  // 유저당 1개 슬롯
+  data      String   // LZ-string 압축된 JSON
+  size      Int      // 원본 바이트 수
+  petCount  Int      // 펫 수 (UI 표시용)
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}

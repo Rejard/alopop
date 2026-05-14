@@ -365,3 +365,32 @@ export function updateSettings(updates: Partial<PetStore["settings"]>): void {
   store.settings = { ...store.settings, ...updates };
   saveStore(store);
 }
+
+// ======= 백업/복원 =======
+
+/** 전체 스토어를 JSON 문자열로 내보내기 */
+export function exportStore(): string {
+  return JSON.stringify(loadStore());
+}
+
+/** JSON 문자열로 전체 스토어 덮어쓰기 (복원) */
+export function importStore(json: string): { petCount: number } {
+  const data = JSON.parse(json) as PetStore;
+  // 기본값 병합 (누락된 필드 방어)
+  const store: PetStore = { ...DEFAULT_STORE, ...data };
+  saveStore(store);
+  return { petCount: store.pets.length };
+}
+
+/** 백업 메타 정보 */
+export function getBackupStats(): { petCount: number; vaxCount: number; careCount: number; healthCount: number; sizeBytes: number } {
+  const store = loadStore();
+  const raw = JSON.stringify(store);
+  return {
+    petCount: store.pets.length,
+    vaxCount: store.pets.reduce((sum, p) => sum + (p.vaccinations?.length || 0), 0),
+    careCount: store.careChecks.length,
+    healthCount: store.healthRecords.length,
+    sizeBytes: new TextEncoder().encode(raw).length,
+  };
+}
