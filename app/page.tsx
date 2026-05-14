@@ -3825,12 +3825,15 @@ export default function Home() {
                           {(() => {
                             const senderMember = currentRoom?.members?.find((m: any) => m.userId === msg.senderId);
                             const avatarUrl = senderMember?.user?.avatar_url;
+                            // 이모지 안전 첫 글자 추출 (서로게이트 페어 대응)
+                            const fallbackName = currentRoom?.name || msg.senderName || '?';
+                            const firstChar = [...fallbackName][0] || '?';
                             return (
                               <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-sm font-bold shrink-0 shadow-inner border border-outline-variant/15 text-secondary overflow-hidden">
                                 {avatarUrl ? (
                                   <img src={avatarUrl} alt="profile" className="w-full h-full object-cover" />
                                 ) : (
-                                  (msg.senderName || '?').charAt(0).toUpperCase()
+                                  <span className="text-lg">{firstChar}</span>
                                 )}
                               </div>
                             );
