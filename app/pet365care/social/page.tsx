@@ -1,111 +1,533 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Heart, MessageCircle, Send, X, Loader2, Plus, Image as ImageIcon, Trash2, Camera } from "lucide-react";
+import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
+
+type Author = { id: string; username: string; avatar_url: string | null };
+type Post = {
+  id: string; content: string; images: string[]; category: string;
+  likeCount: number; commentCount: number; isLiked: boolean; isMine: boolean;
+  author: Author; createdAt: string;
+};
+type Comment = { id: string; content: string; isMine: boolean; author: Author; createdAt: string };
+
+const CATEGORIES = [
+  { value: "all", label: "전체", emoji: "🔥" },
+  { value: "daily", label: "일상", emoji: "📸" },
+  { value: "walk", label: "산책", emoji: "🐕" },
+  { value: "health", label: "건강", emoji: "💊" },
+  { value: "funny", label: "웃김", emoji: "😂" },
+];
+
+function timeAgo(date: string) {
+  const diff = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "방금 전";
+  if (mins < 60) return `${mins}분 전`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}시간 전`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}일 전`;
+  return new Date(date).toLocaleDateString("ko-KR");
+}
 
 export default function SocialPage() {
+  const { user } = usePet365Auth();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState("all");
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+
+  // 글쓰기
+  const [showWrite, setShowWrite] = useState(false);
+  const [writeContent, setWriteContent] = useState("");
+  const [writeCategory, setWriteCategory] = useState("daily");
+  const [writeImages, setWriteImages] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // 상세/댓글
+  const [detailPost, setDetailPost] = useState<Post | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [sendingComment, setSendingComment] = useState(false);
+
+  // 이미지 뷰어
+  const [viewImage, setViewImage] = useState<string | null>(null);
+
+  const fetchPosts = useCallback(async (cat: string, cursor?: string | null) => {
+    if (!cursor) setLoading(true);
+    try {
+      const params = new URLSearchParams({ category: cat, limit: "20" });
+      if (cursor) params.set("cursor", cursor);
+      const r = await fetch(`/api/pet365care/social/posts?${params}`);
+      const d = await r.json();
+      if (d.success) {
+        if (cursor) {
+          setPosts(prev => [...prev, ...d.data.posts]);
+        } else {
+          setPosts(d.data.posts);
+        }
+        setHasMore(d.data.hasMore);
+        setNextCursor(d.data.nextCursor);
+      }
+    } catch { /* */ }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchPosts(category);
+  }, [user, category, fetchPosts]);
+
+  const handleLike = async (postId: string) => {
+    const r = await fetch("/api/pet365care/social/like", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ postId }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      const update = (p: Post) => p.id === postId ? { ...p, isLiked: d.data.liked, likeCount: p.likeCount + (d.data.liked ? 1 : -1) } : p;
+      setPosts(prev => prev.map(update));
+      if (detailPost?.id === postId) setDetailPost(prev => prev ? update(prev) : null);
+    }
+  };
+
+  const handleUploadImages = async (files: FileList) => {
+    if (writeImages.length + files.length > 4) { alert("최대 4장까지 가능합니다"); return; }
+    setUploading(true);
+    const fd = new FormData();
+    Array.from(files).forEach(f => fd.append("files", f));
+    try {
+      const r = await fetch("/api/pet365care/social/upload", { method: "POST", body: fd });
+      const d = await r.json();
+      if (d.success) setWriteImages(prev => [...prev, ...d.data.urls]);
+      else alert(d.error);
+    } catch { alert("업로드 실패"); }
+    setUploading(false);
+  };
+
+  const handlePost = async () => {
+    if (!writeContent.trim()) return;
+    setPosting(true);
+    try {
+      const r = await fetch("/api/pet365care/social/posts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: writeContent, images: writeImages, category: writeCategory }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        setPosts(prev => [d.data, ...prev]);
+        setShowWrite(false); setWriteContent(""); setWriteImages([]); setWriteCategory("daily");
+      }
+    } catch { /* */ }
+    setPosting(false);
+  };
+
+  const handleDelete = async (postId: string) => {
+    if (!confirm("삭제하시겠습니까?")) return;
+    const r = await fetch(`/api/pet365care/social/posts?id=${postId}`, { method: "DELETE" });
+    const d = await r.json();
+    if (d.success) {
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      setDetailPost(null);
+    }
+  };
+
+  const openDetail = async (post: Post) => {
+    setDetailPost(post); setLoadingComments(true);
+    const r = await fetch(`/api/pet365care/social/comments?postId=${post.id}`);
+    const d = await r.json();
+    if (d.success) setComments(d.data);
+    setLoadingComments(false);
+  };
+
+  const handleComment = async () => {
+    if (!commentText.trim() || !detailPost) return;
+    setSendingComment(true);
+    const r = await fetch("/api/pet365care/social/comments", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ postId: detailPost.id, content: commentText }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      setComments(prev => [...prev, d.data]);
+      setCommentText("");
+      const update = (p: Post) => p.id === detailPost.id ? { ...p, commentCount: p.commentCount + 1 } : p;
+      setPosts(prev => prev.map(update));
+      setDetailPost(prev => prev ? update(prev) : null);
+    }
+    setSendingComment(false);
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    const r = await fetch(`/api/pet365care/social/comments?id=${commentId}`, { method: "DELETE" });
+    const d = await r.json();
+    if (d.success && detailPost) {
+      setComments(prev => prev.filter(c => c.id !== commentId));
+      const update = (p: Post) => p.id === detailPost.id ? { ...p, commentCount: Math.max(0, p.commentCount - 1) } : p;
+      setPosts(prev => prev.map(update));
+      setDetailPost(prev => prev ? update(prev) : null);
+    }
+  };
+
+  const getAvatar = (author: Author) => {
+    if (author.avatar_url) return <img src={author.avatar_url} alt="" className="w-full h-full object-cover" />;
+    return <span className="text-sm font-bold text-white">{author.username[0]}</span>;
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
-      <header className="flex items-center justify-between p-6">
+      <header className="flex items-center justify-between p-5 pt-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
-            {/* Dummy profile icon */}
             <span className="text-xl">🐱</span>
           </div>
           <h1 className="text-[#FF7B6E] font-extrabold text-xl tracking-tight">Pet365Care</h1>
         </div>
-        <button className="text-[#FF7B6E] p-2 bg-white rounded-full shadow-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-        </button>
       </header>
 
-      {/* Main Content */}
-      <main className="px-6 flex flex-col gap-8">
-        
-        {/* Popular Gatherings */}
-        <section className="flex flex-col gap-4">
+      <main className="px-5 flex flex-col gap-6">
+        {/* Hero Card — 인기 모임 */}
+        <section className="flex flex-col gap-3">
           <div className="flex flex-col gap-1 px-1">
-            <h2 className="text-2xl font-bold text-gray-900 leading-tight">
-              우리 동네 인기 모임
-            </h2>
-            <button className="text-sm font-semibold text-[#FF7B6E] flex items-center gap-1 self-start">
-              지금 가장 핫한 펫 모임을 확인해보세요 더보기 <span className="text-lg">›</span>
-            </button>
+            <h2 className="text-2xl font-bold text-gray-900 leading-tight">우리 동네 인기 모임</h2>
+            <p className="text-sm font-semibold text-[#FF7B6E]">지금 가장 핫한 펫 모임을 확인해보세요 🔥</p>
           </div>
-
-          {/* Hero Card */}
-          <div className="h-64 rounded-[32px] overflow-hidden relative shadow-md group pointer-events-none">
-            <Image
-              src="https://images.unsplash.com/photo-1548199973-03cce0bbc87b?auto=format&fit=crop&q=80&w=800" 
-              alt="Dogs running" 
-              fill
-              sizes="(max-width: 640px) 100vw, 448px"
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
-            
-            <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-2">
-              <div className="flex gap-2 mb-1">
-                <span className="bg-[#FF7B6E] text-white text-[11px] font-black px-2.5 py-1 rounded-full tracking-wider">HOT</span>
-                <span className="bg-white/30 backdrop-blur-md text-white text-[11px] font-semibold px-2.5 py-1 rounded-full">망원 한강공원</span>
+          <div className="h-52 rounded-[32px] overflow-hidden relative shadow-md bg-gradient-to-br from-amber-400 via-orange-400 to-rose-500">
+            <div className="absolute inset-0 flex items-center justify-center opacity-20 text-[100px]">🐕‍🦺🐕</div>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            <div className="absolute bottom-5 left-5 right-5 flex flex-col gap-1.5">
+              <div className="flex gap-2 mb-0.5">
+                <span className="bg-[#FF7B6E] text-white text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider">HOT</span>
+                <span className="bg-white/30 backdrop-blur-md text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-full">망원 한강공원</span>
               </div>
-              <h3 className="text-white text-xl font-bold leading-tight">토요일 아침 대형견 산책 모임</h3>
-              <p className="text-white/80 text-sm font-medium flex items-center gap-1.5 mt-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-                멤버 12명 참여 중
-              </p>
+              <h3 className="text-white text-lg font-bold leading-tight">토요일 아침 대형견 산책 모임</h3>
+              <p className="text-white/80 text-xs font-medium">👥 멤버 12명 참여 중</p>
             </div>
           </div>
         </section>
 
         {/* Activity Categories */}
-        <section className="flex flex-col gap-4">
-          <h2 className="text-xl font-bold text-gray-900 px-1">어떤 활동을 찾으시나요?</h2>
-          
-          {/* Full Width Pill */}
-          <div className="bg-[#FDECE9] rounded-[32px] p-5 flex items-center justify-between cursor-pointer hover:bg-[#FAD8D2] transition-colors relative overflow-hidden h-28 shadow-sm">
-            <div className="flex flex-col z-10 pl-2">
-              <h3 className="text-lg font-bold text-gray-900 mb-0.5">일상 공유</h3>
-              <p className="text-sm text-gray-600 font-medium">우리 아이의 귀여운 순간을<br/>자랑해보세요</p>
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-bold text-gray-900 px-1">어떤 활동을 찾으시나요?</h2>
+          <div className="bg-[#FDECE9] rounded-[28px] p-4 flex items-center justify-between cursor-pointer hover:bg-[#FAD8D2] transition-colors relative overflow-hidden h-24 shadow-sm">
+            <div className="flex flex-col z-10 pl-1">
+              <h3 className="text-base font-bold text-gray-900 mb-0.5">📸 일상 공유</h3>
+              <p className="text-xs text-gray-600 font-medium">우리 아이의 귀여운 순간을<br/>자랑해보세요</p>
             </div>
-            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm text-[#FF7B6E] mr-2 z-10 transition-transform group-hover:scale-110">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 256 256">
-                <path d="M208,56H180.28L166.65,35.56A16,16,0,0,0,153.31,28H102.69a16,16,0,0,0-13.34,7.56L75.72,56H48A24,24,0,0,0,24,80V192a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V80A24,24,0,0,0,208,56Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H80a8,8,0,0,0,6.66-3.78L100.28,47.56a0.07,0.07,0,0,1,0,0h55.35l13.67,20.66A8,8,0,0,0,176,72h32a8,8,0,0,1,8,8ZM128,88a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,88Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,168Z"></path>
-              </svg>
+            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-[#FF7B6E] mr-1 z-10">
+              <Camera size={18} />
             </div>
           </div>
-
-          {/* Half Width Pills */}
-          <div className="grid grid-cols-2 gap-4 h-36">
-            <div className="bg-white rounded-[32px] p-5 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 transition-colors shadow-sm">
-              <div className="w-12 h-12 bg-[#FFF3CD] rounded-full flex items-center justify-center text-[#B8860B] mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 256 256">
-                  <path d="M128,16a88.1,88.1,0,0,0-88,88c0,75.3,80,132.17,83.41,134.55a8,8,0,0,0,9.18,0C136,236.17,216,179.3,216,104A88.1,88.1,0,0,0,128,16Zm0,206.51C111.45,210.15,56,161.4,56,104a72,72,0,0,1,144,0C200,161.4,144.55,210.15,128,222.51ZM128,64a40,40,0,1,0,40,40A40,40,0,0,0,128,64Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,128Z"></path>
-                </svg>
-              </div>
-              <h3 className="text-base font-bold text-gray-900 leading-tight">지역 모임</h3>
-              <p className="text-xs text-gray-500 font-medium mt-1">동네 친구 만들기</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-[28px] p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 transition-colors shadow-sm h-28">
+              <div className="w-10 h-10 bg-[#FFF3CD] rounded-full flex items-center justify-center text-lg mb-2">📍</div>
+              <h3 className="text-sm font-bold text-gray-900">지역 모임</h3>
+              <p className="text-[10px] text-gray-500 font-medium mt-0.5">동네 친구 만들기</p>
             </div>
-
-            <div className="bg-white rounded-[32px] p-5 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 transition-colors shadow-sm">
-              <div className="w-12 h-12 bg-[#F2C99D]/40 rounded-full flex items-center justify-center text-[#A66C33] mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 256 256">
-                  <path d="M80.49,94.94a28,28,0,1,0-36.93-36,28,28,0,1,0,36.93,36Z"></path>
-                  <path d="M110,68a28,28,0,1,0-28-28A28,28,0,0,0,110,68Z"></path>
-                  <path d="M168,76a28,28,0,1,0-28-28A28,28,0,0,0,168,76Z"></path>
-                  <path d="M228.37,64a28,28,0,1,0-16.73,38.64A28.08,28.08,0,0,0,228.37,64Z"></path>
-                  <path d="M198.81,142C188.75,127,163.63,112,128,112s-60.75,15-70.81,30c-12,17.91-17,47.41-1.07,76,8,14.37,24,26,45.88,26,26.78,0,34.82-14,35-14a8,8,0,0,1,14.06,0c0.16,0.3,8.2,14,35,14,21.85,0,37.89-11.64,45.88-26C215.82,189.43,210.82,159.93,198.81,142Zm-70.81,59.39A70.87,70.87,0,0,1,103,178a8,8,0,0,1,14-8c8.35,14.72,21.28,29,38,10a8,8,0,0,1,12.33,10.23,37.66,37.66,0,0,1-24.64,11.39C137.94,201.62,132.88,201.64,128,201.39Z"></path>
-                </svg>
-              </div>
-              <h3 className="text-base font-bold text-gray-900 leading-tight">산책 메이트</h3>
-              <p className="text-xs text-gray-500 font-medium mt-1">함께 걷는 즐거움</p>
+            <div className="bg-white rounded-[28px] p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 transition-colors shadow-sm h-28">
+              <div className="w-10 h-10 bg-[#F2C99D]/40 rounded-full flex items-center justify-center text-lg mb-2">🐾</div>
+              <h3 className="text-sm font-bold text-gray-900">산책 메이트</h3>
+              <p className="text-[10px] text-gray-500 font-medium mt-0.5">함께 걷는 즐거움</p>
             </div>
           </div>
         </section>
 
+        {/* 커뮤니티 피드 */}
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-bold text-gray-900 px-1">📝 커뮤니티</h2>
+          {/* Category Filter */}
+          <div className="flex gap-2 overflow-x-auto hide-scrollbar">
+            {CATEGORIES.map(c => (
+              <button
+                key={c.value}
+                onClick={() => { setCategory(c.value); setNextCursor(null); }}
+                className={`flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 ${
+                  category === c.value
+                    ? "bg-[#FF7B6E] text-white shadow-md shadow-[#FF7B6E]/30"
+                    : "bg-white text-gray-600"
+                }`}
+              >
+                <span>{c.emoji}</span> {c.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Posts */}
+        <div className="flex flex-col gap-4">
+        {loading ? (
+          <div className="flex justify-center py-16"><Loader2 className="animate-spin text-[#FF7B6E]" size={28} /></div>
+        ) : posts.length === 0 ? (
+          <div className="bg-white rounded-[32px] p-8 flex flex-col items-center text-center shadow-sm">
+            <span className="text-5xl mb-3">📝</span>
+            <p className="text-sm text-gray-500 font-medium">아직 게시물이 없어요.<br/>첫 번째 글을 작성해보세요!</p>
+          </div>
+        ) : (
+          <>
+            {posts.map(post => (
+              <article key={post.id} className="bg-white rounded-[28px] overflow-hidden shadow-sm">
+                {/* Author */}
+                <div className="flex items-center gap-3 p-4 pb-2">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF7B6E] to-[#FF9A8B] flex items-center justify-center overflow-hidden shadow-sm">
+                    {getAvatar(post.author)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-[13px] text-gray-900">{post.author.username}</p>
+                    <p className="text-[11px] text-gray-400 font-medium">{timeAgo(post.createdAt)} · {CATEGORIES.find(c => c.value === post.category)?.label || post.category}</p>
+                  </div>
+                  {post.isMine && (
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(post.id); }} className="p-1.5 text-gray-300 hover:text-red-400 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Content */}
+                <div className="px-4 pb-3 cursor-pointer" onClick={() => openDetail(post)}>
+                  <p className="text-[14px] text-gray-800 leading-relaxed line-clamp-3 whitespace-pre-wrap">{post.content}</p>
+                </div>
+
+                {/* Images */}
+                {post.images.length > 0 && (
+                  <div className={`grid gap-1 px-1 ${post.images.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                    {post.images.slice(0, 4).map((img, i) => (
+                      <div
+                        key={i}
+                        onClick={() => setViewImage(img)}
+                        className={`relative cursor-pointer overflow-hidden ${
+                          post.images.length === 1 ? "h-56 rounded-2xl mx-3" :
+                          post.images.length === 3 && i === 0 ? "row-span-2 h-full rounded-l-2xl" : "h-28 last:rounded-br-2xl first:rounded-tl-2xl"
+                        }`}
+                      >
+                        <img src={img} alt="" className="w-full h-full object-cover" />
+                        {i === 3 && post.images.length > 4 && (
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold text-lg">+{post.images.length - 4}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center gap-6 px-4 py-3">
+                  <button onClick={() => handleLike(post.id)} className="flex items-center gap-1.5 group">
+                    <Heart
+                      size={18}
+                      className={`transition-all group-active:scale-125 ${post.isLiked ? "fill-red-500 text-red-500" : "text-gray-400"}`}
+                    />
+                    <span className={`text-xs font-bold ${post.isLiked ? "text-red-500" : "text-gray-400"}`}>{post.likeCount || ""}</span>
+                  </button>
+                  <button onClick={() => openDetail(post)} className="flex items-center gap-1.5 text-gray-400">
+                    <MessageCircle size={18} />
+                    <span className="text-xs font-bold">{post.commentCount || ""}</span>
+                  </button>
+                </div>
+              </article>
+            ))}
+
+            {hasMore && (
+              <button
+                onClick={() => fetchPosts(category, nextCursor)}
+                className="py-3 text-sm font-bold text-[#FF7B6E] text-center"
+              >
+                더 보기
+              </button>
+            )}
+          </>
+        )}
+        </div>
       </main>
+
+      {/* FAB — 글쓰기 */}
+      <button
+        onClick={() => setShowWrite(true)}
+        className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-br from-[#FF7B6E] to-[#FF9A8B] text-white rounded-full shadow-lg shadow-[#FF7B6E]/40 flex items-center justify-center active:scale-90 transition-transform z-50"
+      >
+        <Plus size={26} strokeWidth={2.5} />
+      </button>
+
+      {/* 글쓰기 모달 */}
+      {showWrite && (
+        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowWrite(false)} />
+          <div className="bg-white rounded-t-[36px] px-6 py-6 relative z-10 shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom duration-300">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-black text-gray-900">새 글 작성</h2>
+              <button onClick={() => setShowWrite(false)} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center">
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+
+            {/* Category chips */}
+            <div className="flex gap-2 mb-4 overflow-x-auto hide-scrollbar">
+              {CATEGORIES.filter(c => c.value !== "all").map(c => (
+                <button
+                  key={c.value}
+                  onClick={() => setWriteCategory(c.value)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                    writeCategory === c.value ? "bg-[#FF7B6E] text-white" : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  {c.emoji} {c.label}
+                </button>
+              ))}
+            </div>
+
+            <textarea
+              value={writeContent}
+              onChange={e => setWriteContent(e.target.value)}
+              placeholder="반려동물과의 일상을 공유해보세요 ✨"
+              className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 text-[14px] text-gray-800 font-medium outline-none resize-none min-h-[120px] focus:ring-2 focus:ring-[#FF7B6E]/20 border border-transparent focus:border-[#FF7B6E]/20"
+              autoFocus
+            />
+
+            {/* Image preview */}
+            {writeImages.length > 0 && (
+              <div className="flex gap-2 mt-3 overflow-x-auto hide-scrollbar">
+                {writeImages.map((url, i) => (
+                  <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => setWriteImages(prev => prev.filter((_, j) => j !== i))}
+                      className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center"
+                    >
+                      <X size={10} className="text-white" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mt-4">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading || writeImages.length >= 4}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gray-100 rounded-xl text-xs font-bold text-gray-600 disabled:opacity-40"
+                >
+                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                  사진 {writeImages.length}/4
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => e.target.files && handleUploadImages(e.target.files)} />
+              </div>
+
+              <button
+                onClick={handlePost}
+                disabled={posting || !writeContent.trim()}
+                className="px-6 py-2.5 bg-gradient-to-r from-[#FF7B6E] to-[#FF9A8B] text-white rounded-2xl font-bold text-sm disabled:opacity-40 active:scale-95 transition-transform"
+              >
+                {posting ? <Loader2 size={16} className="animate-spin" /> : "게시하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 상세/댓글 모달 */}
+      {detailPost && (
+        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDetailPost(null)} />
+          <div className="bg-white rounded-t-[36px] px-5 pt-5 pb-3 relative z-10 shadow-2xl flex flex-col max-h-[90vh] animate-in slide-in-from-bottom duration-300">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF7B6E] to-[#FF9A8B] flex items-center justify-center overflow-hidden">
+                  {getAvatar(detailPost.author)}
+                </div>
+                <div>
+                  <p className="font-bold text-[13px] text-gray-900">{detailPost.author.username}</p>
+                  <p className="text-[11px] text-gray-400">{timeAgo(detailPost.createdAt)}</p>
+                </div>
+              </div>
+              <button onClick={() => setDetailPost(null)} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center">
+                <X size={18} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto hide-scrollbar mb-3">
+              <p className="text-[14px] text-gray-800 leading-relaxed whitespace-pre-wrap mb-3">{detailPost.content}</p>
+
+              {detailPost.images.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto mb-4 hide-scrollbar">
+                  {detailPost.images.map((img, i) => (
+                    <img key={i} src={img} alt="" onClick={() => setViewImage(img)} className="h-40 rounded-xl object-cover cursor-pointer flex-shrink-0" />
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 mb-4 pb-3 border-b border-gray-100">
+                <button onClick={() => handleLike(detailPost.id)} className="flex items-center gap-1.5">
+                  <Heart size={18} className={detailPost.isLiked ? "fill-red-500 text-red-500" : "text-gray-400"} />
+                  <span className={`text-xs font-bold ${detailPost.isLiked ? "text-red-500" : "text-gray-400"}`}>{detailPost.likeCount}</span>
+                </button>
+                <span className="text-xs font-bold text-gray-400">💬 {detailPost.commentCount}</span>
+              </div>
+
+              {/* Comments */}
+              {loadingComments ? (
+                <div className="flex justify-center py-4"><Loader2 className="animate-spin text-gray-300" size={20} /></div>
+              ) : comments.length === 0 ? (
+                <p className="text-center text-xs text-gray-400 py-4">첫 번째 댓글을 남겨보세요!</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {comments.map(c => (
+                    <div key={c.id} className="flex gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center overflow-hidden flex-shrink-0 mt-0.5">
+                        {getAvatar(c.author)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-gray-800">{c.author.username}</span>
+                          <span className="text-[10px] text-gray-400">{timeAgo(c.createdAt)}</span>
+                          {c.isMine && (
+                            <button onClick={() => handleDeleteComment(c.id)} className="text-gray-300 hover:text-red-400 ml-auto">
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[13px] text-gray-700 mt-0.5">{c.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Comment input */}
+            <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+              <input
+                value={commentText}
+                onChange={e => setCommentText(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleComment()}
+                placeholder="댓글을 입력하세요..."
+                className="flex-1 bg-gray-50 rounded-full px-4 py-2.5 text-sm text-gray-800 outline-none font-medium"
+              />
+              <button
+                onClick={handleComment}
+                disabled={sendingComment || !commentText.trim()}
+                className="w-9 h-9 bg-[#FF7B6E] rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-transform"
+              >
+                {sendingComment ? <Loader2 size={14} className="animate-spin text-white" /> : <Send size={14} className="text-white" />}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 이미지 뷰어 */}
+      {viewImage && (
+        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center" onClick={() => setViewImage(null)}>
+          <img src={viewImage} alt="" className="max-w-full max-h-full object-contain" />
+          <button className="absolute top-6 right-6 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center" onClick={() => setViewImage(null)}>
+            <X size={20} className="text-white" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

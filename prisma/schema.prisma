@@ -258,3 +258,46 @@ model Pet365Backup {
 
   @@index([userId])
 }
+
+// Pet365Care 소셜 커뮤니티
+model PetPost {
+  id           String   @id @default(uuid())
+  authorId     String
+  content      String
+  images       String?        // JSON 배열: ["/uploads/pet_social_xxx.jpg", ...]
+  category     String   @default("daily")  // daily, walk, health, funny
+  likeCount    Int      @default(0)
+  commentCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  comments     PetComment[]
+  likes        PetLike[]
+
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([category])
+}
+
+model PetComment {
+  id        String   @id @default(uuid())
+  postId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  post      PetPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model PetLike {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post      PetPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
