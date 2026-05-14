@@ -244,7 +244,7 @@ export default function HomePage() {
 
   if (!loading && pets.length === 0) {
     return (
-      <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
+      <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
         <header className="flex items-center justify-between p-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
@@ -290,7 +290,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       <header className="flex items-center justify-between p-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">

@@ -180,7 +180,7 @@ export default function SocialPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center justify-between p-5 pt-6">
         <div className="flex items-center gap-3">

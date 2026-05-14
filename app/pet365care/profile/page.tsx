@@ -181,7 +181,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center justify-center p-6 bg-white rounded-b-[40px] shadow-sm">
         <h1 className="text-gray-900 font-extrabold text-xl tracking-tight">내 정보</h1>

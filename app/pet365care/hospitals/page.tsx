@@ -178,7 +178,7 @@ export default function HospitalsPage() {
   const meta = getMeta();
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {KAKAO_KEY && (
         <Script src={`//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`} strategy="afterInteractive" onLoad={() => setMapReady(true)} />
       )}

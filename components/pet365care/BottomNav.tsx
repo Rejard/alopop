@@ -16,8 +16,8 @@ export default function Pet365BottomNav() {
   ];
 
   return (
-    <nav className="absolute bottom-0 w-full bg-white/95 backdrop-blur-md rounded-t-[32px] px-4 py-4 shadow-[0_-15px_40px_-10px_rgba(0,0,0,0.05)] z-[200] pointer-events-auto">
-      <div className="flex justify-between items-center relative gap-1">
+    <nav className="flex-shrink-0 w-full bg-white border-t border-gray-100 px-2 pt-2 pb-3 z-[200]">
+      <div className="flex justify-between items-center gap-1">
         {navItems.map((item) => {
           const isActive = pathname === item.path;
 
@@ -25,24 +25,24 @@ export default function Pet365BottomNav() {
             <Link
               key={item.name}
               href={item.path}
-              className={`flex-1 flex flex-col items-center justify-center transition-all duration-300 relative group`}
+              className="flex-1 flex flex-col items-center justify-center py-1"
             >
               <div
-                className={`flex flex-col items-center justify-center w-14 h-14 transition-all duration-300 ${
+                className={`flex flex-col items-center justify-center w-12 h-10 rounded-2xl transition-colors duration-200 ${
                   isActive
-                    ? "bg-[#FF7F6E] text-white rounded-[24px] shadow-lg shadow-[#FF7F6E]/30 scale-110 -translate-y-2"
-                    : "text-gray-400 hover:text-gray-800"
+                    ? "bg-[#FF7F6E] text-white"
+                    : "text-gray-400"
                 }`}
               >
-                <item.icon size={22} strokeWidth={isActive ? 2.5 : 2} />
-                <span
-                  className={`text-[10px] font-bold tracking-tight mt-1 transition-colors duration-300 ${
-                    isActive ? "text-white" : "text-gray-400 group-hover:text-gray-800"
-                  }`}
-                >
-                  {item.name}
-                </span>
+                <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
               </div>
+              <span
+                className={`text-[10px] font-bold tracking-tight mt-0.5 ${
+                  isActive ? "text-[#FF7F6E]" : "text-gray-400"
+                }`}
+              >
+                {item.name}
+              </span>
             </Link>
           );
         })}

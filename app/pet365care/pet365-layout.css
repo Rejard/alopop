@@ -1,0 +1,28 @@
+/* Pet365Care 레이아웃 — 콘텐츠와 하단바 물리적 분리 */
+.pet365-root {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  overflow: hidden;
+  background: #F4F4F6;
+}
+
+.pet365-content {
+  overflow-y: auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  /* fixed 요소를 이 컨테이너 안에 가두는 트릭 */
+  transform: translateZ(0);
+  position: relative;
+}
+
+/* hide scrollbar */
+.pet365-content::-webkit-scrollbar {
+  display: none;
+}
+.pet365-content {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

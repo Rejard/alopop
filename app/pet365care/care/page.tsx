@@ -95,7 +95,7 @@ export default function CarePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F4F4F6] pb-24 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Hidden File Input */}
       <input 
         type="file" 
