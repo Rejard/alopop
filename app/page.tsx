@@ -3154,15 +3154,17 @@ export default function Home() {
                               const roomDisplayName = room.name || displayMember?.user?.username || '?';
                               const firstChar = [...roomDisplayName][0] || '?';
                               return (
-                            <div className="relative w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shrink-0 shadow-inner overflow-hidden">
-                              {memberAvatar ? (
-                                <>
-                                  <img src={memberAvatar} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; el.parentElement!.querySelector('[data-fallback]')!.classList.remove('hidden'); }} />
-                                  <span data-fallback="" className="text-xl hidden">{firstChar}</span>
-                                </>
-                              ) : (
-                                <span className="text-xl">{firstChar}</span>
-                              )}
+                            <div data-chat-room-avatar-wrap className="relative w-12 h-12 shrink-0">
+                              <div data-chat-room-avatar-clip className="w-full h-full rounded-lg bg-surface-container-high flex items-center justify-center text-primary shadow-inner overflow-hidden">
+                                {memberAvatar ? (
+                                  <>
+                                    <img src={memberAvatar} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; el.parentElement!.querySelector('[data-fallback]')!.classList.remove('hidden'); }} />
+                                    <span data-fallback="" className="text-xl hidden">{firstChar}</span>
+                                  </>
+                                ) : (
+                                  <span className="text-xl">{firstChar}</span>
+                                )}
+                              </div>
                               {unreadCounts[room.id] > 0 && (
                                 <span className="absolute -top-1.5 -right-1.5 bg-secondary border-2 border-dark-bg text-dark-bg text-[10px] sm:text-xs font-bold leading-none min-w-[22px] h-[22px] px-1 flex items-center justify-center rounded-full z-10 shadow-[0_0_10px_rgba(98,250,227,0.5)]">
                                   {unreadCounts[room.id] > 99 ? '99+' : unreadCounts[room.id]}
