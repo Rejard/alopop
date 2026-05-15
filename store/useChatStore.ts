@@ -145,22 +145,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
 
     // 오프라인 상태에서 밀린 큐 메시지 뭉치 수신 이벤트
-    socket.on('receive_offline_messages', async (messages: ChatMessage[]) => {
-      console.log(`Received offline messages: ${messages.length}`);
-      if (messages.length > 0) {
-        const existingIds = new Set((await db.messages.toArray()).map(m => m.messageId));
-        const msgsToSave = messages.map(m => {
-          const m2 = { ...m } as any;
-          delete m2.id;
-          return m2;
-        }).filter(m => !existingIds.has(m.messageId));
-
-        if (msgsToSave.length > 0) {
-          await db.messages.bulkAdd(msgsToSave);
-          
-          window.dispatchEvent(new CustomEvent('new_chat_message', { detail: msgsToSave[msgsToSave.length - 1] }));
-        }
-      }
+    socket.on('offline_activity_summary', (summary: { rooms: Array<{ roomId: string; count: number; latestAt: number }> }) => {
+      window.dispatchEvent(new CustomEvent('offline_activity_summary', { detail: summary }));
     });
 
     set({ socket });

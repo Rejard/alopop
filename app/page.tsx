@@ -821,7 +821,31 @@ export default function Home() {
       setActiveRoomUsers(activeUsers);
     };
 
+    const handleOfflineActivitySummary = (e: any) => {
+      const rooms = Array.isArray(e.detail?.rooms) ? e.detail.rooms : [];
+      if (rooms.length === 0) return;
+
+      setLatestMessageTimes(prev => {
+        const next = { ...prev };
+        rooms.forEach((item: any) => {
+          if (!item?.roomId) return;
+          next[item.roomId] = Math.max(next[item.roomId] || 0, item.latestAt || Date.now());
+        });
+        return next;
+      });
+
+      setUnreadCounts(prev => {
+        const next = { ...prev };
+        rooms.forEach((item: any) => {
+          if (!item?.roomId || currentRoom?.id === item.roomId) return;
+          next[item.roomId] = Math.max(next[item.roomId] || 0, item.count || 1);
+        });
+        return next;
+      });
+    };
+
     window.addEventListener('new_chat_message', handleNewMessage);
+    window.addEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
     window.addEventListener('room_read_update', handleReadUpdateEvent);
     window.addEventListener('room_name_updated', handleRoomNameUpdated as EventListener);
     window.addEventListener('typing_start', handleHumanTypingStart as EventListener);
@@ -836,6 +860,7 @@ export default function Home() {
 
     return () => {
       window.removeEventListener('new_chat_message', handleNewMessage);
+      window.removeEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
       window.removeEventListener('room_read_update', handleReadUpdateEvent);
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
       window.visualViewport?.removeEventListener('scroll', handleViewportResize);

@@ -80,6 +80,8 @@ const handle = app.getRequestHandler();
 // ?ㅽ봽?쇱씤 硫붿떆吏 ?곹깭 愿由? 硫붾え由?RAM) ?섏〈 ?쒓굅
 // ?댁젣遺??offlineQueue(Map) ???Prisma DB(OfflineMessage)瑜??ъ슜?섏뿬 OOM(硫붾え由??꾩닔)瑜??꾨꼍??諛⑹??⑸땲??
 const roomPresence = new Map();
+const OFFLINE_NOTICE_TTL_MS = Number(process.env.OFFLINE_NOTICE_TTL_DAYS || 7) * 24 * 60 * 60 * 1000;
+const WEB_PUSH_TTL_SECONDS = Number(process.env.WEB_PUSH_TTL_SECONDS || 24 * 60 * 60);
 
 app.prepare().then(() => {
   const expressApp = express();
@@ -88,7 +90,7 @@ app.prepare().then(() => {
 
   function createOfflineNotice(message) {
     return JSON.stringify({
-      messageId: message?.messageId || `offline_${Date.now()}`,
+      messageId: `offline_notice_${message?.messageId || Date.now()}`,
       senderId: 'system',
       senderName: 'System',
       receiverId: message?.receiverId || null,
@@ -97,6 +99,56 @@ app.prepare().then(() => {
       createdAt: message?.createdAt || Date.now(),
       offlineNotice: true,
     });
+  }
+
+  function parseOfflineNotice(payload) {
+    try {
+      return JSON.parse(payload);
+    } catch {
+      return null;
+    }
+  }
+
+  let offlineQueueColumns = null;
+
+  async function hasEnhancedOfflineQueue() {
+    if (offlineQueueColumns) return offlineQueueColumns.has('expiresAt') && offlineQueueColumns.has('status');
+    const columns = await prisma.$queryRawUnsafe(`PRAGMA table_info('OfflineMessage')`);
+    offlineQueueColumns = new Set(columns.map(column => column.name));
+    return offlineQueueColumns.has('expiresAt') && offlineQueueColumns.has('status');
+  }
+
+  async function deleteExpiredOfflineMessages() {
+    if (await hasEnhancedOfflineQueue()) {
+      await prisma.$executeRawUnsafe(
+        'DELETE FROM OfflineMessage WHERE expiresAt <= ?',
+        new Date().toISOString()
+      );
+      return;
+    }
+
+    await prisma.offlineMessage.deleteMany({
+      where: { createdAt: { lte: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) } }
+    });
+  }
+
+  async function saveOfflineNotice(receiverId, message) {
+    if (!receiverId || !message) return null;
+    if (!(await hasEnhancedOfflineQueue())) {
+      return prisma.offlineMessage.create({
+        data: { receiverId, payload: createOfflineNotice(message) }
+      }).catch(e => console.error('Offline notice save err:', e));
+    }
+
+    return prisma.$executeRawUnsafe(
+      `INSERT INTO OfflineMessage (id, receiverId, kind, status, payload, createdAt, expiresAt, attemptCount)
+       VALUES (?, ?, 'NOTICE', 'PENDING', ?, ?, ?, 0)`,
+      crypto.randomUUID(),
+      receiverId,
+      createOfflineNotice(message),
+      new Date().toISOString(),
+      new Date(Date.now() + OFFLINE_NOTICE_TTL_MS).toISOString()
+    ).catch(e => console.error('Offline notice save err:', e));
   }
 
   async function getAuthenticatedSocketUser(socket) {
@@ -151,18 +203,56 @@ app.prepare().then(() => {
     const userId = socket.userId;
     if (!userId) return;
     try {
-      const records = await prisma.offlineMessage.findMany({
-        where: { receiverId: userId },
-        orderBy: { createdAt: 'asc' }
-      });
-      if (records.length > 0) {
-        const messages = records.map(r => JSON.parse(r.payload));
-        socket.emit('receive_offline_messages', messages);
-        console.log(`?뱿 Emitted ${messages.length} offline messages from DB to ${userId}`);
-        
-        await prisma.offlineMessage.deleteMany({
-          where: { id: { in: records.map(r => r.id) } }
+      await deleteExpiredOfflineMessages();
+      const enhancedOfflineQueue = await hasEnhancedOfflineQueue();
+      const records = enhancedOfflineQueue
+        ? await prisma.$queryRawUnsafe(
+          `SELECT id, payload, createdAt
+           FROM OfflineMessage
+           WHERE receiverId = ? AND status = 'PENDING' AND expiresAt > ?
+           ORDER BY createdAt ASC`,
+          userId,
+          new Date().toISOString()
+        )
+        : await prisma.offlineMessage.findMany({
+          where: {
+            receiverId: userId,
+            createdAt: { gt: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) },
+          },
+          orderBy: { createdAt: 'asc' },
         });
+      if (records.length > 0) {
+        const rooms = new Map();
+        for (const record of records) {
+          const notice = parseOfflineNotice(record.payload);
+          if (!notice?.receiverId) continue;
+          const room = rooms.get(notice.receiverId) || { roomId: notice.receiverId, count: 0, latestAt: 0 };
+          room.count += 1;
+          room.latestAt = Math.max(room.latestAt, notice.createdAt || new Date(record.createdAt).getTime());
+          rooms.set(notice.receiverId, room);
+        }
+
+        const summary = Array.from(rooms.values());
+        if (summary.length > 0) {
+          socket.emit('offline_activity_summary', { rooms: summary });
+          console.log(`Emitted offline activity summary for ${summary.length} rooms to ${userId}`);
+        }
+        
+        const ids = records.map(r => r.id);
+        if (ids.length > 0 && enhancedOfflineQueue) {
+          const placeholders = ids.map(() => '?').join(',');
+          await prisma.$executeRawUnsafe(
+            `UPDATE OfflineMessage
+             SET status = 'DELIVERED', deliveredAt = ?, attemptCount = attemptCount + 1
+             WHERE id IN (${placeholders})`,
+            new Date().toISOString(),
+            ...ids
+          );
+        } else if (ids.length > 0) {
+          await prisma.offlineMessage.deleteMany({
+            where: { id: { in: ids } }
+          });
+        }
       }
     } catch (e) {
       console.error('deliverOfflineMessages error:', e);
@@ -200,7 +290,11 @@ app.prepare().then(() => {
           keys: { p256dh: sub.p256dh, auth: sub.auth }
         };
         try {
-          await webpush.sendNotification(pushConf, payload);
+          await webpush.sendNotification(pushConf, payload, {
+            TTL: WEB_PUSH_TTL_SECONDS,
+            urgency: 'normal',
+            topic: `alopop-${targetUserId}`.slice(0, 32),
+          });
           console.log(`?벒 Successfully sent Web Push to ${targetUserId}`);
         } catch (err) {
           if (err.statusCode === 404 || err.statusCode === 410) {
@@ -407,15 +501,11 @@ app.prepare().then(() => {
           if (roomSet && roomSet.size > 0) {
             io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
-                await prisma.offlineMessage.create({
-                  data: { receiverId: targetId, payload: createOfflineNotice(message) }
-                }).catch(e => console.error('Offline msg save err:', e));
+                await saveOfflineNotice(targetId, message);
               }
             });
           } else {
-            prisma.offlineMessage.create({
-              data: { receiverId: targetId, payload: createOfflineNotice(message) }
-            }).catch(e => console.error('Offline msg save err:', e));
+            saveOfflineNotice(targetId, message);
           }
         });
       }
@@ -472,9 +562,7 @@ app.prepare().then(() => {
               io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                 if (err || !responses || Object.keys(responses).length === 0) {
                   console.log(`?좑툘 ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
-                  await prisma.offlineMessage.create({
-                    data: { receiverId: targetId, payload: createOfflineNotice(message) }
-                  }).catch(e => console.error('Offline msg save err:', e));
+                  await saveOfflineNotice(targetId, message);
                   
                   sendWebPush(targetId, message).catch(console.error); // 鍮꾨룞湲?Fire-and-forget
                 } else {
@@ -483,11 +571,9 @@ app.prepare().then(() => {
               });
             } else {
               // ?ㅽ봽?쇱씤?대㈃ DB???곴뎄 蹂닿? (?쒕쾭 ?ъ떆???κ린 誘몄젒????硫붾え由??꾩닔 諛⑹?)
-              prisma.offlineMessage.create({
-                data: { receiverId: targetId, payload: createOfflineNotice(message) }
-              }).then(() => {
+              saveOfflineNotice(targetId, message).then(() => {
                 console.log(`?뱿 Paused message for offline member ${targetId} into DB`);
-              }).catch(e => console.error('Offline msg save err:', e));
+              });
               
               // ?깆씠 ?꾩쟾??醫낅즺?섏뿀嫄곕굹 諛깃렇?쇱슫?쒖씤 寃쎌슦 ?몄떆 ?뚮┝ ?몃━嫄?(鍮꾨룞湲?泥섎━濡??쒕쾭 釉붾줈???쒓굅)
               sendWebPush(targetId, message).catch(console.error);
@@ -549,9 +635,7 @@ app.prepare().then(() => {
             io.to(receiverId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
                 console.log(`?좑툘 ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
-                await prisma.offlineMessage.create({
-                  data: { receiverId: receiverId, payload: createOfflineNotice(message) }
-                }).catch(e => console.error('Offline msg save err:', e));
+                await saveOfflineNotice(receiverId, message);
                 
                 sendWebPush(receiverId, message).catch(console.error);
               } else {
@@ -559,11 +643,9 @@ app.prepare().then(() => {
               }
             });
           } else {
-            prisma.offlineMessage.create({
-              data: { receiverId: receiverId, payload: createOfflineNotice(message) }
-            }).then(() => {
+            saveOfflineNotice(receiverId, message).then(() => {
               console.log(`?뱿 Paused message for offline destination ${receiverId} into DB`);
-            }).catch(e => console.error('Offline msg save err:', e));
+            });
             
             sendWebPush(receiverId, message).catch(console.error);
           }
@@ -662,9 +744,7 @@ app.prepare().then(() => {
         io.to(targetUserId).timeout(3000).emit('receive_message', message, async (err, responses) => {
           if (err || !responses || Object.keys(responses).length === 0) {
             console.log(`[Pet365-Relay] ?좑툘 ACK timeout for ${targetUserId}, treating as offline`);
-            await prisma.offlineMessage.create({
-              data: { receiverId: targetUserId, payload: createOfflineNotice(message) }
-            }).catch(e => console.error('Offline msg save err:', e));
+            await saveOfflineNotice(targetUserId, message);
             sendWebPush(targetUserId, message).catch(console.error);
             return res.json({ delivered: false });
           }
@@ -678,6 +758,7 @@ app.prepare().then(() => {
     } else {
       // ?좎?媛 ?ㅽ봽?쇱씤 ??OfflineMessage DB?????+ ?몄떆 ?뚮┝
       console.log(`[Pet365-Relay] ?뱿 User ${targetUserId} is offline`);
+      await saveOfflineNotice(targetUserId, message);
       sendWebPush(targetUserId, message).catch(console.error);
       return res.json({ delivered: false });
     }
@@ -773,17 +854,13 @@ app.prepare().then(() => {
                 // Online
                 io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                   if (err || !responses || Object.keys(responses).length === 0) {
-                    await prisma.offlineMessage.create({
-                      data: { receiverId: targetId, payload: createOfflineNotice(message) }
-                    }).catch(e => console.error('Offline msg save err:', e));
+                    await saveOfflineNotice(targetId, message);
                     sendWebPush(targetId, message).catch(console.error);
                   }
                 });
               } else {
                 // Offline
-                prisma.offlineMessage.create({
-                  data: { receiverId: targetId, payload: createOfflineNotice(message) }
-                }).catch(e => console.error('Offline msg save err:', e));
+                saveOfflineNotice(targetId, message);
                 sendWebPush(targetId, message).catch(console.error);
               }
             });

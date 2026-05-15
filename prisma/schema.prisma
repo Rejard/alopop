@@ -201,13 +201,19 @@ model OfflineMessage {
   id          String   @id @default(uuid())
   receiverId  String
   receiver    User     @relation("UserOfflineMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  kind        String   @default("NOTICE")
+  status      String   @default("PENDING")
   
   // JSON 문자열 형태로 메시지 객체 자체를 보관 (발신자, 내용, 타입 등 모두 포함)
   payload     String
   
   createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  deliveredAt DateTime?
+  attemptCount Int     @default(0)
   
   @@index([receiverId])
+  @@index([expiresAt])
 }
 
 // =============================================

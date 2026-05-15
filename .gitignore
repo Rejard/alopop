@@ -46,6 +46,7 @@ vapid.json
 /public/uploads
 
 # local database files
+.db-backups/
 *.db
 *.db-journal
 *.sqlite

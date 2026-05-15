@@ -20,6 +20,7 @@ const apiKey = args[4];
 const aiModel = args[5];
 const taskContent = args.slice(6).join(' ');
 const internalApiSecret = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || '';
+const WEB_PUSH_TTL_SECONDS = Number(process.env.WEB_PUSH_TTL_SECONDS || 24 * 60 * 60);
 
 async function main() {
   console.log(`[VibeCoder] Starting autonomous background task...`);
@@ -195,7 +196,11 @@ async function main() {
               auth: sub.auth
             }
           };
-          await webpush.sendNotification(pushConfig, payload);
+          await webpush.sendNotification(pushConfig, payload, {
+            TTL: WEB_PUSH_TTL_SECONDS,
+            urgency: 'normal',
+            topic: `alopop-vibe-${userId}`.slice(0, 32),
+          });
         } catch (e) {
           console.error('[VibeCoder] Failed to send push notification to an endpoint', e);
         }
