@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
-    const { userId, subscription } = await request.json();
-    if (!userId || !subscription || !subscription.endpoint || !subscription.keys) {
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
+
+    const { subscription } = await request.json();
+    if (!subscription || !subscription.endpoint || !subscription.keys) {
       return NextResponse.json({ error: 'Missing subscription data' }, { status: 400 });
     }
 
@@ -13,17 +17,17 @@ export async function POST(request: Request) {
       update: {
         p256dh: subscription.keys.p256dh,
         auth: subscription.keys.auth,
-        userId: userId
+        userId: currentUser.id
       },
       create: {
         endpoint: subscription.endpoint,
         p256dh: subscription.keys.p256dh,
         auth: subscription.keys.auth,
-        userId: userId
+        userId: currentUser.id
       }
     });
 
-    return NextResponse.json({ success: true, subscription: saved });
+    return NextResponse.json({ success: true, subscriptionId: saved.id });
   } catch (error) {
     console.error('Web Push Subscribe Error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

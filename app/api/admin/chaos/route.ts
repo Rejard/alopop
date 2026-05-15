@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
+import { requireAdminUser } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { user: adminUser, response } = await requireAdminUser(request);
+    if (!adminUser) return response;
+
     let status = { status: 'idle' };
     try {
       const statusData = await fs.readFile(path.join(process.cwd(), 'chaos_status.json'), 'utf8');
@@ -24,6 +27,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { user: adminUser, response } = await requireAdminUser(request);
+    if (!adminUser) return response;
+
     const { userCount, durationSec } = await request.json();
     
     try {

@@ -13,8 +13,6 @@
   overflow-y: auto;
   min-height: 0;
   -webkit-overflow-scrolling: touch;
-  /* fixed 요소를 이 컨테이너 안에 가두는 트릭 */
-  transform: translateZ(0);
   position: relative;
 }
 

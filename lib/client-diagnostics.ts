@@ -9,6 +9,9 @@ type ClientDiagnosticInput = DiagnosticPayload & {
 function trimText(value: unknown, maxLength = 220) {
   if (typeof value !== 'string') return undefined;
   return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/https?:\/\/\S+/gi, '[redacted-url]')
+    .replace(/\+?\d[\d\s().-]{8,}\d/g, '[redacted-phone]')
     .replace(/[A-Za-z0-9_-]{24,}/g, '[redacted]')
     .replace(/AIza[0-9A-Za-z_-]+/g, '[redacted]')
     .slice(0, maxLength);

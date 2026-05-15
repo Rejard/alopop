@@ -12,6 +12,7 @@ import { recordFreeEventUsage, resolveAiKeyForRequest } from '@/lib/ai-key-resol
 import { checkRateLimit } from '@/lib/rate-limit';
 
 type Provider = 'openai' | 'gemini' | 'anthropic';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || '';
 
 function defaultModelForProvider(provider: Provider) {
   if (provider === 'gemini') return 'gemini-1.5-pro-latest';
@@ -97,6 +98,7 @@ export async function POST(request: Request) {
         provider,
         aiModel,
         byokKey,
+        allowEnvFallback: false,
       });
 
       apiKey = resolvedAi.apiKey;
@@ -188,7 +190,7 @@ export async function POST(request: Request) {
       try {
         const res = await fetch(`http://127.0.0.1:${port}/api/internal/claw-message`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-alopop-internal': INTERNAL_API_SECRET },
           body: JSON.stringify({ aiUserId, aiUserName: aiUser?.username, message: content, roomId })
         });
         
@@ -211,7 +213,7 @@ export async function POST(request: Request) {
         const port = process.env.PORT || 3099;
         const res = await fetch(`http://127.0.0.1:${port}/api/internal/agent-tool`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-alopop-internal': INTERNAL_API_SECRET },
           body: JSON.stringify({ aiUserId, tool: toolName, args })
         });
         if (!res.ok) {

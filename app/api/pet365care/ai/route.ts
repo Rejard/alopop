@@ -25,6 +25,7 @@ export async function POST(request: Request) {
       user: currentUser,
       provider: 'gemini',
       aiModel: 'gemini-2.5-flash',
+      allowEnvFallback: false,
     });
 
     if (!resolvedAi.apiKey) {

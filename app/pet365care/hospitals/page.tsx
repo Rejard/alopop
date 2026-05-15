@@ -18,9 +18,10 @@ declare global {
         Map: new (container: HTMLElement, options: Record<string, unknown>) => {
           setCenter: (latlng: unknown) => void;
           setLevel: (level: number) => void;
+          relayout: () => void;
         };
         Marker: new (options: Record<string, unknown>) => {
-          setMap: (map: unknown) => void;
+          setMap: (map: unknown | null) => void;
         };
         InfoWindow: new (options: Record<string, unknown>) => {
           open: (map: unknown, marker: unknown) => void;
@@ -74,6 +75,8 @@ export default function HospitalsPage() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstanceRef = useRef<any>(null);
+  const markerRefs = useRef<{ setMap: (map: unknown | null) => void }[]>([]);
+  const overlayRefs = useRef<{ setMap: (map: unknown | null) => void }[]>([]);
 
   // GPS
   useEffect(() => {
@@ -129,19 +132,41 @@ export default function HospitalsPage() {
   };
 
   // 카카오맵
+  const clearMapObjects = useCallback(() => {
+    markerRefs.current.forEach(marker => marker.setMap(null));
+    overlayRefs.current.forEach(overlay => overlay.setMap(null));
+    markerRefs.current = [];
+    overlayRefs.current = [];
+  }, []);
+
+  const relayoutMap = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !window.kakao?.maps) return;
+
+    requestAnimationFrame(() => {
+      map.relayout();
+      if (userLat && userLng) {
+        map.setCenter(new window.kakao.maps.LatLng(userLat, userLng));
+      }
+    });
+  }, [userLat, userLng]);
+
   const initMap = useCallback(() => {
     if (!mapContainerRef.current || !window.kakao?.maps) return;
     window.kakao.maps.load(() => {
+      clearMapObjects();
       const center = userLat && userLng
         ? new window.kakao.maps.LatLng(userLat, userLng)
         : new window.kakao.maps.LatLng(37.5000, 126.7700);
       const level = ZOOM_LEVELS[distanceFilter] || 7;
       const map = new window.kakao.maps.Map(mapContainerRef.current!, { center, level });
       mapInstanceRef.current = map;
+      relayoutMap();
 
       hospitals.forEach(h => {
         const position = new window.kakao.maps.LatLng(h.lat, h.lng);
         const marker = new window.kakao.maps.Marker({ position, map });
+        markerRefs.current.push(marker);
         const content = `
           <div style="padding:8px 12px;border-radius:12px;background:white;box-shadow:0 2px 12px rgba(0,0,0,0.15);font-family:'Plus Jakarta Sans',sans-serif;min-width:160px;border:1px solid #f0f0f0;">
             <p style="font-weight:800;font-size:13px;color:#1a1a1a;margin:0 0 4px;">${h.name}</p>
@@ -153,8 +178,12 @@ export default function HospitalsPage() {
           </div>
         `;
         const overlay = new window.kakao.maps.CustomOverlay({ content, position, yAnchor: 1.3 });
+        overlayRefs.current.push(overlay);
+        let isOverlayOpen = false;
         window.kakao.maps.event.addListener(marker, "click", () => {
-          overlay.setMap(overlay.setMap === undefined ? null : map);
+          overlayRefs.current.forEach(item => item.setMap(null));
+          isOverlayOpen = !isOverlayOpen;
+          overlay.setMap(isOverlayOpen ? map : null);
           setSelectedHospital(h);
         });
       });
@@ -167,11 +196,29 @@ export default function HospitalsPage() {
         }).setMap(map);
       }
     });
-  }, [hospitals, userLat, userLng, distanceFilter]);
+  }, [clearMapObjects, hospitals, relayoutMap, userLat, userLng, distanceFilter]);
 
   useEffect(() => {
-    if (viewMode === "map" && mapReady && !loading) setTimeout(initMap, 100);
-  }, [viewMode, mapReady, loading, initMap]);
+    if (viewMode !== "map" || !mapReady || loading) return;
+
+    const timer = window.setTimeout(initMap, 100);
+    return () => {
+      window.clearTimeout(timer);
+      clearMapObjects();
+    };
+  }, [viewMode, mapReady, loading, initMap, clearMapObjects]);
+
+  useEffect(() => {
+    if (viewMode !== "map") return;
+
+    window.addEventListener("resize", relayoutMap);
+    window.visualViewport?.addEventListener("resize", relayoutMap);
+
+    return () => {
+      window.removeEventListener("resize", relayoutMap);
+      window.visualViewport?.removeEventListener("resize", relayoutMap);
+    };
+  }, [viewMode, relayoutMap]);
 
   const handleCall = (phone: string) => { window.location.href = `tel:${phone}`; };
 
@@ -269,8 +316,8 @@ export default function HospitalsPage() {
       {viewMode === "map" && (
         <div className="px-4 mt-4" onTouchStart={() => { (document.activeElement as HTMLElement)?.blur(); }}>
           {/* Wrapper: 둥근 모서리 + overflow-hidden 분리 → 맵 타일 렌더링 충돌 방지 */}
-          <div className="rounded-[24px] overflow-hidden shadow-md border border-gray-200" style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}>
-            <div ref={mapContainerRef} className="w-full h-[50vh]" style={{ transform: 'translateZ(0)', willChange: 'transform', touchAction: 'pan-x pan-y' }} />
+          <div className="rounded-[24px] overflow-hidden shadow-md border border-gray-200 bg-gray-100">
+            <div ref={mapContainerRef} className="w-full h-[clamp(360px,58dvh,620px)]" style={{ touchAction: 'pan-x pan-y' }} />
           </div>
           {selectedHospital && (
             <div className="bg-white rounded-[24px] p-5 shadow-sm mt-3 flex flex-col gap-2">

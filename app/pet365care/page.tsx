@@ -214,7 +214,10 @@ export default function HomePage() {
   const [tipModalOpen, setTipModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     const loadedPets = getPets();
     setPets(loadedPets);
     if (loadedPets.length > 0) setExpandedPetId(loadedPets[0].id);

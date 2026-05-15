@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
+import { requireCurrentUser } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
+
     const { mbti, gender, age, aiName, aiProvider, apiKey } = await request.json();
 
     if (!mbti || !gender || !age) {

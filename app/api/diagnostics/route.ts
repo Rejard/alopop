@@ -15,8 +15,12 @@ import {
 export const dynamic = 'force-dynamic';
 
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
+const RETAIN_LOG_BYTES = 1024 * 1024;
 const LOG_DIR = path.join(process.cwd(), 'data');
 const LOG_FILE = path.join(LOG_DIR, 'diagnostics.jsonl');
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 30;
+const diagnosticRateLimits = new Map<string, { count: number; resetAt: number }>();
 
 const DiagnosticSchema = z.object({
   area: z.enum(DIAGNOSTIC_AREAS),
@@ -46,7 +50,9 @@ async function appendDiagnostic(entry: Record<string, unknown>) {
   try {
     const current = await stat(LOG_FILE);
     if (current.size > MAX_LOG_BYTES) {
-      await writeFile(LOG_FILE, '', 'utf8');
+      const content = await readFile(LOG_FILE, 'utf8');
+      const retained = content.slice(-RETAIN_LOG_BYTES).split('\n').slice(1).join('\n');
+      await writeFile(LOG_FILE, retained ? `${retained}\n` : '', 'utf8');
     }
   } catch {
     // Missing log file is fine.
@@ -55,8 +61,31 @@ async function appendDiagnostic(entry: Record<string, unknown>) {
   await writeFile(LOG_FILE, `${JSON.stringify(entry)}\n`, { encoding: 'utf8', flag: 'a' });
 }
 
+function getClientKey(request: Request) {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || 'unknown';
+}
+
+function checkDiagnosticRateLimit(request: Request) {
+  const key = getClientKey(request);
+  const now = Date.now();
+  const current = diagnosticRateLimits.get(key);
+  if (!current || current.resetAt <= now) {
+    diagnosticRateLimits.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  if (current.count >= RATE_LIMIT_MAX) return false;
+  current.count += 1;
+  return true;
+}
+
 export async function POST(request: Request) {
   try {
+    if (!checkDiagnosticRateLimit(request)) {
+      return NextResponse.json({ error: 'Too many diagnostic events' }, { status: 429 });
+    }
+
     const currentUser = await getCurrentUser(request);
     const parseResult = DiagnosticSchema.safeParse(await request.json());
     if (!parseResult.success) {

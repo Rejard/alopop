@@ -47,6 +47,7 @@ export async function POST(request: Request) {
       provider,
       aiModel,
       byokKey,
+      allowEnvFallback: false,
     });
 
     if (resolvedAi.limitExceeded) {

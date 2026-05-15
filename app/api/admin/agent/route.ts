@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireCurrentUser } from '@/lib/auth';
+import { requireAdminUser } from '@/lib/auth';
 import { randomBytes } from 'crypto';
 
 export async function GET(request: Request) {
-  const { user } = await requireCurrentUser(request);
-  // Allow normal users to create their own agents? The user asked to just log in and create. Let's allow any logged in user.
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { user, response } = await requireAdminUser(request);
+  if (!user) return response;
 
   const agents = await prisma.user.findMany({
     where: { isAgent: true, aiOwnerId: user.id },
@@ -17,8 +16,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { user } = await requireCurrentUser(request);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { user, response } = await requireAdminUser(request);
+  if (!user) return response;
 
   const { name, path, role } = await request.json();
   if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -49,8 +48,8 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const { user } = await requireCurrentUser(request);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { user, response } = await requireAdminUser(request);
+  if (!user) return response;
 
   const { id, name, path, avatarUrl, role } = await request.json();
   if (!id || !name) return NextResponse.json({ error: 'ID and Name are required' }, { status: 400 });

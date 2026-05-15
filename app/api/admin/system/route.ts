@@ -13,8 +13,11 @@ const UpdateSystemSettingsSchema = z.object({
   })),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { user: adminUser, response } = await requireAdminUser(request);
+    if (!adminUser) return response;
+
     const settings = await prisma.systemSetting.findMany({
       orderBy: { key: 'asc' },
     });

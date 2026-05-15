@@ -19,6 +19,7 @@ const provider = args[3];
 const apiKey = args[4];
 const aiModel = args[5];
 const taskContent = args.slice(6).join(' ');
+const internalApiSecret = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || '';
 
 async function main() {
   console.log(`[VibeCoder] Starting autonomous background task...`);
@@ -30,7 +31,7 @@ async function main() {
   try {
     await fetch(`http://127.0.0.1:${port}/api/internal/vibe-notify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-alopop-internal': internalApiSecret },
       body: JSON.stringify({ action: 'start', roomId, aiUserId })
     });
   } catch(e) { console.error('Failed to notify vibe start', e); }
@@ -63,7 +64,7 @@ async function main() {
       const port = process.env.PORT || 3099;
       const res = await fetch(`http://127.0.0.1:${port}/api/internal/agent-tool`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-alopop-internal': internalApiSecret },
         body: JSON.stringify({ aiUserId, tool: toolName, args })
       });
       if (!res.ok) {
@@ -156,7 +157,7 @@ async function main() {
     try {
       await fetch(`http://127.0.0.1:${port}/api/internal/vibe-notify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-alopop-internal': internalApiSecret },
         body: JSON.stringify({ 
           action: 'message', 
           roomId, 

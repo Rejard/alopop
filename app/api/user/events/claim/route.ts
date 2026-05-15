@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { userId } = await request.json();
-
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
-    }
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
+    const userId = currentUser.id;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {

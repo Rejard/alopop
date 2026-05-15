@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Alonics Inc. (주식회사 알로닉스). All rights reserved.
+﻿// Copyright (c) 2026 Alonics Inc. (二쇱떇?뚯궗 ?뚮줈?됱뒪). All rights reserved.
 // Licensed under the AGPL-3.0 License. 
 // For commercial use, investment, or partnerships, please contact the author.
 const express = require('express');
@@ -73,18 +73,31 @@ function verifySessionToken(token) {
   }
 }
 
-// Next.js 앱 초기화
+// Next.js ??珥덇린??
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-// 오프라인 메시지 상태 관리: 메모리(RAM) 의존 제거
-// 이제부터 offlineQueue(Map) 대신 Prisma DB(OfflineMessage)를 사용하여 OOM(메모리 누수)를 완벽히 방지합니다.
+// ?ㅽ봽?쇱씤 硫붿떆吏 ?곹깭 愿由? 硫붾え由?RAM) ?섏〈 ?쒓굅
+// ?댁젣遺??offlineQueue(Map) ???Prisma DB(OfflineMessage)瑜??ъ슜?섏뿬 OOM(硫붾え由??꾩닔)瑜??꾨꼍??諛⑹??⑸땲??
 const roomPresence = new Map();
 
 app.prepare().then(() => {
   const expressApp = express();
   const { PrismaClient } = require('@prisma/client');
   const prisma = new PrismaClient();
+
+  function createOfflineNotice(message) {
+    return JSON.stringify({
+      messageId: message?.messageId || `offline_${Date.now()}`,
+      senderId: 'system',
+      senderName: 'System',
+      receiverId: message?.receiverId || null,
+      messageType: 'SYSTEM',
+      content: '새 메시지가 도착했습니다. 다시 접속해 확인해 주세요.',
+      createdAt: message?.createdAt || Date.now(),
+      offlineNotice: true,
+    });
+  }
 
   async function getAuthenticatedSocketUser(socket) {
     const cookies = parseCookieHeader(socket.handshake.headers.cookie);
@@ -145,7 +158,7 @@ app.prepare().then(() => {
       if (records.length > 0) {
         const messages = records.map(r => JSON.parse(r.payload));
         socket.emit('receive_offline_messages', messages);
-        console.log(`📥 Emitted ${messages.length} offline messages from DB to ${userId}`);
+        console.log(`?뱿 Emitted ${messages.length} offline messages from DB to ${userId}`);
         
         await prisma.offlineMessage.deleteMany({
           where: { id: { in: records.map(r => r.id) } }
@@ -156,7 +169,7 @@ app.prepare().then(() => {
     }
   }
 
-  // Web Push 초기화
+  // Web Push 珥덇린??
   const webpush = require('web-push');
   const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
   const privateVapidKey = process.env.VAPID_PRIVATE_KEY;
@@ -164,7 +177,7 @@ app.prepare().then(() => {
     webpush.setVapidDetails('mailto:support@alonics.com', publicVapidKey, privateVapidKey);
   }
 
-  // 푸시 발송용 헬퍼 함수
+  // ?몄떆 諛쒖넚???ы띁 ?⑥닔
   async function sendWebPush(targetUserId, messageData) {
     if (!publicVapidKey || !privateVapidKey) return;
     try {
@@ -176,8 +189,8 @@ app.prepare().then(() => {
       if (!subscriptions || subscriptions.length === 0) return;
       
       const payload = JSON.stringify({
-        title: `알로팝 - ${messageData.senderName}님의 새 메시지`,
-        body: messageData.content,
+        title: '?뚮줈??- 새 메시지',
+        body: '새 메시지가 도착했습니다.',
         url: `/`
       });
 
@@ -188,10 +201,10 @@ app.prepare().then(() => {
         };
         try {
           await webpush.sendNotification(pushConf, payload);
-          console.log(`📲 Successfully sent Web Push to ${targetUserId}`);
+          console.log(`?벒 Successfully sent Web Push to ${targetUserId}`);
         } catch (err) {
           if (err.statusCode === 404 || err.statusCode === 410) {
-            console.log(`🗑️ Subscription expired for ${targetUserId}, deleting from DB`);
+            console.log(`?뿊截?Subscription expired for ${targetUserId}, deleting from DB`);
             await prisma.pushSubscription.delete({ where: { id: sub.id } });
           } else {
             console.error('Web Push Send Error:', err);
@@ -204,12 +217,12 @@ app.prepare().then(() => {
     }
   }
 
-  // 런타임 파일(프로필 사진 등) 즉시 제공을 위해 public/uploads 경로를 express static으로 매핑
+  // ?고????뚯씪(?꾨줈???ъ쭊 ?? 利됱떆 ?쒓났???꾪빐 public/uploads 寃쎈줈瑜?express static?쇰줈 留ㅽ븨
   expressApp.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 
   const httpServer = createServer(expressApp);
   
-  // Socket.io 인스턴스 생성
+  // Socket.io ?몄뒪?댁뒪 ?앹꽦
   const io = new Server(httpServer, {
     cors: {
       origin: ['https://alopop.alonics.com', 'http://127.0.0.1:3099'],
@@ -220,9 +233,9 @@ app.prepare().then(() => {
 
   const SERVER_START_TIME = Date.now().toString();
 
-  // Socket.io 통신 처리
+  // Socket.io ?듭떊 泥섎━
   io.on('connection', async (socket) => {
-    console.log('🔗 User connected:', socket.id);
+    console.log('?뵕 User connected:', socket.id);
     let socketUser = null;
     const agentToken = socket.handshake.auth?.token;
     
@@ -232,7 +245,7 @@ app.prepare().then(() => {
         select: { id: true, username: true, isAdmin: true, isAgent: true }
       });
       if (socketUser && socketUser.isAgent) {
-        console.log(`🤖 OpenAlo Agent connected: ${socketUser.id} (${socketUser.username})`);
+        console.log(`?쨼 OpenAlo Agent connected: ${socketUser.id} (${socketUser.username})`);
         socket.isAgent = true;
       } else {
         socketUser = null;
@@ -249,17 +262,17 @@ app.prepare().then(() => {
     socket.userId = socketUser.id;
     socket.emit('server_version', SERVER_START_TIME);
     
-    // 1. 유저 인증 완료 시, 자신의 ID로 된 방(room)에 조인 (개인 DM 또는 알림 수신용)
+    // 1. ?좎? ?몄쬆 ?꾨즺 ?? ?먯떊??ID濡???諛?room)??議곗씤 (媛쒖씤 DM ?먮뒗 ?뚮┝ ?섏떊??
     socket.on('register', () => {
       socket.userId = socketUser.id;
       socket.join(socket.userId);
       console.log(`User ${socket.userId} registered and joined their personal room`);
 
-      // 접속 시 오프라인 큐에 보관된 메시지가 있다면 즉시 쏟아냄 (그리고 삭제)
+      // ?묒냽 ???ㅽ봽?쇱씤 ?먯뿉 蹂닿???硫붿떆吏媛 ?덈떎硫?利됱떆 ?잛븘??(洹몃━怨???젣)
       deliverOfflineMessages(socket);
     });
 
-    // 2. 다중 채팅방(Room) 입장 처리
+    // 2. ?ㅼ쨷 梨꾪똿諛?Room) ?낆옣 泥섎━
     socket.on('join_room', async (roomId) => {
       const room = await getRoomWithMembers(roomId);
       if (!isRoomMember(room, socket.userId)) {
@@ -277,7 +290,7 @@ app.prepare().then(() => {
         const activeUsers = Array.from(roomPresence.get(roomId));
         io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
       }
-      console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) joined room ${roomId}`);
+      console.log(`?슞 Socket ${socket.id} (User: ${socket.userId}) joined room ${roomId}`);
     });
 
     socket.on('leave_room', async (roomId) => {
@@ -301,21 +314,21 @@ app.prepare().then(() => {
           console.error('Presence update error on leave_room', e);
         }
       }
-      console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) left room ${roomId}`);
+      console.log(`?슞 Socket ${socket.id} (User: ${socket.userId}) left room ${roomId}`);
     });
 
-    // 3. 채팅방 이름 실시간 변경 브로드캐스트
+    // 3. 梨꾪똿諛??대쫫 ?ㅼ떆媛?蹂寃?釉뚮줈?쒖틦?ㅽ듃
     socket.on('update_room_name', async (payload) => {
       const room = await getRoomWithMembers(payload.roomId);
       if (!isRoomMember(room, socket.userId)) return;
-      console.log(`[DEBUG] 🏷️ Room name updated:`, payload);
-      // 자신을 포함하여 방에 있는 모든 사람에게 발송 (send_message는 자신 제외지만 이름 변경은 모두가 봐야함)
+      console.log(`[DEBUG] ?뤇截?Room name updated:`, payload);
+      // ?먯떊???ы븿?섏뿬 諛⑹뿉 ?덈뒗 紐⑤뱺 ?щ엺?먭쾶 諛쒖넚 (send_message???먯떊 ?쒖쇅吏留??대쫫 蹂寃쎌? 紐⑤몢媛 遊먯빞??
       io.to(payload.roomId).emit('room_name_updated', payload);
     });
 
-    // 3.1. [신규] 메시지 사후 업데이트 (AI 팩트체크 결과 서버 중계용) 브로드캐스트
+    // 3.1. [?좉퇋] 硫붿떆吏 ?ы썑 ?낅뜲?댄듃 (AI ?⑺듃泥댄겕 寃곌낵 ?쒕쾭 以묎퀎?? 釉뚮줈?쒖틦?ㅽ듃
     socket.on('update_message', async (payload) => {
-      console.log(`[DEBUG] 🔄 Message updated by sponsor (Fact-check):`, payload.messageId);
+      console.log(`[DEBUG] ?봽 Message updated by sponsor (Fact-check):`, payload.messageId);
       try {
         const room = await getRoomWithMembers(payload.roomId);
         if (!isRoomMember(room, socket.userId)) return;
@@ -323,7 +336,7 @@ app.prepare().then(() => {
         if (room && room.members) {
           room.members.forEach((member) => {
             const targetId = member.userId;
-            // 해당 멤버가 접속 중인지 확인 후, 룸 ID가 아닌 사용자 개인 고유 채널로 다이렉트 전송!
+            // ?대떦 硫ㅻ쾭媛 ?묒냽 以묒씤吏 ?뺤씤 ?? 猷?ID媛 ?꾨땶 ?ъ슜??媛쒖씤 怨좎쑀 梨꾨꼸濡??ㅼ씠?됲듃 ?꾩넚!
             const roomSet = io.sockets.adapter.rooms.get(targetId);
             if (roomSet && roomSet.size > 0 && targetId !== socket.userId) {
               io.to(targetId).emit('message_updated', payload);
@@ -335,7 +348,7 @@ app.prepare().then(() => {
       }
     });
 
-    // 3.5. 휴먼 유저 타이핑 상태 릴레이 (자신을 제외한 방 멤버에게 브로드캐스트)
+    // 3.5. ?대㉫ ?좎? ??댄븨 ?곹깭 由대젅??(?먯떊???쒖쇅??諛?硫ㅻ쾭?먭쾶 釉뚮줈?쒖틦?ㅽ듃)
     socket.on('typing_start', async (payload) => {
       const room = await getRoomWithMembers(payload.roomId);
       if (!isRoomMember(room, socket.userId)) return;
@@ -354,7 +367,7 @@ app.prepare().then(() => {
       socket.to(payload.roomId).emit('sponsor_settings_changed', { ...payload, sponsorId: socket.userId });
     });
 
-    // ---- OpenClaw Bridge 이벤트 처리 ----
+    // ---- OpenClaw Bridge ?대깽??泥섎━ ----
     socket.on('claw_canvas', (payload) => {
       socket.broadcast.emit('claw_canvas_update', { aiId: socket.userId, data: payload.data });
     });
@@ -377,7 +390,7 @@ app.prepare().then(() => {
         senderId: aiUserId,
         receiverId: roomId,
         messageType: 'TEXT',
-        content: finalOutput.trim() || "[작업 완료]",
+        content: finalOutput.trim() || "[?묒뾽 ?꾨즺]",
         createdAt: Date.now(),
         unreadCount: 0
       };
@@ -395,30 +408,29 @@ app.prepare().then(() => {
             io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
                 await prisma.offlineMessage.create({
-                  data: { receiverId: targetId, payload: JSON.stringify(message) }
+                  data: { receiverId: targetId, payload: createOfflineNotice(message) }
                 }).catch(e => console.error('Offline msg save err:', e));
               }
             });
           } else {
             prisma.offlineMessage.create({
-              data: { receiverId: targetId, payload: JSON.stringify(message) }
+              data: { receiverId: targetId, payload: createOfflineNotice(message) }
             }).catch(e => console.error('Offline msg save err:', e));
           }
         });
       }
     });
 
-    // 4. No-Log Relay 메시지 전송 로직 (방/개인 공통)
-    // 3. No-Log Relay 메시지 전송 로직 (방/개인 공통)
+    // 4. No-Log Relay 硫붿떆吏 ?꾩넚 濡쒖쭅 (諛?媛쒖씤 怨듯넻)
+    // 3. No-Log Relay 硫붿떆吏 ?꾩넚 濡쒖쭅 (諛?媛쒖씤 怨듯넻)
     socket.on('send_message', async (payload) => {
-      console.log('[DEBUG] 📥 Server received send_message:', payload);
       const { receiverId, message } = payload;
       
       try {
-        // 서버 측에서 Prisma DB를 조회해 해당 방에 속한 멤버들을 가져옵니다.
+        // ?쒕쾭 痢≪뿉??Prisma DB瑜?議고쉶???대떦 諛⑹뿉 ?랁븳 硫ㅻ쾭?ㅼ쓣 媛?몄샃?덈떎.
         const room = await getRoomWithMembers(receiverId);
 
-        // 1. 방을 찾았으면 (방향 메시지) -> 멤버 개개인의 ID를 타겟으로 발송
+        // 1. 諛⑹쓣 李얠븯?쇰㈃ (諛⑺뼢 硫붿떆吏) -> 硫ㅻ쾭 媛쒓컻?몄쓽 ID瑜??寃잛쑝濡?諛쒖넚
         if (room && room.members) {
           if (!isRoomMember(room, socket.userId)) {
             socket.emit('message_denied', { receiverId, error: 'Forbidden' });
@@ -433,61 +445,61 @@ app.prepare().then(() => {
           message.senderId = requestedSenderId;
 
           if (!room.isGroup) {
-            // 1:1 방일 경우 나갔던(숨김 처리된) 유저 자동 부활(Re-join) 로직 처리
+            // 1:1 諛⑹씪 寃쎌슦 ?섍컮???④? 泥섎━?? ?좎? ?먮룞 遺??Re-join) 濡쒖쭅 泥섎━
             const hiddenMembers = room.members.filter(m => m.isHidden && m.userId !== message.senderId);
             for (const hm of hiddenMembers) {
               await prisma.roomMember.update({
                 where: { userId_roomId: { userId: hm.userId, roomId: receiverId } },
                 data: { isHidden: false }
               });
-              console.log(`👻 Unhid member ${hm.userId} in room ${receiverId} (Kakao auto-rejoin)`);
-              hm.isHidden = false; // 메모리 상 객체도 갱신하여 바로 발송 대상에 포함
+              console.log(`?뫛 Unhid member ${hm.userId} in room ${receiverId} (Kakao auto-rejoin)`);
+              hm.isHidden = false; // 硫붾え由???媛앹껜??媛깆떊?섏뿬 諛붾줈 諛쒖넚 ??곸뿉 ?ы븿
             }
           }
 
           room.members.forEach((member) => {
             const targetId = member.userId;
             
-            // 본인이 보낸 메시지는 로컬에서 이미 처리했으므로 소켓 중복 발송 제외
+            // 蹂몄씤??蹂대궦 硫붿떆吏??濡쒖뺄?먯꽌 ?대? 泥섎━?덉쑝誘濡??뚯폆 以묐났 諛쒖넚 ?쒖쇅
             if (targetId === message.senderId) return;
 
-            // 해당 유저가 현재 온라인인지(본인 ID로 된 Personal Room에 접속 중인지) 확인
-            // v4에서는 in(room).fetchSockets()이나 adapter.rooms.get() 사용
+            // ?대떦 ?좎?媛 ?꾩옱 ?⑤씪?몄씤吏(蹂몄씤 ID濡???Personal Room???묒냽 以묒씤吏) ?뺤씤
+            // v4?먯꽌??in(room).fetchSockets()?대굹 adapter.rooms.get() ?ъ슜
             const roomSet = io.sockets.adapter.rooms.get(targetId);
             
             if (roomSet && roomSet.size > 0) {
-              // 온라인이면 해당 멤버의 개인 Room으로 즉시 발송하되, 타임아웃/ACK 적용
+              // ?⑤씪?몄씠硫??대떦 硫ㅻ쾭??媛쒖씤 Room?쇰줈 利됱떆 諛쒖넚?섎릺, ??꾩븘??ACK ?곸슜
               io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                 if (err || !responses || Object.keys(responses).length === 0) {
-                  console.log(`⚠️ ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
+                  console.log(`?좑툘 ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
                   await prisma.offlineMessage.create({
-                    data: { receiverId: targetId, payload: JSON.stringify(message) }
+                    data: { receiverId: targetId, payload: createOfflineNotice(message) }
                   }).catch(e => console.error('Offline msg save err:', e));
                   
-                  sendWebPush(targetId, message).catch(console.error); // 비동기 Fire-and-forget
+                  sendWebPush(targetId, message).catch(console.error); // 鍮꾨룞湲?Fire-and-forget
                 } else {
-                  console.log(`✅ ACK Received from ${targetId} (in room ${receiverId})`);
+                  console.log(`??ACK Received from ${targetId} (in room ${receiverId})`);
                 }
               });
             } else {
-              // 오프라인이면 DB에 영구 보관 (서버 재시작/장기 미접속 시 메모리 누수 방지)
+              // ?ㅽ봽?쇱씤?대㈃ DB???곴뎄 蹂닿? (?쒕쾭 ?ъ떆???κ린 誘몄젒????硫붾え由??꾩닔 諛⑹?)
               prisma.offlineMessage.create({
-                data: { receiverId: targetId, payload: JSON.stringify(message) }
+                data: { receiverId: targetId, payload: createOfflineNotice(message) }
               }).then(() => {
-                console.log(`📥 Paused message for offline member ${targetId} into DB`);
+                console.log(`?뱿 Paused message for offline member ${targetId} into DB`);
               }).catch(e => console.error('Offline msg save err:', e));
               
-              // 앱이 완전히 종료되었거나 백그라운드인 경우 푸시 알림 트리거 (비동기 처리로 서버 블로킹 제거)
+              // ?깆씠 ?꾩쟾??醫낅즺?섏뿀嫄곕굹 諛깃렇?쇱슫?쒖씤 寃쎌슦 ?몄떆 ?뚮┝ ?몃━嫄?(鍮꾨룞湲?泥섎━濡??쒕쾭 釉붾줈???쒓굅)
               sendWebPush(targetId, message).catch(console.error);
             }
           });
 
-          // [신규] 100% 서버사이드 백그라운드 AI 팩트체크 대리 연산 (방장이 꺼져있어도 동작)
+          // [?좉퇋] 100% ?쒕쾭?ъ씠??諛깃렇?쇱슫??AI ?⑺듃泥댄겕 ?由??곗궛 (諛⑹옣??爰쇱졇?덉뼱???숈옉)
           if (room.sponsorMode && message.messageType !== 'SYSTEM') {
             const hostMember = room.members.find(m => m.isHost);
-            // 발송자가 방장 본인이 아니면 스폰서 연산 트리거
+            // 諛쒖넚?먭? 諛⑹옣 蹂몄씤???꾨땲硫??ㅽ룿???곗궛 ?몃━嫄?
             if (hostMember && hostMember.userId !== message.senderId) {
-              console.log(`[DEBUG] 🧠 Triggering Background Server AI check for msg ${message.messageId}`);
+              console.log(`[DEBUG] ?쭬 Triggering Background Server AI check for msg ${message.messageId}`);
               
               fetch(`http://127.0.0.1:${port}/api/chat/sponsor`, {
                 method: 'POST',
@@ -502,7 +514,7 @@ app.prepare().then(() => {
                     messageId: message.messageId,
                     aiAnalysis: data.aiAnalysis
                   };
-                  // AI 처리 결과 브로드캐스트
+                  // AI 泥섎━ 寃곌낵 釉뚮줈?쒖틦?ㅽ듃
                   room.members.forEach((member) => {
                     const targetId = member.userId;
                     const rSet = io.sockets.adapter.rooms.get(targetId);
@@ -510,7 +522,7 @@ app.prepare().then(() => {
                       io.to(targetId).emit('message_updated', updatePayload);
                     }
                   });
-                  // 발신 당사자에게도 결과 리턴
+                  // 諛쒖떊 ?뱀궗?먯뿉寃뚮룄 寃곌낵 由ы꽩
                   const senderRoom = io.sockets.adapter.rooms.get(message.senderId);
                   if (senderRoom && senderRoom.size > 0) {
                     io.to(message.senderId).emit('message_updated', updatePayload);
@@ -525,7 +537,7 @@ app.prepare().then(() => {
             }
           }
         } else {
-          // 2. 방이 아니라면 (1:1 개인톡 단일 타겟팅인 경우)
+          // 2. 諛⑹씠 ?꾨땲?쇰㈃ (1:1 媛쒖씤???⑥씪 ?寃잜똿??寃쎌슦)
           if (!message?.senderId || !(await canSendAs(null, socket.userId, message.senderId))) {
             socket.emit('message_denied', { receiverId, error: 'Invalid sender' });
             return;
@@ -536,21 +548,21 @@ app.prepare().then(() => {
           if (roomSet && roomSet.size > 0) {
             io.to(receiverId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
-                console.log(`⚠️ ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
+                console.log(`?좑툘 ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
                 await prisma.offlineMessage.create({
-                  data: { receiverId: receiverId, payload: JSON.stringify(message) }
+                  data: { receiverId: receiverId, payload: createOfflineNotice(message) }
                 }).catch(e => console.error('Offline msg save err:', e));
                 
                 sendWebPush(receiverId, message).catch(console.error);
               } else {
-                console.log(`✅ ACK Received directly from ${receiverId}`);
+                console.log(`??ACK Received directly from ${receiverId}`);
               }
             });
           } else {
             prisma.offlineMessage.create({
-              data: { receiverId: receiverId, payload: JSON.stringify(message) }
+              data: { receiverId: receiverId, payload: createOfflineNotice(message) }
             }).then(() => {
-              console.log(`📥 Paused message for offline destination ${receiverId} into DB`);
+              console.log(`?뱿 Paused message for offline destination ${receiverId} into DB`);
             }).catch(e => console.error('Offline msg save err:', e));
             
             sendWebPush(receiverId, message).catch(console.error);
@@ -571,11 +583,11 @@ app.prepare().then(() => {
         if (room && room.members) {
            room.members.forEach(member => {
              const targetId = member.userId;
-             if (targetId === userId) return; // 나 자신 제외
+             if (targetId === userId) return; // ???먯떊 ?쒖쇅
              const roomSet = io.sockets.adapter.rooms.get(targetId);
              if (roomSet && roomSet.size > 0) {
                socket.to(targetId).emit('room_read_update', { roomId, userId, timestamp });
-               console.log(`👁️ Relayed read_receipt to ${targetId} for room ${roomId}`);
+               console.log(`?몓截?Relayed read_receipt to ${targetId} for room ${roomId}`);
              }
            });
         }
@@ -585,7 +597,7 @@ app.prepare().then(() => {
     });
 
     socket.on('disconnect', async () => {
-      console.log('🔴 User disconnected:', socket.id, socket.userId);
+      console.log('?뵶 User disconnected:', socket.id, socket.userId);
       if (socket.currentRoom && socket.userId && roomPresence.has(socket.currentRoom)) {
         const rId = socket.currentRoom;
         try {
@@ -607,8 +619,8 @@ app.prepare().then(() => {
     });
   });
 
-  // ---- 게임 점수 API 프록시 (game-portal:3000 으로 포워딩) ----
-  // next.config.ts의 rewrite는 빌드 후에만 적용되므로, Express 레벨에서 직접 처리
+  // ---- 寃뚯엫 ?먯닔 API ?꾨줉??(game-portal:3000 ?쇰줈 ?ъ썙?? ----
+  // next.config.ts??rewrite??鍮뚮뱶 ?꾩뿉留??곸슜?섎?濡? Express ?덈꺼?먯꽌 吏곸젒 泥섎━
   expressApp.use('/api/highscore', express.json(), (req, res) => {
     const http = require('http');
     const qs = req.query && Object.keys(req.query).length > 0
@@ -634,7 +646,7 @@ app.prepare().then(() => {
     proxyReq.end();
   });
 
-  // ---- Pet365Care 내부 소켓 릴레이 로직 ----
+  // ---- Pet365Care ?대? ?뚯폆 由대젅??濡쒖쭅 ----
   expressApp.use('/api/internal/pet365-relay', express.json(), async (req, res) => {
     const internalHeader = req.headers['x-alopop-internal'];
     if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
@@ -645,18 +657,18 @@ app.prepare().then(() => {
     const roomSet = io.sockets.adapter.rooms.get(targetUserId);
 
     if (roomSet && roomSet.size > 0) {
-      // 유저가 온라인 — 소켓으로 직접 전송 (ACK 대기)
+      // ?좎?媛 ?⑤씪?????뚯폆?쇰줈 吏곸젒 ?꾩넚 (ACK ?湲?
       try {
         io.to(targetUserId).timeout(3000).emit('receive_message', message, async (err, responses) => {
           if (err || !responses || Object.keys(responses).length === 0) {
-            console.log(`[Pet365-Relay] ⚠️ ACK timeout for ${targetUserId}, treating as offline`);
+            console.log(`[Pet365-Relay] ?좑툘 ACK timeout for ${targetUserId}, treating as offline`);
             await prisma.offlineMessage.create({
-              data: { receiverId: targetUserId, payload: JSON.stringify(message) }
+              data: { receiverId: targetUserId, payload: createOfflineNotice(message) }
             }).catch(e => console.error('Offline msg save err:', e));
             sendWebPush(targetUserId, message).catch(console.error);
             return res.json({ delivered: false });
           }
-          console.log(`[Pet365-Relay] ✅ Delivered to ${targetUserId} via socket`);
+          console.log(`[Pet365-Relay] ??Delivered to ${targetUserId} via socket`);
           return res.json({ delivered: true });
         });
       } catch (e) {
@@ -664,15 +676,18 @@ app.prepare().then(() => {
         return res.json({ delivered: false });
       }
     } else {
-      // 유저가 오프라인 — OfflineMessage DB에 저장 + 푸시 알림
-      console.log(`[Pet365-Relay] 📥 User ${targetUserId} is offline`);
+      // ?좎?媛 ?ㅽ봽?쇱씤 ??OfflineMessage DB?????+ ?몄떆 ?뚮┝
+      console.log(`[Pet365-Relay] ?뱿 User ${targetUserId} is offline`);
       sendWebPush(targetUserId, message).catch(console.error);
       return res.json({ delivered: false });
     }
   });
 
-  // ---- OpenClaw 내부 API 릴레이 로직 ----
+  // ---- OpenClaw ?대? API 由대젅??濡쒖쭅 ----
   expressApp.use('/api/internal/claw-message', express.json(), async (req, res) => {
+    const internalHeader = req.headers['x-alopop-internal'];
+    if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
+
     const { aiUserId, message, roomId, aiUserName } = req.body;
     if (!aiUserId || !message) return res.status(400).json({ error: 'Missing parameters' });
     
@@ -706,8 +721,36 @@ app.prepare().then(() => {
     }
   });
 
-  // ---- OpenClaw AI 에이전트 알림 및 메시지 브로드캐스트 로직 ----
+  expressApp.use('/api/internal/agent-tool', express.json(), async (req, res) => {
+    const internalHeader = req.headers['x-alopop-internal'];
+    if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
+
+    const { aiUserId, tool, args } = req.body;
+    if (!aiUserId || !tool) return res.status(400).json({ error: 'Missing parameters' });
+
+    let targetSocket = null;
+    for (const [id, socket] of io.sockets.sockets.entries()) {
+      if (socket.isAgent && socket.userId === aiUserId) {
+        targetSocket = socket;
+        break;
+      }
+    }
+
+    if (!targetSocket) {
+      return res.status(404).json({ error: 'OpenClaw Agent is not currently connected' });
+    }
+
+    targetSocket.timeout(30000).emit('execute_tool', { tool, args: args || {} }, (err, responses) => {
+      if (err) return res.status(504).json({ error: 'OpenClaw Agent tool timed out' });
+      return res.json(responses?.[0] || {});
+    });
+  });
+
+  // ---- OpenClaw AI ?먯씠?꾪듃 ?뚮┝ 諛?硫붿떆吏 釉뚮줈?쒖틦?ㅽ듃 濡쒖쭅 ----
   expressApp.use('/api/internal/vibe-notify', express.json(), async (req, res) => {
+    const internalHeader = req.headers['x-alopop-internal'];
+    if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
+
     const { action, roomId, aiUserId, aiUserName, message } = req.body;
     if (!action || !roomId || !aiUserId) return res.status(400).json({ error: 'Missing parameters' });
     
@@ -731,7 +774,7 @@ app.prepare().then(() => {
                 io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                   if (err || !responses || Object.keys(responses).length === 0) {
                     await prisma.offlineMessage.create({
-                      data: { receiverId: targetId, payload: JSON.stringify(message) }
+                      data: { receiverId: targetId, payload: createOfflineNotice(message) }
                     }).catch(e => console.error('Offline msg save err:', e));
                     sendWebPush(targetId, message).catch(console.error);
                   }
@@ -739,7 +782,7 @@ app.prepare().then(() => {
               } else {
                 // Offline
                 prisma.offlineMessage.create({
-                  data: { receiverId: targetId, payload: JSON.stringify(message) }
+                  data: { receiverId: targetId, payload: createOfflineNotice(message) }
                 }).catch(e => console.error('Offline msg save err:', e));
                 sendWebPush(targetId, message).catch(console.error);
               }
@@ -754,17 +797,17 @@ app.prepare().then(() => {
     }
   });
 
-  // Next.js 로우레벨 라우팅 처리 (Express v5 이상 호환)
+  // Next.js 濡쒖슦?덈꺼 ?쇱슦??泥섎━ (Express v5 ?댁긽 ?명솚)
   expressApp.use((req, res) => {
     return handle(req, res);
   });
 
   httpServer.listen(port, (err) => {
     if (err) throw err;
-    console.log(`> 🚀 Ready on http://${hostname}:${port}`);
-    console.log('> 🛡️ Custom Express Server with Socket.io running (No-Log Mode)');
+    console.log(`> ?? Ready on http://${hostname}:${port}`);
+    console.log('> ?썳截?Custom Express Server with Socket.io running (No-Log Mode)');
     
-    // 텔레그램 봇 초기화
+    // ?붾젅洹몃옩 遊?珥덇린??
 
   });
 });

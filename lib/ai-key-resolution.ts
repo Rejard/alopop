@@ -88,13 +88,20 @@ function eventMatches(event: FreeAiEvent, provider: Provider, aiModel: string | 
   return event.aiProvider === provider && !!aiModel && event.aiModel === aiModel;
 }
 
+function eventCanFallback(event: FreeAiEvent, provider: Provider, aiModel: string | null | undefined) {
+  const eventProvider = normalizeProvider(event.aiProvider);
+  if (eventProvider !== provider) return false;
+  if (aiModel && event.aiModel !== aiModel) return false;
+  return !!event.aiModel;
+}
+
 export async function resolveAiKeyForRequest({
   user,
   provider,
   aiModel,
   byokKey,
   allowFreeEventFallback = true,
-  allowEnvFallback = true,
+  allowEnvFallback = false,
 }: {
   user: UserApiKeys;
   provider?: string | null;
@@ -143,7 +150,7 @@ export async function resolveAiKeyForRequest({
   if (allowFreeEventFallback) {
     for (const event of activeEvents) {
       const eventProvider = normalizeProvider(event.aiProvider);
-      if (!event.aiModel || !(await isEventAllowed(user.id, event))) continue;
+      if (!eventCanFallback(event, requestedProvider, requestedModel) || !(await isEventAllowed(user.id, event))) continue;
       return {
         provider: eventProvider,
         aiModel: event.aiModel,
@@ -153,15 +160,6 @@ export async function resolveAiKeyForRequest({
       };
     }
 
-    if (activeEvents.length > 0) {
-      return {
-        provider: requestedProvider,
-        aiModel: requestedModel,
-        apiKey: null,
-        freeEvent: activeEvents[0],
-        limitExceeded: true,
-      };
-    }
   }
 
   return {
