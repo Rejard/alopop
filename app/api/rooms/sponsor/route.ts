@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
+import { MAX_SPONSOR_PRICE, parseSponsorPrice, resolveSponsorModel } from '@/lib/sponsor-policy';
 import { z } from 'zod';
 
 const UpdateSponsorSchema = z.object({
@@ -39,17 +40,23 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Only the host can modify the sponsor settings' }, { status: 403 });
     }
 
-    const parsedSponsorPrice = sponsorPrice === undefined ? undefined : Number(sponsorPrice);
-    if (parsedSponsorPrice !== undefined && (!Number.isFinite(parsedSponsorPrice) || parsedSponsorPrice < 0)) {
-      return NextResponse.json({ error: 'sponsorPrice must be a non-negative number' }, { status: 400 });
+    const parsedSponsorPrice = sponsorPrice === undefined ? undefined : parseSponsorPrice(sponsorPrice);
+    if (sponsorPrice !== undefined && parsedSponsorPrice === null) {
+      return NextResponse.json({ error: `sponsorPrice must be an integer from 0 to ${MAX_SPONSOR_PRICE}` }, { status: 400 });
     }
+
+    const parsedSponsorModel = sponsorModel === undefined ? undefined : resolveSponsorModel(sponsorModel);
+    if (sponsorModel !== undefined && sponsorMode !== false && !parsedSponsorModel) {
+      return NextResponse.json({ error: 'Unsupported sponsor model' }, { status: 400 });
+    }
+    const sponsorPriceUpdate = parsedSponsorPrice === null ? undefined : parsedSponsorPrice;
 
     const updatedRoom = await prisma.room.update({
       where: { id: roomId },
       data: {
         sponsorMode,
-        sponsorModel,
-        sponsorPrice: parsedSponsorPrice,
+        sponsorModel: sponsorMode === false ? null : parsedSponsorModel?.model,
+        sponsorPrice: sponsorPriceUpdate,
       },
     });
 

@@ -6,10 +6,10 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { prisma } from '@/lib/prisma';
-import { decryptKey } from '@/lib/crypto';
 import { requireCurrentUser } from '@/lib/auth';
 import { recordFreeEventUsage, resolveAiKeyForRequest } from '@/lib/ai-key-resolution';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { decryptHostSponsorKey, resolveSponsorDelegateAccess } from '@/lib/sponsor-policy';
 
 type Provider = 'openai' | 'gemini' | 'anthropic';
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || '';
@@ -18,15 +18,6 @@ function defaultModelForProvider(provider: Provider) {
   if (provider === 'gemini') return 'gemini-1.5-pro-latest';
   if (provider === 'anthropic') return 'claude-3-haiku-20240307';
   return 'gpt-4o';
-}
-
-function hostKeyForProvider(
-  hostUser: { openaiKey: string | null; geminiKey: string | null; anthropicKey: string | null },
-  provider: Provider
-) {
-  if (provider === 'gemini') return hostUser.geminiKey;
-  if (provider === 'anthropic') return hostUser.anthropicKey;
-  return hostUser.openaiKey;
 }
 
 export async function POST(request: Request) {
@@ -76,19 +67,17 @@ export async function POST(request: Request) {
     let finalAiModel = resolvedAi.aiModel || defaultModelForProvider(currentProvider);
     let limitExceededFlag = resolvedAi.limitExceeded;
 
-    if (!apiKey && isDelegate && sponsorId && sponsorRoom?.sponsorMode) {
-      const isCurrentRoomMember = sponsorRoom.members.some(member => member.userId === currentUser.id && !member.isHidden);
-      const sponsorMember = sponsorRoom.members.find(member => member.isHost && member.userId === sponsorId);
-      const aiMember = sponsorRoom.members.find(member => member.userId === aiUserId);
-      if (!isCurrentRoomMember || !sponsorMember || !aiMember) {
-        return NextResponse.json({ error: 'Forbidden sponsor room access' }, { status: 403 });
-      }
-
+    if (!apiKey && isDelegate && resolveSponsorDelegateAccess({
+      currentUserId: currentUser.id,
+      room: sponsorRoom,
+      sponsorId,
+      aiUserId,
+    })) {
       const hostUser = await prisma.user.findUnique({
         where: { id: sponsorId },
         select: { openaiKey: true, geminiKey: true, anthropicKey: true },
       });
-      apiKey = hostUser ? decryptKey(hostKeyForProvider(hostUser, currentProvider)) : null;
+      apiKey = hostUser ? decryptHostSponsorKey(hostUser, currentProvider) : null;
       if (apiKey) limitExceededFlag = false;
     }
 
