@@ -54,6 +54,7 @@ vapid.json
 
 # logs
 *.log
+data/diagnostics.jsonl
 
 # debug/test scripts
 get_token.js
