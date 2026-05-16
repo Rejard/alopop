@@ -9,9 +9,10 @@ import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { recordFreeEventUsage, resolveAiKeyForRequest } from '@/lib/ai-key-resolution';
 import { checkRateLimit } from '@/lib/rate-limit';
-import { decryptHostSponsorKey, resolveSponsorDelegateAccess } from '@/lib/sponsor-policy';
+import { decryptHostSponsorKey, resolveSponsorDelegateAccess, resolveSponsorModel } from '@/lib/sponsor-policy';
 
 type Provider = 'openai' | 'gemini' | 'anthropic';
+
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || '';
 
 function defaultModelForProvider(provider: Provider) {
@@ -20,12 +21,17 @@ function defaultModelForProvider(provider: Provider) {
   return 'gpt-4o';
 }
 
+function buildModel(provider: Provider, apiKey: string, model: string) {
+  if (provider === 'gemini') return createGoogleGenerativeAI({ apiKey })(model);
+  if (provider === 'anthropic') return createAnthropic({ apiKey })(model);
+  return createOpenAI({ apiKey })(model);
+}
+
 export async function POST(request: Request) {
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
 
-    // Rate Limiter 적용 (초당 3회 초과 시 어뷰징 차단)
     if (!checkRateLimit(`chat_friend_${currentUser.id}`, 3, 1000)) {
       return NextResponse.json({ error: 'Too Many Requests (Rate Limit Exceeded)' }, { status: 429 });
     }
@@ -34,13 +40,11 @@ export async function POST(request: Request) {
       provider,
       byokKey,
       aiModel,
-      systemPrompt,
       content,
       isDelegate,
       sponsorId,
       roomId,
       aiUserId,
-      aiOwnerId,
       isAutonomous,
     } = await request.json();
 
@@ -53,11 +57,47 @@ export async function POST(request: Request) {
       include: { members: true },
     }) : null;
 
+    const aiUser = aiUserId ? await prisma.user.findUnique({
+      where: { id: aiUserId },
+      select: {
+        id: true,
+        username: true,
+        isAi: true,
+        isAgent: true,
+        aiOwnerId: true,
+        aiPrompt: true,
+        agentPath: true,
+      },
+    }) : null;
+
+    if (aiUserId && (!aiUser || (!aiUser.isAi && !aiUser.isAgent))) {
+      return NextResponse.json({ error: 'Invalid AI user' }, { status: 403 });
+    }
+
+    const aiOwner = aiUser?.aiOwnerId ? await prisma.user.findUnique({
+      where: { id: aiUser.aiOwnerId },
+      select: {
+        id: true,
+        username: true,
+        avatar_url: true,
+        statusMessage: true,
+        walletBalance: true,
+        isAdmin: true,
+        openaiKey: true,
+        geminiKey: true,
+        anthropicKey: true,
+      },
+    }) : null;
+
+    const effectiveAiUser = aiOwner || currentUser;
+    const requestByokKey = effectiveAiUser.id === currentUser.id ? byokKey : null;
+    const personaPrompt = aiUser?.aiPrompt || 'You are a friendly AI companion in Alopop Messenger. Reply naturally and stay in character.';
+
     let resolvedAi = await resolveAiKeyForRequest({
-      user: currentUser,
+      user: effectiveAiUser,
       provider,
       aiModel,
-      byokKey,
+      byokKey: requestByokKey,
       allowFreeEventFallback: false,
       allowEnvFallback: false,
     });
@@ -66,6 +106,7 @@ export async function POST(request: Request) {
     let currentProvider = resolvedAi.provider;
     let finalAiModel = resolvedAi.aiModel || defaultModelForProvider(currentProvider);
     let limitExceededFlag = resolvedAi.limitExceeded;
+    let sponsorBilling: { payerId: string; receiverId: string; amount: number } | null = null;
 
     if (!apiKey && isDelegate && resolveSponsorDelegateAccess({
       currentUserId: currentUser.id,
@@ -73,20 +114,38 @@ export async function POST(request: Request) {
       sponsorId,
       aiUserId,
     })) {
-      const hostUser = await prisma.user.findUnique({
+      const sponsorConfig = resolveSponsorModel(sponsorRoom?.sponsorModel);
+      const hostUser = sponsorId ? await prisma.user.findUnique({
         where: { id: sponsorId },
-        select: { openaiKey: true, geminiKey: true, anthropicKey: true },
-      });
-      apiKey = hostUser ? decryptHostSponsorKey(hostUser, currentProvider) : null;
-      if (apiKey) limitExceededFlag = false;
+        select: { id: true, openaiKey: true, geminiKey: true, anthropicKey: true },
+      }) : null;
+
+      apiKey = hostUser && sponsorConfig ? decryptHostSponsorKey(hostUser, sponsorConfig.provider) : null;
+      if (apiKey && sponsorConfig && hostUser) {
+        currentProvider = sponsorConfig.provider;
+        finalAiModel = sponsorConfig.model;
+        limitExceededFlag = false;
+
+        const sponsorPrice = sponsorRoom?.sponsorPrice || 0;
+        if (sponsorPrice > 0 && effectiveAiUser.id !== hostUser.id) {
+          if (effectiveAiUser.walletBalance < sponsorPrice) {
+            return NextResponse.json({ error: 'INSUFFICIENT_FUNDS' }, { status: 402 });
+          }
+          sponsorBilling = {
+            payerId: effectiveAiUser.id,
+            receiverId: hostUser.id,
+            amount: sponsorPrice,
+          };
+        }
+      }
     }
 
     if (!apiKey) {
       resolvedAi = await resolveAiKeyForRequest({
-        user: currentUser,
+        user: effectiveAiUser,
         provider,
         aiModel,
-        byokKey,
+        byokKey: requestByokKey,
         allowEnvFallback: false,
       });
 
@@ -101,7 +160,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Daily free AI usage limit exceeded.' }, { status: 429 });
       }
       if (isAutonomous) {
-        return NextResponse.json({ error: 'API 키 또는 Vibe 코딩을 지원하는 유료 모델이 설정되어 있지 않아 자율 작업을 시작할 수 없습니다.' }, { status: 400 });
+        return NextResponse.json({ error: 'No API key or sponsored model is available for autonomous work.' }, { status: 400 });
       }
       return NextResponse.json({ error: `No API Key provided for ${provider || 'openai'}` }, { status: 400 });
     }
@@ -114,36 +173,17 @@ export async function POST(request: Request) {
           userId, roomId, aiUserId, provider, apiKey, model, content
         ], { detached: true, stdio: 'ignore', cwd: cwd });
       `);
-      
-      const p = doSpawn(cp, process.cwd(), currentUser.id, roomId || '', aiUserId || '', currentProvider, apiKey, finalAiModel, content);
+
+      const p = doSpawn(cp, process.cwd(), effectiveAiUser.id, roomId || '', aiUserId || '', currentProvider, apiKey, finalAiModel, content);
       p.unref();
 
-      return NextResponse.json({ reply: '🚀 AI 에이전트 작업을 백그라운드에서 시작했습니다. 완료되면 알림을 드립니다!' });
+      return NextResponse.json({ reply: 'AI autonomous work has started in the background. I will notify you when it finishes.' });
     }
 
-    let modelInstance;
-    switch (currentProvider) {
-      case 'gemini': {
-        const customGoogle = createGoogleGenerativeAI({ apiKey });
-        modelInstance = customGoogle(finalAiModel);
-        break;
-      }
-      case 'anthropic': {
-        const customAnthropic = createAnthropic({ apiKey });
-        modelInstance = customAnthropic(finalAiModel);
-        break;
-      }
-      case 'openai':
-      default: {
-        const customOpenAI = createOpenAI({ apiKey });
-        modelInstance = customOpenAI(finalAiModel);
-        break;
-      }
-    }
-
+    const modelInstance = buildModel(currentProvider, apiKey, finalAiModel);
     let injectedSearchContext = '';
-    const searchKeywords = ['뉴스', '최신', '검색', '오늘', '알려줘', '언제', '주식', '야구', '며칠', '시간'];
-    const needsSearch = searchKeywords.some(keyword => content.includes(keyword));
+    const searchKeywords = ['뉴스', '최신', '검색', '오늘', '알려줘', '언제', '주식', '야구', '매치', '시간'];
+    const needsSearch = searchKeywords.some((keyword) => content.includes(keyword));
 
     if (needsSearch) {
       try {
@@ -151,51 +191,40 @@ export async function POST(request: Request) {
         if (searchResults?.results?.length) {
           const summary = searchResults.results
             .slice(0, 3)
-            .map((r) => `제목: ${r.title}\n내용: ${r.description}`)
+            .map((result) => `Title: ${result.title || ''}\nDescription: ${result.description || ''}`)
             .join('\n\n');
-          injectedSearchContext = `\n\n[최신 웹 검색 결과]\n현재 시각: ${new Date().toLocaleString('ko-KR')}\n${summary}`;
+          injectedSearchContext = `\n\n[Recent web search context at ${new Date().toLocaleString('ko-KR')}]\n${summary}`;
         }
-      } catch (e) {
-        console.error('Manual Pre-search failed:', e);
+      } catch (error) {
+        console.error('Manual pre-search failed:', error);
       }
     }
 
+    const isAgent = !!aiUser?.isAgent;
+    const agentPath = aiUser?.agentPath || process.cwd();
     let agentTools: any = undefined;
-    let isAgent = false;
-    let agentPath = '';
-    if (aiUserId) {
-      const targetUser = await prisma.user.findUnique({
-        where: { id: aiUserId },
-        select: { isAgent: true, agentPath: true }
-      });
-      isAgent = !!targetUser?.isAgent;
-      agentPath = targetUser?.agentPath || process.cwd();
-    }
 
     if (isAgent) {
-      // OpenClaw Agent: Bypass Alopop AI SDK and send directly to OpenClaw via internal socket API.
       const port = process.env.PORT || 3099;
-      const aiUser = await prisma.user.findUnique({ where: { id: aiUserId }, select: { username: true } });
       try {
         const res = await fetch(`http://127.0.0.1:${port}/api/internal/claw-message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-alopop-internal': INTERNAL_API_SECRET },
-          body: JSON.stringify({ aiUserId, aiUserName: aiUser?.username, message: content, roomId })
+          body: JSON.stringify({ aiUserId, aiUserName: aiUser?.username, message: content, roomId }),
         });
-        
+
         if (!res.ok) {
           try {
             const errJson = await res.json();
-            return NextResponse.json({ reply: `[시스템 오류] OpenClaw Agent 통신 실패: ${errJson.error || '알 수 없는 오류'}` });
-          } catch(e) {
-            return NextResponse.json({ reply: "[시스템 오류] OpenClaw Gateway 연결에 실패했습니다." });
+            return NextResponse.json({ reply: `[System error] OpenClaw agent failed: ${errJson.error || 'unknown error'}` });
+          } catch {
+            return NextResponse.json({ reply: '[System error] OpenClaw gateway connection failed.' });
           }
-        } else {
-          // Success. We return empty string directly so no system message is created, and rely on typing indicator synchronization.
-          return NextResponse.json({ reply: '' });
         }
-      } catch (e) {
-        return NextResponse.json({ reply: `[시스템 안내] 내부 통신 오류: ${String(e)}` });
+
+        return NextResponse.json({ reply: '' });
+      } catch (error) {
+        return NextResponse.json({ reply: `[System notice] Internal connection error: ${String(error)}` });
       }
     } else {
       const executeAgentTool = async (toolName: string, args: any) => {
@@ -203,11 +232,11 @@ export async function POST(request: Request) {
         const res = await fetch(`http://127.0.0.1:${port}/api/internal/agent-tool`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-alopop-internal': INTERNAL_API_SECRET },
-          body: JSON.stringify({ aiUserId, tool: toolName, args })
+          body: JSON.stringify({ aiUserId, tool: toolName, args }),
         });
         if (!res.ok) {
           const errText = await res.text();
-          return { error: `[Agent Disconnected] 해당 PC가 오프라인 상태이거나 명령을 수행할 수 없습니다: ${errText}` };
+          return { error: `[Agent disconnected] The target PC is offline or cannot execute the command: ${errText}` };
         }
         return res.json();
       };
@@ -217,43 +246,44 @@ export async function POST(request: Request) {
           description: 'Run a shell command on the remote PC. Provide the command string.',
           parameters: z.object({ command: z.string() }),
           // @ts-ignore
-          execute: async (args: any) => executeAgentTool('run_command', args)
+          execute: async (args: any) => executeAgentTool('run_command', args),
         }),
         read_file: tool({
           description: 'Read the contents of a file on the remote PC. Provide the absolute or relative path.',
           parameters: z.object({ path: z.string() }),
           // @ts-ignore
-          execute: async (args: any) => executeAgentTool('read_file', args)
+          execute: async (args: any) => executeAgentTool('read_file', args),
         }),
         write_file: tool({
           description: 'Write contents to a file on the remote PC. Provide the path and content.',
           parameters: z.object({ path: z.string(), content: z.string() }),
           // @ts-ignore
-          execute: async (args: any) => executeAgentTool('write_file', args)
+          execute: async (args: any) => executeAgentTool('write_file', args),
         }),
         list_dir: tool({
-          description: 'List contents of a directory on the remote PC.',
+          description: 'List contents of a directory.',
           parameters: z.object({ path: z.string() }),
           // @ts-ignore
-          execute: async (args: any) => executeAgentTool('list_dir', args)
-        })
+          execute: async (args: any) => executeAgentTool('list_dir', args),
+        }),
       };
     }
 
     const finalSystemPrompt = isAgent
-      ? (systemPrompt || '당신은 사용자의 PC에서 작업을 수행하는 전문적인 OpenClaw AI 에이전트입니다.') + injectedSearchContext + 
-        `\n\n[기본 작업 디렉토리] ${agentPath}\n- 사용자가 파일이나 폴더를 탐색/수정할 때 반드시 이 디렉토리를 절대 경로로 명시하여 작업하세요.` +
-        '\n\n[중요] 사용자가 시스템 정보, 폴더 리스트, 터미널 명령어 등을 요청하면 반드시 제공된 도구를 사용하여 실제 PC의 상태를 확인한 후 대답하세요.\n[규칙 1] 도구 실행 결과는 절대로 대충 요약하거나 생략하지 마세요. 개발자가 꼼꼼히 확인할 수 있도록 터미널 출력 결과나 파일 리스트를 가감 없이 원본 그대로 모두 출력하세요.\n[규칙 2] 친근한 말투나 불필요한 대화(~있네요, ~할까요? 등)는 절대 사용하지 말고, 시스템 콘솔처럼 건조하고 정확하게 결괏값만 전문적으로 전달하세요.'
-      : (systemPrompt || '당신은 알로팝 메신저의 친근한 AI 친구입니다.') + injectedSearchContext;
+      ? `${personaPrompt}${injectedSearchContext}
+
+[Default work directory] ${agentPath}
+Use the available tools to inspect the actual PC state before answering system, file, or command questions. Report concrete tool output without inventing missing details.`
+      : `${personaPrompt}${injectedSearchContext}`;
 
     let finalReply = '';
     const messages: any[] = [{ role: 'user', content }];
 
-    for (let step = 0; step < (isAgent ? 3 : 1); step++) {
+    for (let step = 0; step < (isAgent ? 3 : 1); step += 1) {
       const { text, toolCalls } = await generateText({
         model: modelInstance,
         system: finalSystemPrompt,
-        messages: messages,
+        messages,
         temperature: 0.85,
         tools: isAgent ? agentTools : undefined,
       });
@@ -261,24 +291,21 @@ export async function POST(request: Request) {
       if (toolCalls && toolCalls.length > 0) {
         const manualToolResults = [];
         for (const call of toolCalls) {
-           const toolFunc = agentTools[call.toolName];
-           if (toolFunc && toolFunc.execute) {
-               try {
-                   const callArgs = (call as any).args || (call as any).arguments || {};
-                   const res = await toolFunc.execute(callArgs);
-                   manualToolResults.push({ tool: call.toolName, result: res });
-               } catch (e: any) {
-                   manualToolResults.push({ tool: call.toolName, error: String(e) });
-               }
-           }
+          const toolFunc = agentTools[call.toolName];
+          if (toolFunc?.execute) {
+            try {
+              const callArgs = (call as any).args || (call as any).arguments || {};
+              const res = await toolFunc.execute(callArgs);
+              manualToolResults.push({ tool: call.toolName, result: res });
+            } catch (error) {
+              manualToolResults.push({ tool: call.toolName, error: String(error) });
+            }
+          }
         }
-        messages.push({
-          role: 'assistant',
-          content: text || '도구를 실행했습니다.',
-        });
+        messages.push({ role: 'assistant', content: text || 'Tool calls executed.' });
         messages.push({
           role: 'user',
-          content: `[시스템 알림: 도구 실행 결과]\n${JSON.stringify(manualToolResults, null, 2)}\n\n이 도구 실행 결과를 바탕으로 이전 질문에 대한 답변을 제공하세요.`
+          content: `[System notice: tool results]\n${JSON.stringify(manualToolResults, null, 2)}\n\nUse these tool results to answer the previous user request.`,
         });
       } else {
         finalReply = text;
@@ -286,35 +313,28 @@ export async function POST(request: Request) {
       }
     }
 
-    if (sponsorRoom?.sponsorMode && sponsorId && aiUserId && aiOwnerId && aiOwnerId !== sponsorId && sponsorRoom.sponsorPrice > 0) {
-      const aiUser = await prisma.user.findUnique({
-        where: { id: aiUserId },
-        select: { id: true, isAi: true, aiOwnerId: true },
-      });
-      const aiMember = sponsorRoom.members.find(member => member.userId === aiUserId);
-      if (!aiUser?.isAi || aiUser.aiOwnerId !== aiOwnerId || !aiMember) {
-        return NextResponse.json({ error: 'Invalid AI ownership' }, { status: 403 });
-      }
-
+    if (sponsorBilling) {
       const paymentResult = await prisma.$transaction(async (tx) => {
         const debit = await tx.user.updateMany({
-          where: { id: aiOwnerId, walletBalance: { gte: sponsorRoom.sponsorPrice } },
-          data: { walletBalance: { decrement: sponsorRoom.sponsorPrice } },
+          where: { id: sponsorBilling.payerId, walletBalance: { gte: sponsorBilling.amount } },
+          data: { walletBalance: { decrement: sponsorBilling.amount } },
         });
         if (debit.count !== 1) return false;
 
         await tx.user.update({
-          where: { id: sponsorId },
-          data: { walletBalance: { increment: sponsorRoom.sponsorPrice } },
+          where: { id: sponsorBilling.receiverId },
+          data: { walletBalance: { increment: sponsorBilling.amount } },
         });
+
         await tx.transaction.create({
           data: {
-            senderId: aiOwnerId,
-            receiverId: sponsorId,
-            amount: sponsorRoom.sponsorPrice,
+            senderId: sponsorBilling.payerId,
+            receiverId: sponsorBilling.receiverId,
+            amount: sponsorBilling.amount,
             reason: `[AI response sponsor fee] Room ${roomId}`,
           },
         });
+
         return true;
       });
 
@@ -323,7 +343,7 @@ export async function POST(request: Request) {
       }
     }
 
-    await recordFreeEventUsage(currentUser.id, resolvedAi.freeEvent);
+    await recordFreeEventUsage(effectiveAiUser.id, resolvedAi.freeEvent);
 
     return NextResponse.json({ reply: finalReply || '응답을 생성할 수 없습니다.' });
   } catch (error) {
@@ -334,7 +354,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { error: messageStr || 'Failed to process conversational AI chat', status },
-      { status }
+      { status },
     );
   }
 }

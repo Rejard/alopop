@@ -1199,10 +1199,8 @@ export default function Home() {
                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
 
                 return Promise.resolve().then(() => {
-                  const friendProvider = isSponsorMode
-                    ? (currentRoom.sponsorModel?.includes('gemini') ? 'gemini' : currentRoom.sponsorModel?.includes('claude') ? 'anthropic' : 'openai')
-                    : realProvider;
-                  const friendAiModel = isSponsorMode ? currentRoom.sponsorModel : localStorage.getItem('alo_ai_model') || '';
+                  const friendProvider = realProvider;
+                  const friendAiModel = localStorage.getItem('alo_ai_model') || '';
                   const friendUseFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === friendProvider && e.aiModel === friendAiModel && !exhaustedFreeEvents[e.id]);
 
                   return fetch('/api/chat/friend', {
