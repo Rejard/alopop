@@ -6,6 +6,7 @@ function safeFriendship(friendship: {
   friend: {
     aiOwnerId: string | null;
     aiPrompt: string | null;
+    agentToken?: string | null;
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -15,6 +16,7 @@ function safeFriendship(friendship: {
     friend: {
       ...friendship.friend,
       aiPrompt: friendship.friend.aiOwnerId === currentUserId ? friendship.friend.aiPrompt : null,
+      agentToken: friendship.friend.aiOwnerId === currentUserId ? friendship.friend.agentToken : null,
     },
   };
 }
@@ -40,6 +42,7 @@ export async function GET(request: Request) {
             avatar_url: true,
             isAi: true,
             isAgent: true,
+            agentToken: true,
             agentPath: true,
             aiOwnerId: true,
             aiPrompt: true,
@@ -116,6 +119,7 @@ export async function POST(request: Request) {
               avatar_url: true,
               isAi: true,
               isAgent: true,
+              agentToken: true,
               agentPath: true,
               aiOwnerId: true,
               aiPrompt: true,

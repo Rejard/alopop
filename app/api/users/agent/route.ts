@@ -37,6 +37,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 });
   }
 
+  const token = randomBytes(24).toString('hex');
   const agentName = name.trim();
   if (!agentName) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
       isAgent: true,
       isAi: true,
       aiOwnerId: user.id,
-      agentToken: randomBytes(24).toString('hex'),
+      agentToken: token,
       agentPath: typeof path === 'string' && path.trim() ? path.trim() : null,
       statusMessage: typeof role === 'string' && role.trim() ? role.trim() : null,
       avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(agentName)}&colors=blue`,

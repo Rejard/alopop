@@ -26,8 +26,11 @@ const UpdateEventSchema = z.object({
   action: z.enum(['TOGGLE_ACTIVE']),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { user: adminUser, response } = await requireAdminUser(request);
+    if (!adminUser) return response;
+
     const events = await prisma.event.findMany({
       orderBy: { createdAt: 'desc' },
     });

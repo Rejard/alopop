@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShieldAlert, ArrowLeft, Send, Save, CreditCard, ChevronLeft, Gift, Trash2, Power, PowerOff } from 'lucide-react';
+import { ShieldAlert, Send, Save, ChevronLeft, Gift, Trash2, Power, PowerOff, Users } from 'lucide-react';
+import AdminMembersPanel from './AdminMembersPanel';
 
 function ChaosPanel() {
   const [userCount, setUserCount] = useState(100);
@@ -89,7 +90,7 @@ function ChaosPanel() {
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'ANNOUNCEMENT' | 'EVENT' | 'SYSTEM' | 'CHAOS'>('ANNOUNCEMENT');
+  const [activeTab, setActiveTab] = useState<'MEMBERS' | 'ANNOUNCEMENT' | 'EVENT' | 'SYSTEM' | 'CHAOS'>('MEMBERS');
 
   // Announcement States
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -332,7 +333,12 @@ export default function AdminDashboard() {
           <ShieldAlert className="text-primary" /> 관리자 대시보드
         </h1>
 
-        <div className="flex xl:flex-col gap-2 overflow-x-auto pb-4 md:pb-0 hide-scrollbar">
+        <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible pb-4 md:pb-0 hide-scrollbar">
+          <button
+            onClick={() => setActiveTab('MEMBERS')}
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left whitespace-nowrap transition-all ${activeTab === 'MEMBERS' ? 'bg-primary text-on-primary shadow-md' : 'text-on-surface-variant hover:bg-surface-variant'}`}>
+            <Users size={16} className="inline mr-2" /> 회원 관리
+          </button>
           <button 
             onClick={() => setActiveTab('ANNOUNCEMENT')} 
             className={`px-4 py-3 text-sm font-semibold rounded-xl text-left whitespace-nowrap transition-all ${activeTab === 'ANNOUNCEMENT' ? 'bg-primary text-on-primary shadow-md' : 'text-on-surface-variant hover:bg-surface-variant'}`}>
@@ -358,6 +364,8 @@ export default function AdminDashboard() {
 
       {/* Main Content Area */}
       <div className="flex-1 p-6 md:p-10 overflow-y-auto">
+        {activeTab === 'MEMBERS' && <AdminMembersPanel />}
+
         {activeTab === 'ANNOUNCEMENT' && (
           <div className="max-w-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h2 className="text-2xl font-bold mb-6 text-primary drop-shadow-sm">📢 새로운 공지사항 작성</h2>

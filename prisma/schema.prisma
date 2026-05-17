@@ -46,6 +46,8 @@ model User {
   
   // 오프라인 메시지
   offlineMessages OfflineMessage[] @relation("UserOfflineMessages")
+  adminAuditLogs AdminAuditLog[] @relation("AdminAuditLogs")
+  targetedAdminAuditLogs AdminAuditLog[] @relation("TargetedAdminAuditLogs")
 }
 
 model Transaction {
@@ -214,6 +216,25 @@ model OfflineMessage {
   
   @@index([receiverId])
   @@index([expiresAt])
+}
+
+model AdminAuditLog {
+  id           String   @id @default(uuid())
+  action       String
+  reason       String
+  metadata     String?
+  createdAt    DateTime @default(now())
+
+  adminId      String
+  admin        User     @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: Cascade)
+
+  targetUserId String?
+  targetUser   User?    @relation("TargetedAdminAuditLogs", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([targetUserId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 // =============================================

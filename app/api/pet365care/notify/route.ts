@@ -62,7 +62,11 @@ async function saveOfflineNotice(receiverId: string, message: { messageId?: stri
   await prisma.offlineMessage.create({
     data: {
       receiverId,
+      kind: 'NOTICE',
+      status: 'PENDING',
       payload: createOfflineNotice(message),
+      expiresAt: new Date(Date.now() + OFFLINE_NOTICE_TTL_MS),
+      attemptCount: 0,
     },
   });
 }

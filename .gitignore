@@ -46,6 +46,7 @@ vapid.json
 /public/uploads
 
 # local database files
+.codex-backups/
 .db-backups/
 *.db
 *.db-journal

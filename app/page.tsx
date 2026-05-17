@@ -505,9 +505,9 @@ export default function Home() {
           fetch(`/api/rooms/user?userId=${userId}`),
           fetch(`/api/friends?userId=${userId}`),
           fetch(`/api/users/profile?userId=${userId}`),
-          fetch(`/api/admin/announcements`),
+          fetch(`/api/announcements`),
           fetch(`/api/admin/system`),
-          fetch(`/api/admin/events`)
+          fetch(`/api/events`)
         ]);
         if (roomsRes.ok) {
           const roomsData = await roomsRes.json();
@@ -2128,7 +2128,7 @@ export default function Home() {
     try {
       let res;
       if (editingAiFriend) {
-        res = await fetch('/api/admin/agent', {
+        res = await fetch('/api/users/agent', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2139,7 +2139,7 @@ export default function Home() {
           })
         });
       } else {
-        res = await fetch('/api/admin/agent', {
+        res = await fetch('/api/users/agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
