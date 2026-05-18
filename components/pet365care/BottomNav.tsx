@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ShieldPlus, Sprout, User, Users } from "lucide-react";
+import { useEffect } from "react";
+import { getPets } from "@/lib/pet365care/local-store";
 
 export default function Pet365BottomNav() {
   const pathname = usePathname();
@@ -14,6 +16,101 @@ export default function Pet365BottomNav() {
     { name: "케어", path: "/pet365care/care", icon: Sprout },
     { name: "프로필", path: "/pet365care/profile", icon: User },
   ];
+
+  useEffect(() => {
+    // Check alarms every 1 minute
+    const checkAlarms = async () => {
+      if (typeof window === "undefined") return;
+      const storeRaw = localStorage.getItem("pet365care-store");
+      if (!storeRaw) return;
+      
+      try {
+        const store = JSON.parse(storeRaw);
+        const pets = store.pets || [];
+        const medications = store.medications || [];
+        const medicalRecords = store.medicalRecords || [];
+        
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+        const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        
+        let sentAlarms: Record<string, boolean> = {};
+        try {
+          sentAlarms = JSON.parse(localStorage.getItem("pet365_sent_alarms") || "{}");
+        } catch (e) {}
+
+        let alarmSent = false;
+
+        const sendNotify = async (pet: any, msg: string, alarmKey: string) => {
+          if (sentAlarms[alarmKey]) return; // Already sent
+          try {
+            await fetch('/api/pet365care/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                petName: pet.name,
+                species: pet.species || 'other',
+                roomName: 'Pet365 봇 알림',
+                message: msg
+              })
+            });
+            sentAlarms[alarmKey] = true;
+            alarmSent = true;
+          } catch (err) {
+            console.error("Alarm failed", err);
+          }
+        };
+
+        // 1. Medication Alarms
+        for (const med of medications) {
+          if (!med.isActive || !med.time) continue;
+          
+          const pet = pets.find((p: any) => p.id === med.petId);
+          if (!pet) continue;
+
+          // Check if today is already checked
+          const isCheckedToday = (med.checkLogs || []).includes(todayStr);
+          if (isCheckedToday) continue;
+
+          // Check if time has passed
+          if (timeStr >= med.time) {
+            const alarmKey = `med_${med.id}_${todayStr}`;
+            await sendNotify(pet, `[약 복용 알림] 삐빅! ${pet.name}의 '${med.name}' 약 먹일 시간입니다! 잊지 말고 챙겨주세요! 💊`, alarmKey);
+          }
+        }
+
+        // 2. Hospital Alarms
+        for (const rec of medicalRecords) {
+          if (rec.type !== 'HOSPITAL' || !rec.nextDate) continue;
+          
+          const pet = pets.find((p: any) => p.id === rec.petId);
+          if (!pet) continue;
+
+          if (rec.nextDate === todayStr) {
+            const alarmKey = `hosp_today_${rec.id}_${todayStr}`;
+            await sendNotify(pet, `[병원 방문 D-DAY] 오늘은 ${pet.name}의 '${rec.title}' 병원 방문 예정일입니다! 🏥 잊지 마세요!`, alarmKey);
+          } else if (rec.nextDate === tomorrowStr) {
+            const alarmKey = `hosp_tmrw_${rec.id}_${todayStr}`; // Use todayStr to not re-send today
+            await sendNotify(pet, `[병원 방문 D-1] 내일은 ${pet.name}의 '${rec.title}' 병원 방문 예정일입니다! 🏥 미리 준비해주세요!`, alarmKey);
+          }
+        }
+
+        if (alarmSent) {
+          localStorage.setItem("pet365_sent_alarms", JSON.stringify(sentAlarms));
+        }
+
+      } catch (err) {
+        console.error("Failed to parse store for alarms", err);
+      }
+    };
+
+    checkAlarms(); // Check immediately on mount
+    const timer = setInterval(checkAlarms, 60000); // Check every minute
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <nav className="flex-shrink-0 w-full bg-[#09070d]/95 border-t border-white/10 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] z-[200] shadow-[0_-18px_42px_rgba(9,7,13,0.35)] relative">

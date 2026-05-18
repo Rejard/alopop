@@ -5,6 +5,7 @@
  * Alopop 통합 이후에는 Alopop 서버 API를 경유하여
  * 프로바이더/모델/키를 통합 관리합니다.
  */
+import { getPreferredAi } from "./local-store";
 
 export async function analyzeImage(imageBase64: string): Promise<{ diagnosis: string; confidence: number; mood: string }> {
   // base64에서 data:image/... 접두사 제거
@@ -15,12 +16,15 @@ export async function analyzeImage(imageBase64: string): Promise<{ diagnosis: st
   }
 
   try {
+    const pref = getPreferredAi();
     const res = await fetch("/api/pet365care/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "analyzeImage",
         imageBase64: base64Data,
+        provider: pref.provider,
+        aiModel: pref.model,
       }),
     });
     if (!res.ok) {
@@ -41,12 +45,15 @@ export async function analyzeImage(imageBase64: string): Promise<{ diagnosis: st
 
 export async function generateCareTip(petName: string, species: string, breed: string, age: number): Promise<{ title: string; content: string; iconType: string }> {
   try {
+    const pref = getPreferredAi();
     const res = await fetch("/api/pet365care/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "generateCareTip",
         petName, species, breed, age,
+        provider: pref.provider,
+        aiModel: pref.model,
       }),
     });
     if (!res.ok) {
@@ -60,12 +67,15 @@ export async function generateCareTip(petName: string, species: string, breed: s
 
 export async function generateHistorySummary(petName: string, recordsText: string): Promise<string> {
   try {
+    const pref = getPreferredAi();
     const res = await fetch("/api/pet365care/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "generateHistorySummary",
         petName, recordsText,
+        provider: pref.provider,
+        aiModel: pref.model,
       }),
     });
     if (!res.ok) {
@@ -80,12 +90,15 @@ export async function generateHistorySummary(petName: string, recordsText: strin
 
 export async function generateDailyCoaching(petName: string, checksText: string): Promise<string> {
   try {
+    const pref = getPreferredAi();
     const res = await fetch("/api/pet365care/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "generateDailyCoaching",
         petName, checksText,
+        provider: pref.provider,
+        aiModel: pref.model,
       }),
     });
     if (!res.ok) {
@@ -100,12 +113,15 @@ export async function generateDailyCoaching(petName: string, checksText: string)
 
 export async function generateWeeklyRoutineCoaching(petName: string, weeklyStatsText: string, userName?: string): Promise<string> {
   try {
+    const pref = getPreferredAi();
     const res = await fetch("/api/pet365care/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "generateWeeklyRoutineCoaching",
         petName, weeklyStatsText, userName,
+        provider: pref.provider,
+        aiModel: pref.model,
       }),
     });
     if (!res.ok) {
@@ -115,5 +131,28 @@ export async function generateWeeklyRoutineCoaching(petName: string, weeklyStats
     return data.coaching || "데이터를 바탕으로 루틴을 점검해 보세요!";
   } catch {
     return "데이터를 바탕으로 루틴을 점검해 보세요!";
+  }
+}
+
+export async function generateDailyOverallDiagnosis(petsInfoText: string, recordsText: string, userName?: string): Promise<string> {
+  try {
+    const pref = getPreferredAi();
+    const res = await fetch("/api/pet365care/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "generateDailyOverallDiagnosis",
+        petsInfoText, recordsText, userName,
+        provider: pref.provider,
+        aiModel: pref.model,
+      }),
+    });
+    if (!res.ok) {
+      return "아이들의 상태가 평화롭고 건강해 보입니다!";
+    }
+    const data = await res.json();
+    return data.diagnosis || "아이들의 상태가 평화롭고 건강해 보입니다!";
+  } catch {
+    return "아이들의 상태가 평화롭고 건강해 보입니다!";
   }
 }

@@ -18,13 +18,13 @@ export async function POST(request: Request) {
     if (!currentUser) return response;
 
     const body = await request.json();
-    const { action } = body;
+    const { action, provider, aiModel } = body;
 
     // Alopop AI 키 해결 (이벤트 무료 → 개인키 → 환경변수)
     const resolvedAi = await resolveAiKeyForRequest({
       user: currentUser,
-      provider: 'gemini',
-      aiModel: 'gemini-2.5-flash',
+      provider: provider || 'gemini',
+      aiModel: aiModel || 'gemini-2.5-flash',
       allowEnvFallback: false,
     });
 
@@ -192,6 +192,36 @@ export async function POST(request: Request) {
       } catch { /* fallback */ }
 
       return NextResponse.json({ coaching: result.text });
+    }
+
+    if (action === 'generateDailyOverallDiagnosis') {
+      const { petsInfoText, recordsText, userName } = body;
+      const targetName = userName ? `${userName}님` : "보호자님";
+      
+      const prompt = `당신은 따뜻한 반려동물 전문 AI 주치의입니다. 다음은 ${targetName}이(가) 키우는 전체 반려동물의 최근 7일 평균 루틴 달성률과 오늘의 루틴 달성률 비교 데이터입니다.
+
+비교 데이터:
+${recordsText}
+
+이 데이터를 바탕으로, 오늘 아이들의 루틴 수행 상태(컨디션)가 최근 7일 평균과 비교해서 어떤지 평가하고, 2~3문장 이내로 다정하고 활기차게 한국어로 칭찬이나 조언을 해주세요.
+JSON 형식으로 응답: {"diagnosis": "요약 내용..."}`;
+
+      const result = await generateText({
+        model: modelInstance,
+        prompt,
+      });
+
+      await recordFreeEventUsage(currentUser.id, resolvedAi.freeEvent);
+
+      try {
+        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return NextResponse.json({ diagnosis: parsed.diagnosis || result.text });
+        }
+      } catch { /* fallback */ }
+
+      return NextResponse.json({ diagnosis: result.text });
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });

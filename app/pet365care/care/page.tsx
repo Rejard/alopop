@@ -1,18 +1,21 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Camera, Gift, FileText, ChevronDown, Loader2, X, Clock, Edit2, Sparkles, Droplets, Bone, Activity, Smile, Moon } from "lucide-react";
+import { Camera, Gift, FileText, ChevronDown, Loader2, X, Clock, Edit2, Sparkles, Droplets, Bone, Activity, Smile, Moon, Syringe, Plus, Trash2, RefreshCw } from "lucide-react";
 import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
 import { getErrorMessage } from "@/lib/pet365care/errors";
-import { analyzeImage, generateHistorySummary, generateWeeklyRoutineCoaching } from "@/lib/pet365care/gemini-client";
-import { addHealthRecord, getHealthRecords, updateHealthRecord, getPets, getAiSummary, saveAiSummary, getWeeklyCareStats, getAiWeeklyCoaching, saveAiWeeklyCoaching, type HealthRecord, type Pet, type WeeklyCareStats } from "@/lib/pet365care/local-store";
+import { analyzeImage, generateHistorySummary, generateWeeklyRoutineCoaching, generateDailyOverallDiagnosis } from "@/lib/pet365care/gemini-client";
+import { loadStore, todayStr, getAiDailyOverall, saveAiDailyOverall, addHealthRecord, getHealthRecords, updateHealthRecord, getPets, updatePet as updatePetStore, getAiSummary, saveAiSummary, getWeeklyCareStats, getAiWeeklyCoaching, saveAiWeeklyCoaching, getMedicalRecords, addMedicalRecord, deleteMedicalRecord, updateMedicalRecord, getMedications, addMedication, updateMedication, deleteMedication, getPreferredAi, type HealthRecord, type Pet, type WeeklyCareStats, type MedicalRecord, type MedicalRecordType, type Medication } from "@/lib/pet365care/local-store";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
 
 export default function CarePage() {
   const [activeTab, setActiveTab] = useState("일상");
   const { user } = usePet365Auth();
+  const confirmModal = useConfirm();
   
   // Camera & AI State
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<{ diagnosis: string; confidence: number; mood: string } | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -28,6 +31,9 @@ export default function CarePage() {
   // Summary State
   const [summaries, setSummaries] = useState<Record<string, {text: string, updatedAt: string}>>({});
   const [summarizing, setSummarizing] = useState<Record<string, boolean>>({});
+  
+  const [dailyOverall, setDailyOverall] = useState<string | null>(null);
+  const [dailyOverallLoading, setDailyOverallLoading] = useState(false);
 
   // Weekly Care Stats State
   const [dailyPetId, setDailyPetId] = useState<string | null>(null);
@@ -35,13 +41,104 @@ export default function CarePage() {
   const [weeklyCoaching, setWeeklyCoaching] = useState<string | null>(null);
   const [isCoaching, setIsCoaching] = useState(false);
 
+  // Medical Timeline State
+  const [medicalPetId, setMedicalPetId] = useState<string | null>(null);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  
+  // Static Tags & Medication Forms
+  const [isEditTagsOpen, setIsEditTagsOpen] = useState(false);
+  const [tagsForm, setTagsForm] = useState({ allergies: "", chronicDiseases: "" });
+  
+  const [isMedModalOpen, setIsMedModalOpen] = useState(false);
+  const [medForm, setMedForm] = useState({ name: "", frequency: "매일", memo: "", time: "09:00" });
+  const [editingMedId, setEditingMedId] = useState<string | null>(null);
+  
+  // Medical Form States
+  const [recordFormType, setRecordFormType] = useState<MedicalRecordType | null>(null);
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [recordForm, setRecordForm] = useState({
+    title: "",
+    date: new Date().toISOString().split('T')[0],
+    nextDate: "",
+    hospital: "",
+    memo: "",
+    attachments: [] as string[]
+  });
+
   useEffect(() => {
     const loadedPets = getPets();
     setPets(loadedPets);
-    if (loadedPets.length > 0 && !dailyPetId) {
-      setDailyPetId(loadedPets[0].id);
+    if (loadedPets.length > 0) {
+      if (!dailyPetId) setDailyPetId(loadedPets[0].id);
+      if (!medicalPetId) setMedicalPetId(loadedPets[0].id);
     }
   }, []);
+
+  const fetchAiDailyDiagnosis = async (force: boolean = false) => {
+    try {
+      const pList = getPets();
+      if (pList.length === 0) {
+        setDailyOverall("반려동물을 먼저 등록해 주세요!");
+        return;
+      }
+      
+      if (!force) {
+        const cached = getAiDailyOverall();
+        if (cached && cached.date === todayStr()) {
+          setDailyOverall(cached.text);
+          return;
+        }
+      }
+      
+      setDailyOverallLoading(true);
+      const tDate = todayStr();
+      
+      let sumWeeklyAvg = 0;
+      let sumToday = 0;
+      let validPetCount = 0;
+      
+      for (const p of pList) {
+        const stats = getWeeklyCareStats(p.id);
+        if (!stats || !stats.dailyRates || stats.dailyRates.length === 0) continue;
+        
+        sumWeeklyAvg += stats.overallRate;
+        
+        const todayStat = stats.dailyRates.find(r => r.date === tDate);
+        sumToday += todayStat ? todayStat.rate : 0;
+        
+        validPetCount++;
+      }
+      
+      if (validPetCount === 0 || sumToday === 0) {
+        const emptyMsg = "아직 오늘 기록이 없어요! 밥이나 간식 등 루틴을 기록해 주시면 아이들의 건강을 분석해 드릴게요 🐾";
+        setDailyOverall(emptyMsg);
+        saveAiDailyOverall(emptyMsg);
+        setDailyOverallLoading(false);
+        return;
+      }
+      
+      const avgWeekly = Math.round(sumWeeklyAvg / validPetCount);
+      const avgToday = Math.round(sumToday / validPetCount);
+      
+      const petsInfo = pList.map(p => `- 이름: ${p.name}, 종류: ${p.species}`).join('\n');
+      const recordsText = `오늘의 전체 평균 루틴 달성률: ${avgToday}%\n최근 7일 전체 평균 루틴 달성률: ${avgWeekly}%`;
+      
+      const res = await generateDailyOverallDiagnosis(petsInfo, recordsText, user?.username);
+      setDailyOverall(res);
+      saveAiDailyOverall(res);
+      setDailyOverallLoading(false);
+    } catch (err) {
+      console.error("AI Daily Diagnosis error:", err);
+      setDailyOverall("진단 정보를 불러오는 중 문제가 발생했어요.");
+      setDailyOverallLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAiDailyDiagnosis(false);
+  }, [user?.username]);
 
   useEffect(() => {
     if (activeTab === "일상" && dailyPetId) {
@@ -56,6 +153,13 @@ export default function CarePage() {
       }
     }
   }, [activeTab, dailyPetId]);
+
+  useEffect(() => {
+    if (activeTab === "의료" && medicalPetId) {
+      setMedicalRecords(getMedicalRecords(medicalPetId));
+      setMedications(getMedications(medicalPetId));
+    }
+  }, [activeTab, medicalPetId]);
 
   useEffect(() => {
     if (activeTab === "기록" && user?.id) {
@@ -121,9 +225,10 @@ export default function CarePage() {
       const base64String = canvas.toDataURL("image/jpeg", 0.6); // Quality 60%
 
       try {
+        const aiPref = getPreferredAi();
         const apiKey = "alopop-internal";
         if (!apiKey) {
-          throw new Error("프로필 설정에서 Gemini API 키를 먼저 등록해주세요.");
+          throw new Error("프로필 설정에서 AI 주치의 설정을 먼저 확인해주세요.");
         }
 
         const result = await analyzeImage(base64String);
@@ -148,6 +253,224 @@ export default function CarePage() {
 
     img.src = objectUrl;
   };
+
+  const handleOpenAddForm = (type: MedicalRecordType) => {
+    setIsAddMenuOpen(false);
+    setEditingRecordId(null);
+    setRecordFormType(type);
+    setRecordForm({
+      title: type === 'VAX' ? '종합백신' : type === 'PARASITE' ? '심장사상충 예방약' : type === 'HOSPITAL' ? '일반 진료' : '이상 증상',
+      date: new Date().toISOString().split('T')[0],
+      nextDate: "",
+      hospital: "",
+      memo: "",
+      attachments: []
+    });
+  };
+
+  const handleAddAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    
+    if (recordForm.attachments.length + files.length > 10) {
+      confirmModal({ title: "알림", message: "사진은 최대 10장까지 첨부할 수 있습니다.", type: "info" });
+      return;
+    }
+    
+    files.forEach(file => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 400; // 썸네일 수준으로 강제 압축 (로컬 스토리지 한계 극복)
+        
+        if (width > height && width > maxDim) {
+          height *= maxDim / width;
+          width = maxDim;
+        } else if (height > maxDim) {
+          width *= maxDim / height;
+          height = maxDim;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        const base64String = canvas.toDataURL("image/jpeg", 0.5); // Quality 50%
+        
+        setRecordForm(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, base64String]
+        }));
+      };
+      img.src = objectUrl;
+    });
+  };
+
+  const handleRemoveAttachment = (index: number) => {
+    setRecordForm(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleSubmitRecord = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!medicalPetId || !recordFormType) return;
+    
+    if (editingRecordId) {
+      updateMedicalRecord(editingRecordId, {
+        type: recordFormType,
+        date: recordForm.date,
+        title: recordForm.title || `${recordFormType} 기록`,
+        memo: recordForm.memo || null,
+        nextDate: recordForm.nextDate || null,
+        hospital: recordForm.hospital || null,
+        attachments: recordForm.attachments
+      });
+    } else {
+      addMedicalRecord({
+        petId: medicalPetId,
+        type: recordFormType,
+        date: recordForm.date,
+        title: recordForm.title,
+        memo: recordForm.memo || null,
+        nextDate: recordForm.nextDate || null,
+        hospital: recordForm.hospital || null,
+        attachments: recordForm.attachments
+      });
+    }
+    
+    setMedicalRecords(getMedicalRecords(medicalPetId));
+    setRecordFormType(null);
+    setEditingRecordId(null);
+  };
+
+  const handleEditRecord = (record: MedicalRecord) => {
+    setEditingRecordId(record.id);
+    setRecordFormType(record.type);
+    setRecordForm({
+      title: record.title,
+      date: record.date,
+      nextDate: record.nextDate || "",
+      hospital: record.hospital || "",
+      memo: record.memo || "",
+      attachments: record.attachments || []
+    });
+  };
+
+  const handleDeleteRecord = async (id: string) => {
+    const isOk = await confirmModal({
+      title: "기록 삭제",
+      message: "이 의료 기록을 삭제하시겠어요?",
+      type: "danger",
+      confirmText: "삭제",
+    });
+    if (!isOk) return;
+    
+    deleteMedicalRecord(id);
+    if (medicalPetId) {
+      setMedicalRecords(getMedicalRecords(medicalPetId));
+    }
+  };
+
+  const handleToggleNeutered = async (petId: string, currentStatus: boolean) => {
+    const isOk = await confirmModal({
+      title: "중성화 상태 변경",
+      message: `이 반려동물의 중성화 상태를 '${!currentStatus ? '완료' : '미완료'}'로 변경하시겠습니까?`,
+      type: "info",
+      confirmText: "변경",
+    });
+    if (!isOk) return;
+    
+    updatePetStore(petId, { isNeutered: !currentStatus });
+    setPets(getPets());
+  };
+
+  const handleSaveTags = () => {
+    if (!medicalPetId) return;
+    updatePetStore(medicalPetId, { 
+      allergies: tagsForm.allergies || undefined, 
+      chronicDiseases: tagsForm.chronicDiseases || undefined 
+    });
+    setPets(getPets());
+    setIsEditTagsOpen(false);
+  };
+
+  const handleSaveMedication = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!medicalPetId) return;
+
+    if (editingMedId) {
+      updateMedication(editingMedId, {
+        name: medForm.name,
+        frequency: medForm.frequency,
+        time: medForm.time || null,
+        memo: medForm.memo || null,
+      });
+    } else {
+      addMedication({
+        petId: medicalPetId,
+        name: medForm.name,
+        frequency: medForm.frequency,
+        isActive: true,
+        time: medForm.time || null,
+        memo: medForm.memo || null,
+        checkLogs: []
+      });
+    }
+    
+    setMedications(getMedications(medicalPetId));
+    setIsMedModalOpen(false);
+    setEditingMedId(null);
+    setMedForm({ name: "", frequency: "매일", memo: "", time: "09:00" });
+  };
+
+  const handleEditMedication = (med: Medication) => {
+    setEditingMedId(med.id);
+    setMedForm({
+      name: med.name,
+      frequency: med.frequency,
+      memo: med.memo || "",
+      time: med.time || "09:00"
+    });
+    setIsMedModalOpen(true);
+  };
+
+  const handleDeleteMedication = async (id: string) => {
+    const isOk = await confirmModal({
+      title: "복용 기록 삭제",
+      message: "이 투약/복용 관리를 삭제하시겠어요?",
+      type: "danger",
+      confirmText: "삭제",
+    });
+    if (!isOk) return;
+    deleteMedication(id);
+    if (medicalPetId) setMedications(getMedications(medicalPetId));
+  };
+
+  const handleToggleMedCheck = (med: Medication) => {
+    if (!medicalPetId) return;
+    const today = new Date().toISOString().split('T')[0];
+    const logs = med.checkLogs || [];
+    const isChecked = logs.includes(today);
+    
+    let newLogs;
+    if (isChecked) {
+      newLogs = logs.filter(d => d !== today);
+    } else {
+      newLogs = [...logs, today];
+    }
+    
+    updateMedication(med.id, { checkLogs: newLogs });
+    setMedications(getMedications(medicalPetId));
+  };
+
 
   const handleSaveResult = () => {
     if (!analysisResult) return;
@@ -253,7 +576,9 @@ export default function CarePage() {
                   <Loader2 className="animate-spin text-[#9c48ea]" size={40} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">Gemini AI가 판독 중입니다...</h3>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                    {getPreferredAi().provider === 'openai' ? 'ChatGPT' : getPreferredAi().provider === 'anthropic' ? 'Claude' : 'Gemini'} AI가 판독 중입니다...
+                  </h3>
                   <p className="text-sm font-medium text-gray-500 max-w-[200px] mx-auto">사진의 픽셀 하나하나 분석하여 건강 상태를 확인하고 있어요.</p>
                 </div>
               </div>
@@ -345,7 +670,15 @@ export default function CarePage() {
         </button>
 
         {/* AI Daily Diagnosis */}
-        <div className="bg-[#efe7ff] rounded-[32px] p-6 flex items-start gap-4 shadow-sm border border-[#9c48ea]/10 cursor-pointer hover:bg-[#e8ddff] transition-colors">
+        <div onClick={() => fetchAiDailyDiagnosis(true)} className="bg-[#efe7ff] rounded-[32px] p-6 flex items-start gap-4 shadow-sm border border-[#9c48ea]/10 cursor-pointer hover:bg-[#e8ddff] transition-colors relative overflow-hidden group">
+          <div className="absolute top-4 right-4 text-[#9c48ea]/40 opacity-0 group-hover:opacity-100 transition-opacity">
+            <RefreshCw size={18} />
+          </div>
+          {dailyOverallLoading && (
+            <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
+              <Loader2 className="animate-spin text-[#9c48ea]" size={24} />
+            </div>
+          )}
           <div className="w-12 h-12 bg-[#62fae3] rounded-full flex items-center justify-center text-[#08060b] shadow-inner shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 256 256">
               <path d="M128,16a88.1,88.1,0,0,0-88,88c0,75.3,80,132.17,83.41,134.55a8,8,0,0,0,9.18,0C136,236.17,216,179.3,216,104A88.1,88.1,0,0,0,128,16Zm0,206.51C111.45,210.15,56,161.4,56,104a72,72,0,0,1,144,0C200,161.4,144.55,210.15,128,222.51ZM128,64a40,40,0,1,0,40,40A40,40,0,0,0,128,64Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,128Z"></path>
@@ -353,7 +686,9 @@ export default function CarePage() {
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-900 mb-1">AI 일일 진단</h3>
-            <p className="text-sm font-medium text-gray-600 leading-snug">{user?.username ? `${user.username}의 반려동물은` : "강쥐는"} 오늘 컨디션이 아주 좋아요! 활동량이 평균보다 15% 높습니다.</p>
+            <p className="text-sm font-medium text-gray-600 leading-snug">
+              {dailyOverall || `${user?.username ? `${user.username}님의` : "나의"} 사랑스러운 아이들 기록을 불러오는 중입니다...`}
+            </p>
           </div>
         </div>
 
@@ -513,6 +848,358 @@ export default function CarePage() {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Medical Tab */}
+        {activeTab === "의료" && (
+          <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300 mt-2 relative min-h-[400px]">
+            {/* Pet Selector for Medical Tab */}
+            <div className="flex flex-wrap gap-2">
+              {pets.map(p => (
+                <button 
+                  key={p.id}
+                  onClick={() => setMedicalPetId(p.id)}
+                  className={`px-4 py-2.5 rounded-[20px] text-sm font-bold border transition-all ${medicalPetId === p.id ? 'bg-[#09070d] text-white border-[#09070d] shadow-md scale-105' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+
+            {medicalPetId && (() => {
+              const selectedPet = pets.find(p => p.id === medicalPetId);
+              if (!selectedPet) return null;
+              return (
+                <div className="flex flex-col gap-4 pb-24">
+                  {/* Static Profile Tags (Neutering, Allergies, Chronic) */}
+                  <div className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100 relative">
+                    <button onClick={() => { setTagsForm({ allergies: selectedPet.allergies || "", chronicDiseases: selectedPet.chronicDiseases || "" }); setIsEditTagsOpen(true); }} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-full transition-colors">
+                      <Edit2 size={16} />
+                    </button>
+                    <div className="flex flex-wrap gap-2 pr-10">
+                      <button 
+                        onClick={() => handleToggleNeutered(selectedPet.id, !!selectedPet.isNeutered)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${selectedPet.isNeutered ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}
+                      >
+                        <span>🏥 중성화</span>
+                        <div className={`w-6 h-3 rounded-full relative transition-colors ${selectedPet.isNeutered ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                          <div className={`absolute top-0.5 left-0.5 w-2 h-2 rounded-full bg-white transition-transform ${selectedPet.isNeutered ? 'translate-x-3' : 'translate-x-0'}`} />
+                        </div>
+                      </button>
+                      {selectedPet.allergies && (
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-50 text-amber-600">
+                          <span>⚠️ {selectedPet.allergies}</span>
+                        </div>
+                      )}
+                      {selectedPet.chronicDiseases && (
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-red-50 text-red-600">
+                          <span>🩺 {selectedPet.chronicDiseases}</span>
+                        </div>
+                      )}
+                      {!selectedPet.allergies && !selectedPet.chronicDiseases && (
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gray-50 text-gray-400">
+                          <span>알레르기/만성질환 없음</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Daily Medication Checklist */}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between ml-1 mt-2 mb-1">
+                      <h3 className="font-bold text-gray-900 flex items-center gap-2">복용 관리</h3>
+                      <button onClick={() => setIsMedModalOpen(true)} className="text-xs font-bold text-[#9c48ea] hover:bg-[#9c48ea]/10 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1">
+                        <Plus size={14} /> 약 추가
+                      </button>
+                    </div>
+                    {medications.length === 0 ? (
+                      <div className="bg-gray-50 rounded-[24px] p-6 text-center border border-dashed border-gray-200">
+                        <p className="text-sm font-medium text-gray-500 mb-1">등록된 복용 약이 없습니다.</p>
+                        <p className="text-xs text-gray-400">우측 상단 '약 추가'를 눌러 등록해보세요!</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {medications.map(med => {
+                          const today = new Date().toISOString().split('T')[0];
+                          const isChecked = (med.checkLogs || []).includes(today);
+                          return (
+                            <div key={med.id} className="bg-white rounded-[20px] p-4 flex items-center justify-between gap-3 shadow-sm border border-gray-100">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-gray-900 truncate">{med.name}</p>
+                                <div className="flex gap-2 mt-1">
+                                  <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">{med.frequency}</span>
+                                  {med.memo && <span className="text-[11px] font-medium text-gray-400 truncate">{med.memo}</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="flex flex-col gap-1">
+                                  <button onClick={() => handleEditMedication(med)} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-300 hover:text-blue-500 hover:bg-blue-50 transition-colors shrink-0">
+                                    <Edit2 size={16} />
+                                  </button>
+                                  <button onClick={() => handleDeleteMedication(med.id)} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0">
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                                <button 
+                                  onClick={() => handleToggleMedCheck(med)}
+                                  className={`w-12 h-12 flex items-center justify-center rounded-2xl transition-all shrink-0 ${isChecked ? 'bg-gradient-to-br from-[#9c48ea] to-[#6d28d9] text-white shadow-md shadow-purple-500/20' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                                >
+                                  {isChecked ? <div className="w-5 h-5 border-2 border-white rounded-full flex items-center justify-center"><div className="w-2.5 h-2.5 bg-white rounded-full" /></div> : <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Health Timeline Feed */}
+                  <div className="flex flex-col gap-3">
+                    <h3 className="font-bold text-gray-900 ml-1 mt-2 mb-1 flex items-center gap-2">건강 타임라인</h3>
+                    {medicalRecords.length === 0 ? (
+                      <div className="bg-gray-50 rounded-[24px] p-8 text-center border border-dashed border-gray-200">
+                        <FileText size={32} className="mx-auto text-gray-300 mb-3" />
+                        <p className="text-sm font-medium text-gray-500 mb-1">등록된 의료 기록이 없습니다.</p>
+                        <p className="text-xs text-gray-400">하단의 + 버튼을 눌러 첫 기록을 추가해보세요!</p>
+                      </div>
+                    ) : (
+                      medicalRecords.map((record) => (
+                        <div key={record.id} className="bg-white rounded-2xl p-4 flex items-start gap-3 shadow-sm border border-gray-100 active:scale-[0.98] transition-transform">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-inner ${record.type === 'VAX' ? 'bg-blue-100 text-blue-600' : record.type === 'PARASITE' ? 'bg-emerald-100 text-emerald-600' : record.type === 'SYMPTOM' ? 'bg-red-100 text-red-600' : 'bg-purple-100 text-purple-600'}`}>
+                            {record.type === 'VAX' ? '💉' : record.type === 'PARASITE' ? '🐛' : record.type === 'SYMPTOM' ? '🤢' : '🏥'}
+                          </div>
+                          <div className="flex-1 min-w-0 pt-0.5">
+                            <p className="font-bold text-gray-900 text-[15px] truncate">{record.title}</p>
+                            <p className="text-xs font-medium text-gray-500 mt-1">
+                              {record.date}
+                              {record.hospital && ` · ${record.hospital}`}
+                            </p>
+                            {record.nextDate && (
+                              <p className="text-xs text-emerald-600 font-bold mt-1 bg-emerald-100/50 inline-block px-2 py-0.5 rounded-md">
+                                다음 예정: {record.nextDate}
+                              </p>
+                            )}
+                            {record.memo && <p className="text-xs font-medium text-gray-600 mt-1.5 whitespace-pre-wrap">{record.memo}</p>}
+                            
+                            {record.attachments && record.attachments.length > 0 && (
+                              <div className="mt-2 flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+                                {record.attachments.map((img, i) => (
+                                  <a key={i} href={img} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                                    <img src={img} alt="첨부 사진" className="h-16 w-16 object-cover rounded-xl border border-gray-200" />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <button 
+                              onClick={() => handleEditRecord(record)} 
+                              className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-blue-50 hover:text-blue-500 transition-colors shrink-0"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteRecord(record.id)} 
+                              className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors shrink-0"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Universal Add Button (FAB) */}
+            <button
+              onClick={() => setIsAddMenuOpen(true)}
+              className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-r from-[#9c48ea] to-[#6d28d9] text-white rounded-full flex items-center justify-center shadow-lg shadow-purple-500/30 hover:scale-105 active:scale-95 transition-all z-20"
+            >
+              <Plus size={28} />
+            </button>
+            
+            {/* Action Sheet (Bottom Menu) */}
+            {isAddMenuOpen && (
+              <>
+                <div className="fixed inset-0 bg-black/40 z-[300] animate-in fade-in duration-200" onClick={() => setIsAddMenuOpen(false)} />
+                <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] p-6 z-[310] animate-in slide-in-from-bottom-full duration-300 shadow-2xl">
+                  <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
+                  <h3 className="font-bold text-gray-900 text-lg mb-4">어떤 기록을 남길까요?</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={() => handleOpenAddForm('VAX')} className="bg-blue-50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-blue-100 transition-colors">
+                      <span className="text-2xl">💉</span>
+                      <span className="font-bold text-blue-700 text-sm">예방접종</span>
+                    </button>
+                    <button onClick={() => handleOpenAddForm('PARASITE')} className="bg-emerald-50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-emerald-100 transition-colors">
+                      <span className="text-2xl">🐛</span>
+                      <span className="font-bold text-emerald-700 text-sm">구충·사상충</span>
+                    </button>
+                    <button onClick={() => handleOpenAddForm('HOSPITAL')} className="bg-purple-50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-purple-100 transition-colors">
+                      <span className="text-2xl">🏥</span>
+                      <span className="font-bold text-purple-700 text-sm">병원 진료</span>
+                    </button>
+                    <button onClick={() => handleOpenAddForm('SYMPTOM')} className="bg-red-50 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-red-100 transition-colors">
+                      <span className="text-2xl">🤢</span>
+                      <span className="font-bold text-red-700 text-sm">이상 증상</span>
+                    </button>
+                  </div>
+                  <button onClick={() => setIsAddMenuOpen(false)} className="w-full mt-5 py-3.5 bg-gray-100 text-gray-700 font-bold rounded-2xl hover:bg-gray-200 transition-colors">
+                    닫기
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Medical Record Form Modal */}
+            {recordFormType && (
+              <div className="fixed inset-0 z-[320] flex items-end sm:items-center justify-center sm:p-6 animate-in fade-in duration-200">
+                <div className="absolute inset-0 bg-black/50" onClick={() => { setRecordFormType(null); setEditingRecordId(null); }} />
+                <div className="bg-white w-full sm:max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 relative z-10 shadow-2xl max-h-[90vh] overflow-y-auto hide-scrollbar animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-10 duration-300">
+                  <div className="flex justify-between items-center mb-5">
+                    <h3 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                      {recordFormType === 'VAX' ? '💉 접종 기록' : recordFormType === 'PARASITE' ? '🐛 구충·사상충' : recordFormType === 'HOSPITAL' ? '🏥 병원 진료' : '🤢 이상 증상'} {editingRecordId ? '수정' : '추가'}
+                    </h3>
+                    <button onClick={() => { setRecordFormType(null); setEditingRecordId(null); }} className="p-2 -mr-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"><X size={20} /></button>
+                  </div>
+                  
+                  <form onSubmit={handleSubmitRecord} className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-bold text-gray-700">기록 제목 *</label>
+                      <input type="text" required value={recordForm.title} onChange={e => setRecordForm({...recordForm, title: e.target.value})} placeholder={recordFormType === 'VAX' ? '광견병, 종합백신 등' : '진단명이나 증상을 간단히 적어주세요'} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-bold text-gray-700">날짜 *</label>
+                        <input type="date" required value={recordForm.date} onChange={e => setRecordForm({...recordForm, date: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                      </div>
+                      {(recordFormType === 'VAX' || recordFormType === 'PARASITE' || recordFormType === 'HOSPITAL') && (
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-sm font-bold text-gray-700">다음 {recordFormType === 'HOSPITAL' ? '재진' : '예정'}일</label>
+                          <input type="date" value={recordForm.nextDate} onChange={e => setRecordForm({...recordForm, nextDate: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                        </div>
+                      )}
+                    </div>
+
+                    {(recordFormType === 'VAX' || recordFormType === 'HOSPITAL') && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-bold text-gray-700">병원명</label>
+                        <input type="text" value={recordForm.hospital} onChange={e => setRecordForm({...recordForm, hospital: e.target.value})} placeholder="방문하신 동물병원 이름" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-bold text-gray-700">상세 메모</label>
+                      <textarea value={recordForm.memo} onChange={e => setRecordForm({...recordForm, memo: e.target.value})} placeholder="자세한 증상이나 의사 선생님의 소견을 메모해두세요." rows={3} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 resize-none" />
+                    </div>
+
+                    {recordFormType === 'HOSPITAL' && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-bold text-gray-700 flex items-center justify-between">
+                          <span>사진 첨부 (영수증, 진단서 등)</span>
+                          <span className="text-xs text-gray-400 font-normal">{recordForm.attachments.length}/10</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {recordForm.attachments.map((img, idx) => (
+                            <div key={idx} className="relative w-16 h-16 rounded-xl border border-gray-200 overflow-hidden group">
+                              <img src={img} alt="첨부" className="w-full h-full object-cover" />
+                              <button type="button" onClick={() => handleRemoveAttachment(idx)} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <X size={20} className="text-white" />
+                              </button>
+                            </div>
+                          ))}
+                          {recordForm.attachments.length < 10 && (
+                            <button type="button" onClick={() => attachmentInputRef.current?.click()} className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:border-gray-400 hover:bg-gray-50 transition-colors">
+                              <Camera size={24} />
+                            </button>
+                          )}
+                        </div>
+                        <input type="file" accept="image/*" multiple ref={attachmentInputRef} className="hidden" onChange={handleAddAttachment} />
+                        <p className="text-[11px] text-gray-400 mt-1">※ 기기 용량 관리를 위해 사진은 썸네일 크기(최대 400px)로 자동 압축되어 보관됩니다.</p>
+                      </div>
+                    )}
+                    
+                    <button type="submit" className="w-full bg-gradient-to-r from-[#9c48ea] to-[#6d28d9] text-white font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
+                      기록 저장하기
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Static Tags Modal */}
+            {isEditTagsOpen && (
+              <div className="fixed inset-0 z-[320] flex items-end sm:items-center justify-center sm:p-6 animate-in fade-in duration-200">
+                <div className="absolute inset-0 bg-black/50" onClick={() => setIsEditTagsOpen(false)} />
+                <div className="bg-white w-full sm:max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 relative z-10 shadow-2xl animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-10 duration-300">
+                  <div className="flex justify-between items-center mb-5">
+                    <h3 className="text-xl font-black text-gray-900">태그 수정</h3>
+                    <button onClick={() => setIsEditTagsOpen(false)} className="p-2 -mr-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"><X size={20} /></button>
+                  </div>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-bold text-gray-700 flex items-center gap-1.5"><span className="text-amber-500">⚠️</span> 알레르기</label>
+                      <input type="text" value={tagsForm.allergies} onChange={e => setTagsForm({...tagsForm, allergies: e.target.value})} placeholder="예: 닭고기, 연어, 집먼지진드기 등" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-bold text-gray-700 flex items-center gap-1.5"><span className="text-red-500">🩺</span> 만성질환</label>
+                      <input type="text" value={tagsForm.chronicDiseases} onChange={e => setTagsForm({...tagsForm, chronicDiseases: e.target.value})} placeholder="예: 슬개골 탈구, 심부전, 당뇨 등" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                    </div>
+                    <button onClick={handleSaveTags} className="w-full bg-gray-900 text-white font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
+                      태그 저장
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Medication Modal */}
+            {isMedModalOpen && (
+              <div className="fixed inset-0 z-[320] flex items-end sm:items-center justify-center sm:p-6 animate-in fade-in duration-200">
+                <div className="absolute inset-0 bg-black/50" onClick={() => { setIsMedModalOpen(false); setEditingMedId(null); }} />
+                <div className="bg-white w-full sm:max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 relative z-10 shadow-2xl animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-10 duration-300">
+                  <div className="flex justify-between items-center mb-5">
+                    <h3 className="text-xl font-black text-gray-900">💊 약 {editingMedId ? '수정' : '추가'}</h3>
+                    <button onClick={() => { setIsMedModalOpen(false); setEditingMedId(null); }} className="p-2 -mr-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"><X size={20} /></button>
+                  </div>
+                  <form onSubmit={handleSaveMedication} className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-bold text-gray-700">약 이름 *</label>
+                      <input type="text" required value={medForm.name} onChange={e => setMedForm({...medForm, name: e.target.value})} placeholder="예: 심장약, 관절 영양제 등" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-bold text-gray-700">복용 주기 *</label>
+                        <select value={medForm.frequency} onChange={e => setMedForm({...medForm, frequency: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 appearance-none">
+                          <option value="매일">매일</option>
+                          <option value="주 1회">주 1회</option>
+                          <option value="주 2회">주 2회</option>
+                          <option value="주 3회">주 3회</option>
+                          <option value="월 1회">월 1회</option>
+                          <option value="증상 있을 때만">증상 있을 때만</option>
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-bold text-gray-700">알람 시간</label>
+                        <input type="time" value={medForm.time} onChange={e => setMedForm({...medForm, time: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-bold text-gray-700">추가 메모</label>
+                      <input type="text" value={medForm.memo} onChange={e => setMedForm({...medForm, memo: e.target.value})} placeholder="예: 식후 복용, 반 알만 쪼개서 등" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                    </div>
+                    <button type="submit" className="w-full bg-gradient-to-r from-[#9c48ea] to-[#6d28d9] text-white font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
+                      추가하기
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -701,6 +1388,7 @@ export default function CarePage() {
         })()}
 
       </main>
+
     </div>
   );
 }

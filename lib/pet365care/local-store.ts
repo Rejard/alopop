@@ -19,11 +19,12 @@ export interface Pet {
   birthday?: string | null;
   weight?: number | null;
   isNeutered: boolean;
+  chronicDiseases?: string | null;
   allergies?: string | null;
   memo?: string | null;
   createdAt: string;
   updatedAt: string;
-  vaccinations: Vaccination[];
+  vaccinations: Vaccination[]; // To be deprecated, but kept for backward compatibility during migration
 }
 
 export interface Vaccination {
@@ -63,16 +64,48 @@ export interface HealthRecord {
   createdAt: string;
 }
 
+export type MedicalRecordType = 'VAX' | 'PARASITE' | 'HOSPITAL' | 'SYMPTOM';
+
+export interface MedicalRecord {
+  id: string;
+  petId: string;
+  type: MedicalRecordType;
+  date: string;
+  title: string;
+  memo?: string | null;
+  nextDate?: string | null;
+  hospital?: string | null;
+  attachments?: string[]; // Array of base64 strings (thumbnails)
+  createdAt: string;
+}
+
+export interface Medication {
+  id: string;
+  petId: string;
+  name: string;
+  frequency: string;
+  isActive: boolean;
+  time?: string | null; // e.g. "09:00"
+  memo?: string | null;
+  checkLogs?: string[]; // Array of YYYY-MM-DD dates
+  createdAt: string;
+}
+
 export interface PetStore {
   pets: Pet[];
   careChecks: CareCheck[];
   activityLogs: ActivityLog[];
   healthRecords: HealthRecord[];
+  medicalRecords: MedicalRecord[];
+  medications: Medication[];
   aiSummaries?: Record<string, {text: string, updatedAt: string}>;
   aiWeeklyCoaching?: Record<string, {text: string, updatedAt: string}>;
   settings: {
     geminiApiKey?: string;
     hospitalDbVersion?: string;
+    preferredAiProvider?: string;
+    preferredAiModel?: string;
+    aiDailyOverall?: { text: string; date: string };
   };
 }
 
@@ -130,6 +163,8 @@ const DEFAULT_STORE: PetStore = {
   careChecks: [],
   activityLogs: [],
   healthRecords: [],
+  medicalRecords: [],
+  medications: [],
   aiSummaries: {},
   aiWeeklyCoaching: {},
   settings: {},
@@ -159,6 +194,30 @@ function unwrapStore(data: StoredPet365Shape): Partial<PetStore> {
 function normalizeStore(data: StoredPet365Shape): PetStore {
   const source = unwrapStore(data);
   const pets = Array.isArray(source.pets) ? source.pets : [];
+  let medicalRecords = Array.isArray(source.medicalRecords) ? [...source.medicalRecords] : [];
+  
+  // Migration: old vaccinations to medicalRecords
+  pets.forEach(pet => {
+    if (Array.isArray(pet.vaccinations) && pet.vaccinations.length > 0) {
+      pet.vaccinations.forEach(vax => {
+        if (!medicalRecords.find(mr => mr.id === vax.id)) {
+          medicalRecords.push({
+            id: vax.id,
+            petId: pet.id,
+            type: 'VAX',
+            date: vax.date,
+            title: vax.name,
+            nextDate: vax.nextDate,
+            hospital: vax.hospital,
+            memo: vax.memo,
+            createdAt: vax.createdAt
+          });
+        }
+      });
+      pet.vaccinations = []; // clear to prevent duplicate migration
+    }
+  });
+
   return {
     pets: pets.map((pet) => ({
       ...pet,
@@ -167,6 +226,8 @@ function normalizeStore(data: StoredPet365Shape): PetStore {
     careChecks: Array.isArray(source.careChecks) ? source.careChecks : [],
     activityLogs: Array.isArray(source.activityLogs) ? source.activityLogs : [],
     healthRecords: Array.isArray(source.healthRecords) ? source.healthRecords : [],
+    medicalRecords,
+    medications: Array.isArray(source.medications) ? source.medications : [],
     aiSummaries: source.aiSummaries && typeof source.aiSummaries === "object" ? source.aiSummaries : {},
     aiWeeklyCoaching: source.aiWeeklyCoaching && typeof source.aiWeeklyCoaching === "object" ? source.aiWeeklyCoaching : {},
     settings: source.settings && typeof source.settings === "object" ? source.settings : {},
@@ -566,10 +627,103 @@ export function getAiWeeklyCoaching(petId: string): {text: string, updatedAt: st
   return store.aiWeeklyCoaching?.[petId] || null;
 }
 
-export function saveAiWeeklyCoaching(petId: string, text: string) {
+export function saveAiWeeklyCoaching(petId: string, text: string): void {
   const store = loadStore();
   if (!store.aiWeeklyCoaching) store.aiWeeklyCoaching = {};
   store.aiWeeklyCoaching[petId] = { text, updatedAt: nowISO() };
+  saveStore(store);
+}
+
+// ======= AI 설정 =======
+export function getPreferredAi(): { provider?: string; model?: string } {
+  const store = loadStore();
+  return {
+    provider: store.settings?.preferredAiProvider,
+    model: store.settings?.preferredAiModel,
+  };
+}
+
+export function setPreferredAi(provider: string | undefined, model: string | undefined): void {
+  const store = loadStore();
+  store.settings = store.settings || {};
+  store.settings.preferredAiProvider = provider;
+  store.settings.preferredAiModel = model;
+  saveStore(store);
+}
+
+export function getAiDailyOverall(): { text: string; date: string } | null {
+  const store = loadStore();
+  return store.settings?.aiDailyOverall || null;
+}
+
+export function saveAiDailyOverall(text: string): void {
+  const store = loadStore();
+  store.settings = store.settings || {};
+  store.settings.aiDailyOverall = { text, date: todayStr() };
+  saveStore(store);
+}
+
+// ======= 의료 및 투약 기록 =======
+
+export function getMedicalRecords(petId: string): MedicalRecord[] {
+  return loadStore().medicalRecords.filter((r) => r.petId === petId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+export function addMedicalRecord(record: Omit<MedicalRecord, "id" | "createdAt">): MedicalRecord {
+  const store = loadStore();
+  const mr: MedicalRecord = {
+    ...record,
+    id: uuid(),
+    createdAt: nowISO(),
+  };
+  store.medicalRecords.push(mr);
+  saveStore(store);
+  return mr;
+}
+
+export function deleteMedicalRecord(id: string): void {
+  const store = loadStore();
+  store.medicalRecords = store.medicalRecords.filter((r) => r.id !== id);
+  saveStore(store);
+}
+
+export function updateMedicalRecord(id: string, updates: Partial<Omit<MedicalRecord, "id" | "createdAt" | "petId">>): MedicalRecord | null {
+  const store = loadStore();
+  const idx = store.medicalRecords.findIndex((r) => r.id === id);
+  if (idx === -1) return null;
+  store.medicalRecords[idx] = { ...store.medicalRecords[idx], ...updates };
+  saveStore(store);
+  return store.medicalRecords[idx];
+}
+
+export function getMedications(petId: string): Medication[] {
+  return loadStore().medications.filter((m) => m.petId === petId);
+}
+
+export function addMedication(med: Omit<Medication, "id" | "createdAt">): Medication {
+  const store = loadStore();
+  const nm: Medication = {
+    ...med,
+    id: uuid(),
+    createdAt: nowISO(),
+  };
+  store.medications.push(nm);
+  saveStore(store);
+  return nm;
+}
+
+export function updateMedication(id: string, updates: Partial<Omit<Medication, "id" | "createdAt" | "petId">>): Medication | null {
+  const store = loadStore();
+  const idx = store.medications.findIndex((m) => m.id === id);
+  if (idx === -1) return null;
+  store.medications[idx] = { ...store.medications[idx], ...updates };
+  saveStore(store);
+  return store.medications[idx];
+}
+
+export function deleteMedication(id: string): void {
+  const store = loadStore();
+  store.medications = store.medications.filter((m) => m.id !== id);
   saveStore(store);
 }
 
@@ -590,12 +744,22 @@ export function updateSettings(updates: Partial<PetStore["settings"]>): void {
 /** 전체 스토어를 JSON 문자열로 내보내기 */
 export function exportStore(): string {
   const store = loadStore();
+  
+  // 백업 용량 최적화: 사진 첨부파일(attachments) 제거
+  const backupStore = {
+    ...store,
+    medicalRecords: store.medicalRecords.map(record => {
+      const { attachments, ...rest } = record;
+      return rest;
+    })
+  };
+
   return JSON.stringify({
     format: "pet365care-store",
     version: 2,
     createdAt: nowISO(),
-    summary: countStore(store),
-    store,
+    summary: countStore(backupStore),
+    store: backupStore,
   } satisfies PetStoreBackupEnvelope);
 }
 

@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Syringe, Plus, Download, Upload, CloudDownload, AlertTriangle } from "lucide-react";
+import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Download, Upload, CloudDownload, AlertTriangle } from "lucide-react";
 import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
 import Link from "next/link";
 import {
   getPets, addPet as addPetStore, updatePet as updatePetStore,
-  deletePet as deletePetStore, addVaccination as addVaxStore,
-  deleteVaccination as deleteVaxStore,
+  deletePet as deletePetStore,
   exportStore, importStore, getBackupStats,
+  getPreferredAi, setPreferredAi,
   type BackupSummary,
   type Pet,
 } from "@/lib/pet365care/local-store";
-import { notifyPetRegistered, notifyPetUpdated, notifyPetDeleted, notifyVaccination } from "@/lib/pet365care/notify";
+import { notifyPetRegistered, notifyPetUpdated, notifyPetDeleted } from "@/lib/pet365care/notify";
 import LZString from "lz-string";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 
@@ -50,8 +50,6 @@ export default function ProfilePage() {
   const [selectedPet, setSelectedPet] = useState<PetWithVax | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [isVaxModalOpen, setIsVaxModalOpen] = useState(false);
-  const [vaxForm, setVaxForm] = useState({ name: "", date: "", nextDate: "", hospital: "", memo: "" });
 
   const emptyForm = { name: "", species: "dog", breed: "", age: "", gender: "male", birthday: "", weight: "", isNeutered: false, allergies: "", memo: "" };
   const [form, setForm] = useState(emptyForm);
@@ -63,6 +61,22 @@ export default function ProfilePage() {
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupMsg, setBackupMsg] = useState("");
 
+  // AI 설정 상태
+  const [availableModels, setAvailableModels] = useState<any>({ openai: [], gemini: [], anthropic: [] });
+  const [preferredAiState, setPreferredAiState] = useState<{provider?: string, model?: string}>({});
+
+  const handleAiChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (!val) {
+      setPreferredAi(undefined, undefined);
+      setPreferredAiState({});
+      return;
+    }
+    const [provider, model] = val.split(':');
+    setPreferredAi(provider, model);
+    setPreferredAiState({ provider, model });
+  };
+
   useEffect(() => {
     if (user?.id) {
       const timer = window.setTimeout(() => {
@@ -73,6 +87,9 @@ export default function ProfilePage() {
         fetch('/api/pet365care/backup').then(r => r.json()).then(d => {
           if (d.success && d.data) setBackupInfo(d.data);
         }).catch(() => {});
+        // AI 모델 리스트 및 설정 로드
+        fetch('/api/models').then(r => r.json()).then(d => setAvailableModels(d)).catch(() => {});
+        setPreferredAiState(getPreferredAi());
       }, 0);
       return () => window.clearTimeout(timer);
     }
@@ -165,38 +182,6 @@ export default function ProfilePage() {
     setIsConfirmingDelete(false);
   };
 
-  const handleAddVax = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPet) return;
-    const vax = addVaxStore(selectedPet.id, {
-      name: vaxForm.name, date: vaxForm.date,
-      nextDate: vaxForm.nextDate || null, hospital: vaxForm.hospital || null, memo: vaxForm.memo || null,
-    });
-    if (vax) {
-      const updatedPet = getPets().find(p => p.id === selectedPet.id)!;
-      setSelectedPet(updatedPet);
-      setPets(pets.map(p => p.id === updatedPet.id ? updatedPet : p));
-      setIsVaxModalOpen(false);
-      setVaxForm({ name: "", date: "", nextDate: "", hospital: "", memo: "" });
-      notifyVaccination(selectedPet.name, selectedPet.species, vaxForm.name, vaxForm.nextDate || null);
-    }
-  };
-
-  const handleDeleteVax = async (vacId: string) => {
-    if (!selectedPet) return;
-    const isOk = await confirmModal({
-      title: "접종 기록 삭제",
-      message: "이 접종 기록을 삭제하시겠어요?",
-      type: "danger",
-      confirmText: "삭제",
-    });
-    if (!isOk) return;
-    deleteVaxStore(selectedPet.id, vacId);
-    const updatedPet = getPets().find(p => p.id === selectedPet.id)!;
-    setSelectedPet(updatedPet);
-    setPets(pets.map(p => p.id === updatedPet.id ? updatedPet : p));
-  };
-
   const openEdit = (pet: PetWithVax) => {
     setForm({ name: pet.name, species: pet.species, breed: pet.breed, age: String(pet.age), gender: pet.gender, birthday: pet.birthday || "", weight: pet.weight ? String(pet.weight) : "", isNeutered: pet.isNeutered, allergies: pet.allergies || "", memo: pet.memo || "" });
     setEditMode(true);
@@ -269,7 +254,6 @@ export default function ProfilePage() {
                      <p className="text-xs text-gray-500 font-medium mt-0.5">{pet.breed} · {pet.age}살 · {pet.gender === 'male' ? '♂' : '♀'}{pet.weight ? ` · ${pet.weight}kg` : ''}</p>
                    </div>
                    <div className="flex items-center gap-1">
-                     {pet.vaccinations?.length > 0 && <span className="text-[10px] bg-emerald-50 text-emerald-600 font-bold px-2 py-0.5 rounded-full">💉{pet.vaccinations.length}</span>}
                      <ChevronRight size={16} className="text-gray-400" />
                    </div>
                 </div>
@@ -304,6 +288,43 @@ export default function ProfilePage() {
         {/* ☁️ 데이터 백업/복원 */}
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between px-1">
+            <h3 className="font-bold text-gray-900 text-lg">🤖 AI 주치의 설정</h3>
+          </div>
+          <div className="bg-white rounded-[32px] p-5 shadow-sm mb-6">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-bold text-gray-700">분석 모델 선택</label>
+                <select 
+                  value={preferredAiState.provider ? `${preferredAiState.provider}:${preferredAiState.model}` : ""} 
+                  onChange={handleAiChange} 
+                  className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 appearance-none"
+                >
+                  <option value="">🎁 알로팝 이벤트 AI (무료 제공 시)</option>
+                  <optgroup label="Google (Gemini)">
+                    {availableModels?.gemini?.map((m: any) => (
+                      <option key={m.id} value={`gemini:${m.id}`}>{m.name}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="OpenAI (ChatGPT)">
+                    {availableModels?.openai?.map((m: any) => (
+                      <option key={m.id} value={`openai:${m.id}`}>{m.name}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Anthropic (Claude)">
+                    {availableModels?.anthropic?.map((m: any) => (
+                      <option key={m.id} value={`anthropic:${m.id}`}>{m.name}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                ※ 모델을 지정하면 <strong>본인의 API 키</strong>가 과금됩니다. 본앱 하단 <strong>설정 {'>'} API 키 관리</strong>에서 키를 등록해 주세요.<br/>
+                ※ <strong>이벤트 AI</strong> 선택 시 무료 이벤트 제공 횟수가 소진될 때까지 설정 없이 이용할 수 있습니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between px-1">
             <h3 className="font-bold text-gray-900 text-lg">☁️ 데이터 백업</h3>
           </div>
           <div className="bg-white rounded-[32px] p-5 shadow-sm">
@@ -320,6 +341,14 @@ export default function ProfilePage() {
             ) : (
               <p className="text-xs text-gray-400 font-medium mb-4">아직 백업이 없습니다. 폰 교체 전에 백업하세요!</p>
             )}
+
+            {/* 백업 안내 멘트 */}
+            <div className="bg-purple-50 rounded-xl p-3.5 mb-4 border border-purple-100">
+              <p className="text-xs font-medium text-purple-700 leading-relaxed">
+                💡 <strong>백업/복원 이용 안내</strong><br/>
+                기기 간 데이터 이동을 위한 임시 보관 기능입니다. 용량 관리를 위해 <strong>사진 파일은 백업에서 제외</strong>되며, 서버에 보관된 데이터는 <strong>약 1시간 후 자동으로 안전하게 삭제</strong>됩니다. 폰을 바꾸거나 데이터를 옮기실 때 가볍게 이용해 주세요! 🐾
+              </p>
+            </div>
 
             <div className="flex gap-2">
               {/* 서버에 백업 */}
@@ -562,68 +591,13 @@ export default function ProfilePage() {
                   <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">나이</p><p className="font-bold text-gray-900">{selectedPet.age}살</p></div>
                   <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">성별</p><p className="font-bold text-gray-900">{selectedPet.gender === 'male' ? '♂ 남아' : '♀ 여아'}</p></div>
                   <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">체중</p><p className="font-bold text-gray-900">{selectedPet.weight ? `${selectedPet.weight}kg` : '-'}</p></div>
-                  <div className="bg-gray-50 rounded-2xl p-4"><p className="text-xs text-gray-400 font-bold mb-1">중성화</p><p className="font-bold text-gray-900">{selectedPet.isNeutered ? '✅ 완료' : '❌ 미완료'}</p></div>
+
                   {selectedPet.birthday && <div className="bg-gray-50 rounded-2xl p-4 col-span-2"><p className="text-xs text-gray-400 font-bold mb-1">생일</p><p className="font-bold text-gray-900">🎂 {selectedPet.birthday}</p></div>}
                   {selectedPet.allergies && <div className="bg-amber-50 rounded-2xl p-4 col-span-2"><p className="text-xs text-amber-500 font-bold mb-1">⚠️ 알레르기</p><p className="font-bold text-gray-900">{selectedPet.allergies}</p></div>}
                   {selectedPet.memo && <div className="bg-gray-50 rounded-2xl p-4 col-span-2"><p className="text-xs text-gray-400 font-bold mb-1">메모</p><p className="text-sm text-gray-700">{selectedPet.memo}</p></div>}
                 </div>
-
-                {/* Vaccination Records */}
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-gray-900 flex items-center gap-2"><Syringe size={18} className="text-emerald-500" /> 접종 기록</h3>
-                  <button onClick={() => setIsVaxModalOpen(true)} className="text-sm font-semibold text-emerald-500 flex items-center gap-1"><Plus size={14} /> 추가</button>
-                </div>
-                {selectedPet.vaccinations.length === 0 ? (
-                  <div className="bg-gray-50 rounded-2xl p-6 text-center"><p className="text-sm text-gray-400">아직 접종 기록이 없습니다.</p></div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {selectedPet.vaccinations.map(v => (
-                      <div key={v.id} className="bg-emerald-50/50 rounded-2xl p-4 flex items-start gap-3">
-                        <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 mt-0.5 shrink-0">💉</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-gray-900 text-sm">{v.name}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{v.date}{v.hospital ? ` · ${v.hospital}` : ''}</p>
-                          {v.nextDate && <p className="text-xs text-emerald-600 font-medium mt-0.5">다음 접종: {v.nextDate}</p>}
-                          {v.memo && <p className="text-xs text-gray-400 mt-0.5">{v.memo}</p>}
-                        </div>
-                        <button onClick={() => handleDeleteVax(v.id)} className="text-gray-300 hover:text-red-400 shrink-0"><X size={16} /></button>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Add Vaccination Modal */}
-      {isVaxModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setIsVaxModalOpen(false)}></div>
-          <div className="bg-white w-full max-w-sm rounded-3xl p-6 relative z-10 shadow-2xl">
-            <h3 className="text-xl font-black text-gray-900 mb-5">💉 접종 기록 추가</h3>
-            <form onSubmit={handleAddVax} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-bold text-gray-700">접종명 *</label>
-                <input type="text" required value={vaxForm.name} onChange={e => setVaxForm({...vaxForm, name: e.target.value})} placeholder="광견병, DHPPL 등" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-bold text-gray-700">접종일 *</label>
-                  <input type="date" required value={vaxForm.date} onChange={e => setVaxForm({...vaxForm, date: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-bold text-gray-700">다음 접종</label>
-                  <input type="date" value={vaxForm.nextDate} onChange={e => setVaxForm({...vaxForm, nextDate: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-bold text-gray-700">병원</label>
-                <input type="text" value={vaxForm.hospital} onChange={e => setVaxForm({...vaxForm, hospital: e.target.value})} placeholder="○○동물병원" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-emerald-500/30" />
-              </div>
-              <button type="submit" className="w-full bg-gradient-to-r from-emerald-500 to-emerald-400 text-white font-bold rounded-xl py-3 mt-1 active:scale-[0.98] transition-transform">저장하기</button>
-            </form>
           </div>
         </div>
       )}
