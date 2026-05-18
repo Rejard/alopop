@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Download, Upload, CloudDownload, AlertTriangle } from "lucide-react";
+import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Download, Upload, CloudDownload } from "lucide-react";
 import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
 import Link from "next/link";
 import {
@@ -23,6 +23,15 @@ type BackupInfo = {
   version: number;
   updatedAt: string;
   summary?: BackupSummary;
+};
+type AiModelOption = {
+  id: string;
+  name: string;
+};
+type AvailableModels = {
+  openai: AiModelOption[];
+  gemini: AiModelOption[];
+  anthropic: AiModelOption[];
 };
 
 const SPECIES = [
@@ -48,7 +57,6 @@ export default function ProfilePage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [selectedPet, setSelectedPet] = useState<PetWithVax | null>(null);
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [editMode, setEditMode] = useState(false);
 
   const emptyForm = { name: "", species: "dog", breed: "", age: "", gender: "male", birthday: "", weight: "", isNeutered: false, allergies: "", memo: "" };
@@ -62,7 +70,7 @@ export default function ProfilePage() {
   const [backupMsg, setBackupMsg] = useState("");
 
   // AI 설정 상태
-  const [availableModels, setAvailableModels] = useState<any>({ openai: [], gemini: [], anthropic: [] });
+  const [availableModels, setAvailableModels] = useState<AvailableModels>({ openai: [], gemini: [], anthropic: [] });
   const [preferredAiState, setPreferredAiState] = useState<{provider?: string, model?: string}>({});
 
   const handleAiChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -179,7 +187,17 @@ export default function ProfilePage() {
     notifyPetDeleted(selectedPet.name, selectedPet.species);
     setPets(pets.filter(p => p.id !== selectedPet.id));
     setSelectedPet(null);
-    setIsConfirmingDelete(false);
+  };
+
+  const requestDeletePet = async () => {
+    if (!selectedPet) return;
+    const isOk = await confirmModal({
+      title: "반려동물 삭제",
+      message: `${selectedPet.name} 정보를 삭제합니다.\n케어 체크와 활동 기록도 함께 삭제됩니다.`,
+      type: "danger",
+      confirmText: "삭제하기",
+    });
+    if (isOk) handleDeletePet();
   };
 
   const openEdit = (pet: PetWithVax) => {
@@ -247,7 +265,7 @@ export default function ProfilePage() {
              </div>
           ) : (
              pets.map((pet) => (
-                <div key={pet.id} onClick={() => { setSelectedPet(pet); setEditMode(false); setIsConfirmingDelete(false); }} className="bg-white rounded-[32px] p-5 flex items-center gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer active:scale-[0.98] transition-all">
+                <div key={pet.id} onClick={() => { setSelectedPet(pet); setEditMode(false); }} className="bg-white rounded-[32px] p-5 flex items-center gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer active:scale-[0.98] transition-all">
                    <div className="w-12 h-12 bg-[#FFF3CD] rounded-2xl flex items-center justify-center text-xl">{getEmoji(pet.species)}</div>
                    <div className="flex-1">
                      <h4 className="font-bold text-gray-900 text-[15px]">{pet.name}</h4>
@@ -301,17 +319,17 @@ export default function ProfilePage() {
                 >
                   <option value="">🎁 알로팝 이벤트 AI (무료 제공 시)</option>
                   <optgroup label="Google (Gemini)">
-                    {availableModels?.gemini?.map((m: any) => (
+                    {availableModels.gemini.map((m) => (
                       <option key={m.id} value={`gemini:${m.id}`}>{m.name}</option>
                     ))}
                   </optgroup>
                   <optgroup label="OpenAI (ChatGPT)">
-                    {availableModels?.openai?.map((m: any) => (
+                    {availableModels.openai.map((m) => (
                       <option key={m.id} value={`openai:${m.id}`}>{m.name}</option>
                     ))}
                   </optgroup>
                   <optgroup label="Anthropic (Claude)">
-                    {availableModels?.anthropic?.map((m: any) => (
+                    {availableModels.anthropic.map((m) => (
                       <option key={m.id} value={`anthropic:${m.id}`}>{m.name}</option>
                     ))}
                   </optgroup>
@@ -503,9 +521,9 @@ export default function ProfilePage() {
       {/* Pet Detail Modal */}
       {selectedPet && (
         <div className="fixed inset-0 z-[300] flex flex-col justify-end">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setSelectedPet(null); setEditMode(false); setIsConfirmingDelete(false); }}></div>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setSelectedPet(null); setEditMode(false); }}></div>
           <div className="bg-white w-full rounded-t-[40px] px-6 py-8 relative z-10 shadow-2xl flex flex-col max-h-[90vh]">
-            <button onClick={() => { setSelectedPet(null); setEditMode(false); setIsConfirmingDelete(false); }} className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><X size={20} /></button>
+            <button onClick={() => { setSelectedPet(null); setEditMode(false); }} className="absolute top-6 right-6 z-20 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><X size={20} /></button>
 
             {editMode ? (
               <>
@@ -567,22 +585,20 @@ export default function ProfilePage() {
             ) : (
               <div className="overflow-y-auto hide-scrollbar pb-6">
                 {/* Pet Header */}
-                <div className="flex items-center gap-4 mb-6 pr-12">
+                <div className="flex items-center gap-4 mb-4 pr-12">
                   <div className="w-16 h-16 bg-[#FFF3CD] rounded-3xl flex items-center justify-center shrink-0 text-3xl">{getEmoji(selectedPet.species)}</div>
                   <div className="flex-1 min-w-0">
                     <h2 className="text-2xl font-black text-gray-900 truncate">{selectedPet.name}</h2>
                     <p className="text-sm text-gray-500 font-medium truncate">{SPECIES.find(s => s.value === selectedPet.species)?.label} · {selectedPet.breed}</p>
                   </div>
-                  <button onClick={() => openEdit(selectedPet)} className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center shrink-0 text-blue-500"><Pencil size={18} /></button>
-                  <button onClick={() => {
-                    if (isConfirmingDelete) {
-                      handleDeletePet();
-                    } else {
-                      setIsConfirmingDelete(true);
-                      setTimeout(() => setIsConfirmingDelete(false), 3000); // 3초 후 원래대로 복구
-                    }
-                  }} className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors ${isConfirmingDelete ? 'bg-red-500 text-white' : 'bg-red-50 text-red-400'}`}>
-                    {isConfirmingDelete ? <AlertTriangle size={18} /> : <Trash2 size={18} />}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mb-6">
+                  <button onClick={() => openEdit(selectedPet)} className="h-12 rounded-2xl bg-blue-50 text-blue-600 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+                    <Pencil size={17} /> 수정
+                  </button>
+                  <button onClick={requestDeletePet} className="h-12 rounded-2xl bg-red-50 text-red-500 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+                    <Trash2 size={17} /> 삭제
                   </button>
                 </div>
 
