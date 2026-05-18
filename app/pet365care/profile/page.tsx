@@ -210,9 +210,9 @@ export default function ProfilePage() {
   );
 
   return (
-    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
-      <header className="flex items-center justify-center p-6 bg-white rounded-b-[40px] shadow-sm">
+      <header className="pet365-topbar flex items-center justify-center p-6 rounded-b-[28px]">
         <h1 className="text-gray-900 font-extrabold text-xl tracking-tight">내 정보</h1>
       </header>
 
@@ -220,7 +220,7 @@ export default function ProfilePage() {
       <main className="px-6 flex flex-col gap-6 mt-6">
         
         {/* Profile Info */}
-        <section className="bg-white rounded-[32px] p-6 shadow-sm flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100">
+        <section className="pet365-card p-6 flex items-center justify-between cursor-pointer transition-colors">
           <div className="flex items-center gap-4">
              <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-4 border-gray-100 shadow-sm relative">
                {user?.avatar_url ? (
@@ -251,7 +251,7 @@ export default function ProfilePage() {
           {loadingPets ? (
              <div className="flex justify-center p-4"><Loader2 className="animate-spin text-[#9c48ea]" /></div>
           ) : pets.length === 0 ? (
-             <div className="bg-white rounded-[32px] p-6 flex flex-col items-center justify-center text-center shadow-sm">
+             <div className="pet365-card p-6 flex flex-col items-center justify-center text-center">
                 <span className="text-4xl mb-3">🐶</span>
                 <p className="text-sm text-gray-500 font-medium">등록된 가족이 없습니다.<br/>새로운 반려동물을 등록해보세요!</p>
                 <button
@@ -265,8 +265,8 @@ export default function ProfilePage() {
              </div>
           ) : (
              pets.map((pet) => (
-                <div key={pet.id} onClick={() => { setSelectedPet(pet); setEditMode(false); }} className="bg-white rounded-[32px] p-5 flex items-center gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer active:scale-[0.98] transition-all">
-                   <div className="w-12 h-12 bg-[#FFF3CD] rounded-2xl flex items-center justify-center text-xl">{getEmoji(pet.species)}</div>
+                <div key={pet.id} onClick={() => { setSelectedPet(pet); setEditMode(false); }} className="pet365-card p-5 flex items-center gap-4 cursor-pointer active:scale-[0.98] transition-all">
+                   <div className="w-12 h-12 pet365-soft-panel rounded-2xl flex items-center justify-center text-xl">{getEmoji(pet.species)}</div>
                    <div className="flex-1">
                      <h4 className="font-bold text-gray-900 text-[15px]">{pet.name}</h4>
                      <p className="text-xs text-gray-500 font-medium mt-0.5">{pet.breed} · {pet.age}살 · {pet.gender === 'male' ? '♂' : '♀'}{pet.weight ? ` · ${pet.weight}kg` : ''}</p>
@@ -280,7 +280,7 @@ export default function ProfilePage() {
         </section>
 
         {/* Settings Menu */}
-        <section className="bg-white rounded-[32px] p-2 shadow-sm flex flex-col">
+        <section className="pet365-card p-2 flex flex-col">
 
           <Link href="/pet365care/hospitals" className="flex items-center gap-4 p-4 hover:bg-gray-50 rounded-2xl transition-colors text-left group">
             <div className="w-10 h-10 bg-[#efe7ff] rounded-full flex items-center justify-center text-[#9c48ea] group-hover:bg-[#e8ddff] transition-colors">
@@ -308,7 +308,7 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between px-1">
             <h3 className="font-bold text-gray-900 text-lg">🤖 AI 주치의 설정</h3>
           </div>
-          <div className="bg-white rounded-[32px] p-5 shadow-sm mb-6">
+          <div className="pet365-card p-5 mb-6">
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-bold text-gray-700">분석 모델 선택</label>
@@ -345,7 +345,7 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between px-1">
             <h3 className="font-bold text-gray-900 text-lg">☁️ 데이터 백업</h3>
           </div>
-          <div className="bg-white rounded-[32px] p-5 shadow-sm">
+          <div className="pet365-card p-5">
             {backupInfo ? (
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -586,7 +586,7 @@ export default function ProfilePage() {
               <div className="overflow-y-auto hide-scrollbar pb-6">
                 {/* Pet Header */}
                 <div className="flex items-center gap-4 mb-4 pr-12">
-                  <div className="w-16 h-16 bg-[#FFF3CD] rounded-3xl flex items-center justify-center shrink-0 text-3xl">{getEmoji(selectedPet.species)}</div>
+                  <div className="w-16 h-16 pet365-soft-panel rounded-3xl flex items-center justify-center shrink-0 text-3xl">{getEmoji(selectedPet.species)}</div>
                   <div className="flex-1 min-w-0">
                     <h2 className="text-2xl font-black text-gray-900 truncate">{selectedPet.name}</h2>
                     <p className="text-sm text-gray-500 font-medium truncate">{SPECIES.find(s => s.value === selectedPet.species)?.label} · {selectedPet.breed}</p>
@@ -594,7 +594,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 mb-6">
-                  <button onClick={() => openEdit(selectedPet)} className="h-12 rounded-2xl bg-blue-50 text-blue-600 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+                  <button onClick={() => openEdit(selectedPet)} className="h-12 rounded-2xl pet365-soft-panel text-[#9c48ea] font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
                     <Pencil size={17} /> 수정
                   </button>
                   <button onClick={requestDeletePet} className="h-12 rounded-2xl bg-red-50 text-red-500 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">

@@ -4,7 +4,35 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ShieldPlus, Sprout, User, Users } from "lucide-react";
 import { useEffect } from "react";
-import { getPets } from "@/lib/pet365care/local-store";
+
+type AlarmPet = {
+  id: string;
+  name: string;
+  species?: string;
+};
+
+type AlarmMedication = {
+  id: string;
+  petId: string;
+  name: string;
+  isActive?: boolean;
+  time?: string;
+  checkLogs?: string[];
+};
+
+type AlarmMedicalRecord = {
+  id: string;
+  petId: string;
+  type?: string;
+  title: string;
+  nextDate?: string;
+};
+
+type AlarmStore = {
+  pets?: AlarmPet[];
+  medications?: AlarmMedication[];
+  medicalRecords?: AlarmMedicalRecord[];
+};
 
 export default function Pet365BottomNav() {
   const pathname = usePathname();
@@ -25,7 +53,7 @@ export default function Pet365BottomNav() {
       if (!storeRaw) return;
       
       try {
-        const store = JSON.parse(storeRaw);
+        const store = JSON.parse(storeRaw) as AlarmStore;
         const pets = store.pets || [];
         const medications = store.medications || [];
         const medicalRecords = store.medicalRecords || [];
@@ -40,11 +68,11 @@ export default function Pet365BottomNav() {
         let sentAlarms: Record<string, boolean> = {};
         try {
           sentAlarms = JSON.parse(localStorage.getItem("pet365_sent_alarms") || "{}");
-        } catch (e) {}
+        } catch {}
 
         let alarmSent = false;
 
-        const sendNotify = async (pet: any, msg: string, alarmKey: string) => {
+        const sendNotify = async (pet: AlarmPet, msg: string, alarmKey: string) => {
           if (sentAlarms[alarmKey]) return; // Already sent
           try {
             await fetch('/api/pet365care/notify', {
@@ -68,7 +96,7 @@ export default function Pet365BottomNav() {
         for (const med of medications) {
           if (!med.isActive || !med.time) continue;
           
-          const pet = pets.find((p: any) => p.id === med.petId);
+          const pet = pets.find((p) => p.id === med.petId);
           if (!pet) continue;
 
           // Check if today is already checked
@@ -86,7 +114,7 @@ export default function Pet365BottomNav() {
         for (const rec of medicalRecords) {
           if (rec.type !== 'HOSPITAL' || !rec.nextDate) continue;
           
-          const pet = pets.find((p: any) => p.id === rec.petId);
+          const pet = pets.find((p) => p.id === rec.petId);
           if (!pet) continue;
 
           if (rec.nextDate === todayStr) {
@@ -113,7 +141,7 @@ export default function Pet365BottomNav() {
   }, []);
 
   return (
-    <nav className="flex-shrink-0 w-full bg-[#09070d]/95 border-t border-white/10 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] z-[200] shadow-[0_-18px_42px_rgba(9,7,13,0.35)] relative">
+    <nav className="flex-shrink-0 w-full max-w-[430px] mx-auto bg-[#09070d]/96 border-t border-white/10 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] z-[200] shadow-[0_-18px_42px_rgba(9,7,13,0.38)] relative">
       <div className="flex justify-between items-center gap-1">
         {navItems.map((item) => {
           const isActive = pathname === item.path;
@@ -127,8 +155,8 @@ export default function Pet365BottomNav() {
               <div
                 className={`flex flex-col items-center justify-center w-12 h-10 rounded-2xl transition-colors duration-200 ${
                   isActive
-                    ? "bg-gradient-to-br from-[#9c48ea] to-[#62fae3] text-[#09070d]"
-                    : "text-white/45"
+                    ? "bg-gradient-to-br from-[#9c48ea] to-[#62fae3] text-[#09070d] shadow-[0_8px_22px_rgba(98,250,227,0.25)]"
+                    : "text-white/42 hover:text-white/70"
                 }`}
               >
                 <item.icon size={20} strokeWidth={isActive ? 2.7 : 2} />

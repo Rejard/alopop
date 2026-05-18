@@ -2,24 +2,41 @@
   --pet365-alo-bg: #09070d;
   --pet365-alo-surface: #14101d;
   --pet365-alo-accent: #62fae3;
+  --pet365-bg: #f7f4fb;
+  --pet365-bg-warm: #fbf9ff;
+  --pet365-surface: rgba(255, 255, 255, 0.9);
+  --pet365-surface-strong: #ffffff;
+  --pet365-support: #efe7ff;
+  --pet365-support-mint: #e8fbf8;
+  --pet365-text: #18121f;
+  --pet365-muted: #716a79;
+  --pet365-line: rgba(156, 72, 234, 0.12);
+  --pet365-primary: #9c48ea;
+  --pet365-primary-soft: #cc97ff;
+  --pet365-mint: #62fae3;
+  --pet365-shadow: 0 16px 38px rgba(31, 18, 47, 0.08);
+  --pet365-shadow-strong: 0 20px 48px rgba(156, 72, 234, 0.18);
 }
 
-/* Pet365Care keeps its friendly light service body, wrapped by Alopop night chrome. */
+/* 6:3:1 palette: quiet lavender body, white/supporting surfaces, restrained purple-mint accent. */
 .pet365-root {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   overflow: hidden;
   background:
-    linear-gradient(180deg, rgba(9, 7, 13, 0.08), rgba(9, 7, 13, 0.02)),
-    #F4F4F6;
+    radial-gradient(circle at 16% 0%, rgba(156, 72, 234, 0.15), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(98, 250, 227, 0.13), transparent 24%),
+    linear-gradient(180deg, var(--pet365-bg-warm), var(--pet365-bg) 42%, #f4f1f8);
 }
 
 .pet365-content {
   flex: 1 1 0%;
   overflow-y: auto;
   min-height: 0;
+  width: min(100%, 430px);
   -webkit-overflow-scrolling: touch;
   position: relative;
 }
@@ -31,4 +48,68 @@
 .pet365-content {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.pet365-page {
+  min-height: 100%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(247, 244, 251, 0) 160px),
+    var(--pet365-bg);
+  color: var(--pet365-text);
+}
+
+.pet365-topbar {
+  background: rgba(255, 255, 255, 0.68);
+  border-bottom: 1px solid rgba(156, 72, 234, 0.08);
+  box-shadow: 0 14px 34px rgba(31, 18, 47, 0.06);
+  backdrop-filter: blur(16px);
+}
+
+.pet365-card {
+  background: var(--pet365-surface);
+  border: 1px solid var(--pet365-line);
+  border-radius: 24px;
+  box-shadow: var(--pet365-shadow);
+  backdrop-filter: blur(12px);
+}
+
+.pet365-card-tight {
+  background: var(--pet365-surface);
+  border: 1px solid var(--pet365-line);
+  border-radius: 20px;
+  box-shadow: 0 10px 26px rgba(31, 18, 47, 0.06);
+}
+
+.pet365-soft-panel {
+  background: linear-gradient(135deg, var(--pet365-support), var(--pet365-support-mint));
+  border: 1px solid var(--pet365-line);
+}
+
+.pet365-gradient-hero {
+  background: linear-gradient(135deg, var(--pet365-primary), var(--pet365-primary-soft) 48%, var(--pet365-mint));
+  box-shadow: var(--pet365-shadow-strong);
+}
+
+.pet365-primary-action {
+  background: linear-gradient(135deg, var(--pet365-primary), var(--pet365-mint));
+  color: #09070d;
+  box-shadow: 0 14px 30px rgba(156, 72, 234, 0.22);
+}
+
+.pet365-night-action {
+  background: linear-gradient(135deg, #09070d, #21142d);
+  color: #ffffff;
+  box-shadow: 0 14px 30px rgba(9, 7, 13, 0.2);
+}
+
+.pet365-chip {
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(156, 72, 234, 0.14);
+  color: var(--pet365-muted);
+}
+
+.pet365-chip-active {
+  background: linear-gradient(135deg, var(--pet365-primary), var(--pet365-mint));
+  border-color: transparent;
+  color: #09070d;
 }

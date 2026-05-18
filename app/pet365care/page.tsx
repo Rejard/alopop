@@ -91,8 +91,8 @@ function PetCareCard({ pet, isExpanded, onToggle }: { pet: Pet; isExpanded: bool
     ?.sort((a, b) => (a.nextDate || "").localeCompare(b.nextDate || ""))[0];
 
   return (
-    <div className={`rounded-[28px] overflow-hidden transition-all duration-500 ease-out ${
-      isExpanded ? "bg-white shadow-lg border-2 border-gray-100" : "bg-white shadow-sm hover:shadow-md border-2 border-transparent"
+    <div className={`pet365-card overflow-hidden transition-all duration-500 ease-out ${
+      isExpanded ? "border-[#9c48ea]/20 shadow-lg" : "hover:shadow-md"
     }`}>
       <button onClick={onToggle} className="w-full flex items-center gap-3.5 p-4 pr-5 text-left transition-colors">
         <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${gradientColor} flex items-center justify-center text-2xl shadow-md shrink-0`}>{emoji}</div>
@@ -120,7 +120,7 @@ function PetCareCard({ pet, isExpanded, onToggle }: { pet: Pet; isExpanded: bool
           ) : (
             <>
               {streak && streak.currentStreak > 0 && (
-                <div className="flex items-center gap-3 bg-gradient-to-r from-[#efe7ff] to-[#e8fbf8] rounded-2xl p-3.5 border border-[#9c48ea]/15">
+                <div className="flex items-center gap-3 pet365-soft-panel rounded-2xl p-3.5">
                   <div className="w-10 h-10 bg-gradient-to-br from-[#9c48ea] to-[#62fae3] rounded-full flex items-center justify-center text-white shadow-sm"><Flame size={20} /></div>
                   <div className="flex-1">
                     <p className="text-[10px] font-bold text-[#9c48ea]">연속 산책</p>
@@ -168,13 +168,13 @@ function PetCareCard({ pet, isExpanded, onToggle }: { pet: Pet; isExpanded: bool
               )}
 
               {nextVaccination && (
-                <div className="flex items-center gap-3 bg-blue-50 rounded-2xl p-3.5 border border-blue-100">
+                <div className="flex items-center gap-3 pet365-soft-panel rounded-2xl p-3.5">
                   <span className="text-xl">💉</span>
                   <div className="flex-1">
-                    <p className="text-[10px] font-bold text-blue-600">다음 접종</p>
+                    <p className="text-[10px] font-bold text-[#9c48ea]">다음 접종</p>
                     <p className="text-sm font-bold text-gray-900">{nextVaccination.name}</p>
                   </div>
-                  <span className="text-xs font-bold text-blue-500 bg-blue-100 px-2.5 py-1 rounded-full">{nextVaccination.nextDate}</span>
+                  <span className="text-xs font-bold text-[#09070d] bg-white/65 px-2.5 py-1 rounded-full">{nextVaccination.nextDate}</span>
                 </div>
               )}
             </>
@@ -231,7 +231,7 @@ export default function HomePage() {
 
   if (!loading && pets.length === 0) {
     return (
-      <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+      <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
         <header className="flex items-center justify-between p-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
@@ -247,13 +247,13 @@ export default function HomePage() {
           </div>
         </header>
         <main className="px-6 flex flex-col items-center gap-6 mt-6">
-          <div className="w-full bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 rounded-[32px] p-8 text-white text-center shadow-xl relative overflow-hidden">
+          <div className="w-full pet365-gradient-hero rounded-[28px] p-8 text-white text-center relative overflow-hidden">
             <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full" />
             <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-white/5 rounded-full" />
             <span className="text-6xl block mb-4">🐾</span>
             <h2 className="text-2xl font-black mb-2">Pet365Care</h2>
             <p className="text-white/80 text-sm leading-relaxed mb-6">반려동물을 등록하고<br />AI 맞춤 건강 관리를 시작하세요</p>
-            <a href="/pet365care/profile" className="inline-flex items-center gap-2 bg-white text-purple-600 font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg hover:bg-purple-50 transition-colors active:scale-95">
+            <a href="/pet365care/profile" className="inline-flex items-center gap-2 bg-white text-[#9c48ea] font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg hover:bg-purple-50 transition-colors active:scale-95">
               <PawPrint size={18} /> 반려동물 추가하기
             </a>
           </div>
@@ -264,7 +264,7 @@ export default function HomePage() {
               { emoji: "🏥", title: "AI 건강 진단", desc: "사진 분석" },
               { emoji: "📊", title: "활동 기록", desc: "산책·수면 추적" },
             ].map((item, i) => (
-              <div key={i} className="bg-white rounded-2xl p-4 shadow-sm">
+              <div key={i} className="pet365-card-tight p-4">
                 <span className="text-2xl">{item.emoji}</span>
                 <h4 className="text-sm font-bold text-gray-900 mt-2">{item.title}</h4>
                 <p className="text-[11px] text-gray-400 font-medium">{item.desc}</p>
@@ -277,7 +277,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       <header className="flex items-center justify-between p-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
@@ -312,7 +312,7 @@ export default function HomePage() {
         )}
         {!loading && (
           <section onClick={() => setTipModalOpen(true)}
-            className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-[28px] p-5 text-white flex items-center justify-between shadow-lg cursor-pointer hover:bg-gray-800 transition-all active:scale-[0.98] mt-1">
+            className="pet365-night-action rounded-[24px] p-5 flex items-center justify-between cursor-pointer transition-all active:scale-[0.98] mt-1">
             <div className="flex items-center gap-3.5 w-[85%]">
               <div className="w-11 h-11 shrink-0 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm text-[#62fae3]">{getIcon(tip.iconType)}</div>
               <div className="w-full">

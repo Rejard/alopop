@@ -230,16 +230,16 @@ export default function HospitalsPage() {
   const meta = getMeta();
 
   return (
-    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {KAKAO_KEY && (
         <Script src={`//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`} strategy="afterInteractive" onLoad={() => setMapReady(true)} />
       )}
 
       {/* Header */}
-      <header className="bg-white rounded-b-[32px] shadow-sm px-6 pt-6 pb-5">
+      <header className="pet365-topbar rounded-b-[28px] px-6 pt-6 pb-5">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <Link href="/pet365care/profile" className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600"><ArrowLeft size={20} /></Link>
+            <Link href="/pet365care/profile" className="w-10 h-10 bg-white/70 rounded-full flex items-center justify-center text-gray-600"><ArrowLeft size={20} /></Link>
             <h1 className="text-gray-900 font-extrabold text-xl tracking-tight">동물 병원 찾기</h1>
           </div>
           <div className="flex items-center gap-2">
@@ -255,7 +255,7 @@ export default function HospitalsPage() {
               {syncing ? "동기화 중" : "동기화"}
             </button>
             {KAKAO_KEY && (
-              <button onClick={() => setViewMode(viewMode === "list" ? "map" : "list")} className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors">
+              <button onClick={() => setViewMode(viewMode === "list" ? "map" : "list")} className="w-10 h-10 bg-white/70 rounded-full flex items-center justify-center text-gray-600 hover:bg-white transition-colors">
                 {viewMode === "list" ? <Map size={18} /> : <List size={18} />}
               </button>
             )}
@@ -325,7 +325,7 @@ export default function HospitalsPage() {
             <div ref={mapContainerRef} className="w-full h-[clamp(360px,58dvh,620px)]" style={{ touchAction: 'pan-x pan-y' }} />
           </div>
           {selectedHospital && (
-            <div className="bg-white rounded-[24px] p-5 shadow-sm mt-3 flex flex-col gap-2">
+            <div className="pet365-card p-5 mt-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-gray-900 text-[15px]">{selectedHospital.name}</h3>
@@ -334,7 +334,7 @@ export default function HospitalsPage() {
                 {selectedHospital.distance !== null && <span className="text-sm font-black text-[#9c48ea]">{selectedHospital.distance}km</span>}
               </div>
               <p className="text-xs text-gray-500">{selectedHospital.address}</p>
-              <button onClick={() => handleCall(selectedHospital.phone)} className="w-full flex items-center justify-center gap-2 py-3 bg-[#9c48ea] text-white font-bold text-sm rounded-2xl mt-1 active:scale-[0.98]">
+              <button onClick={() => handleCall(selectedHospital.phone)} className="w-full flex items-center justify-center gap-2 py-3 pet365-primary-action font-bold text-sm rounded-2xl mt-1 active:scale-[0.98]">
                 <Phone size={16} /> {selectedHospital.phone}
               </button>
             </div>
@@ -360,7 +360,7 @@ export default function HospitalsPage() {
             <div className="flex justify-center p-12"><Loader2 className="animate-spin text-[#9c48ea]" size={28} /></div>
           ) : (
             hospitals.map(h => (
-              <div key={h.id} className="bg-white rounded-[24px] p-5 shadow-sm flex flex-col gap-3">
+              <div key={h.id} className="pet365-card p-5 flex flex-col gap-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
@@ -384,7 +384,7 @@ export default function HospitalsPage() {
                   {h.specialties?.split(",").map(s => <span key={s.trim()} className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">{s.trim()}</span>)}
                 </div>
                 <div className="flex gap-2 mt-1">
-                  <button onClick={() => handleCall(h.phone)} className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#9c48ea] text-white font-bold text-sm rounded-2xl shadow-sm hover:bg-[#8b39d8] transition-colors active:scale-[0.98]">
+                  <button onClick={() => handleCall(h.phone)} className="flex-1 flex items-center justify-center gap-2 py-3 pet365-primary-action font-bold text-sm rounded-2xl transition-colors active:scale-[0.98]">
                     <Phone size={16} /> 전화하기
                   </button>
                   {h.website && (

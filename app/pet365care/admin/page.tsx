@@ -67,7 +67,7 @@ export default function Pet365AdminPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f7f5fb]">
+      <div className="pet365-page flex min-h-screen items-center justify-center">
         <Loader2 className="animate-spin text-[#9c48ea]" size={32} />
       </div>
     );
@@ -75,7 +75,7 @@ export default function Pet365AdminPage() {
 
   if (error || !stats) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#f7f5fb] px-8 text-center">
+      <div className="pet365-page flex min-h-screen flex-col items-center justify-center px-8 text-center">
         <AlertTriangle size={40} className="text-amber-500 mb-4" />
         <p className="text-sm font-medium text-gray-600">{error || "데이터를 불러올 수 없습니다."}</p>
       </div>
@@ -83,7 +83,7 @@ export default function Pet365AdminPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center gap-3 p-6">
         <Link href="/pet365care/profile" className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-gray-600">
@@ -112,11 +112,11 @@ export default function Pet365AdminPage() {
             <Activity size={14} /> AI 분석
           </h2>
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-[24px] p-5 shadow-sm">
+            <div className="pet365-card p-5">
               <p className="text-xs font-semibold text-gray-500 mb-1">오늘 분석</p>
               <p className="text-3xl font-black text-gray-900">{stats.overview.aiToday}<span className="text-sm font-medium text-gray-400 ml-1">건</span></p>
             </div>
-            <div className="bg-white rounded-[24px] p-5 shadow-sm">
+            <div className="pet365-card p-5">
               <p className="text-xs font-semibold text-gray-500 mb-1">전체 분석</p>
               <p className="text-3xl font-black text-gray-900">{stats.overview.aiTotal}<span className="text-sm font-medium text-gray-400 ml-1">건</span></p>
             </div>
@@ -128,7 +128,7 @@ export default function Pet365AdminPage() {
           <h2 className="text-sm font-bold text-gray-500 mb-3 ml-1 flex items-center gap-1.5">
             <Brain size={14} /> AI 상태 (24h)
           </h2>
-          <div className="bg-white rounded-[24px] p-5 shadow-sm">
+          <div className="pet365-card p-5">
             <div className="flex items-center justify-between mb-4">
               <p className="text-xs font-semibold text-gray-500">Gemini 성공률</p>
               <span className={`text-2xl font-black ${stats.ai.successRate >= 90 ? 'text-emerald-500' : stats.ai.successRate >= 70 ? 'text-amber-500' : 'text-red-500'}`}>
@@ -163,7 +163,7 @@ export default function Pet365AdminPage() {
           <h2 className="text-sm font-bold text-gray-500 mb-3 ml-1 flex items-center gap-1.5">
             <Hospital size={14} /> 공공데이터 병원 동기화
           </h2>
-          <div className="bg-white rounded-[24px] p-5 shadow-sm">
+          <div className="pet365-card p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-sm font-semibold text-gray-700">등록된 병원</p>
@@ -249,7 +249,7 @@ export default function Pet365AdminPage() {
             <Clock size={14} /> 최근 이벤트 로그
           </h2>
           {stats.recentLogs.length === 0 ? (
-            <div className="bg-white rounded-[24px] p-6 shadow-sm text-center">
+            <div className="pet365-card p-6 text-center">
               <p className="text-sm font-medium text-gray-400">이벤트가 없습니다 — 좋은 신호입니다! 🎉</p>
             </div>
           ) : (
@@ -260,7 +260,7 @@ export default function Pet365AdminPage() {
                 const timeStr = `${String(time.getMonth() + 1).padStart(2, '0')}/${String(time.getDate()).padStart(2, '0')} ${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
 
                 return (
-                  <div key={log.id} className="bg-white rounded-[20px] p-4 shadow-sm">
+                  <div key={log.id} className="pet365-card-tight p-4">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${typeInfo.color}`}>{typeInfo.label}</span>
                       <span className="text-[11px] font-semibold text-gray-400">{timeStr}</span>
@@ -285,7 +285,7 @@ export default function Pet365AdminPage() {
 
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
   return (
-    <div className="bg-white rounded-[24px] p-4 shadow-sm flex flex-col items-center text-center">
+    <div className="pet365-card p-4 flex flex-col items-center text-center">
       <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-2 ${color}`}>
         {icon}
       </div>

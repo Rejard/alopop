@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Camera, Gift, FileText, ChevronDown, Loader2, X, Clock, Edit2, Sparkles, Droplets, Bone, Activity, Smile, Moon, Syringe, Plus, Trash2, RefreshCw } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Camera, Gift, FileText, ChevronDown, Loader2, X, Clock, Edit2, Sparkles, Droplets, Bone, Activity, Smile, Moon, Plus, Trash2, RefreshCw } from "lucide-react";
 import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
 import { getErrorMessage } from "@/lib/pet365care/errors";
 import { analyzeImage, generateHistorySummary, generateWeeklyRoutineCoaching, generateDailyOverallDiagnosis } from "@/lib/pet365care/gemini-client";
-import { loadStore, todayStr, getAiDailyOverall, saveAiDailyOverall, addHealthRecord, getHealthRecords, updateHealthRecord, getPets, updatePet as updatePetStore, getAiSummary, saveAiSummary, getWeeklyCareStats, getAiWeeklyCoaching, saveAiWeeklyCoaching, getMedicalRecords, addMedicalRecord, deleteMedicalRecord, updateMedicalRecord, getMedications, addMedication, updateMedication, deleteMedication, getPreferredAi, type HealthRecord, type Pet, type WeeklyCareStats, type MedicalRecord, type MedicalRecordType, type Medication } from "@/lib/pet365care/local-store";
+import { todayStr, getAiDailyOverall, saveAiDailyOverall, addHealthRecord, getHealthRecords, updateHealthRecord, getPets, updatePet as updatePetStore, getAiSummary, saveAiSummary, getWeeklyCareStats, getAiWeeklyCoaching, saveAiWeeklyCoaching, getMedicalRecords, addMedicalRecord, deleteMedicalRecord, updateMedicalRecord, getMedications, addMedication, updateMedication, deleteMedication, getPreferredAi, type HealthRecord, type Pet, type WeeklyCareStats, type MedicalRecord, type MedicalRecordType, type Medication } from "@/lib/pet365care/local-store";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 
 export default function CarePage() {
@@ -68,15 +68,18 @@ export default function CarePage() {
   });
 
   useEffect(() => {
-    const loadedPets = getPets();
-    setPets(loadedPets);
-    if (loadedPets.length > 0) {
-      if (!dailyPetId) setDailyPetId(loadedPets[0].id);
-      if (!medicalPetId) setMedicalPetId(loadedPets[0].id);
-    }
+    const timer = window.setTimeout(() => {
+      const loadedPets = getPets();
+      setPets(loadedPets);
+      if (loadedPets.length > 0) {
+        setDailyPetId(current => current ?? loadedPets[0].id);
+        setMedicalPetId(current => current ?? loadedPets[0].id);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  const fetchAiDailyDiagnosis = async (force: boolean = false) => {
+  const fetchAiDailyDiagnosis = useCallback(async (force: boolean = false) => {
     try {
       const pList = getPets();
       if (pList.length === 0) {
@@ -134,14 +137,18 @@ export default function CarePage() {
       setDailyOverall("진단 정보를 불러오는 중 문제가 발생했어요.");
       setDailyOverallLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
-    fetchAiDailyDiagnosis(false);
-  }, [user?.username]);
+    const timer = window.setTimeout(() => {
+      void fetchAiDailyDiagnosis(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchAiDailyDiagnosis]);
 
   useEffect(() => {
-    if (activeTab === "일상" && dailyPetId) {
+    const timer = window.setTimeout(() => {
+      if (activeTab !== "일상" || !dailyPetId) return;
       const stats = getWeeklyCareStats(dailyPetId);
       setWeeklyStats(stats);
       
@@ -151,14 +158,17 @@ export default function CarePage() {
       } else {
         setWeeklyCoaching(null);
       }
-    }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [activeTab, dailyPetId]);
 
   useEffect(() => {
-    if (activeTab === "의료" && medicalPetId) {
+    const timer = window.setTimeout(() => {
+      if (activeTab !== "의료" || !medicalPetId) return;
       setMedicalRecords(getMedicalRecords(medicalPetId));
       setMedications(getMedications(medicalPetId));
-    }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [activeTab, medicalPetId]);
 
   useEffect(() => {
@@ -225,7 +235,6 @@ export default function CarePage() {
       const base64String = canvas.toDataURL("image/jpeg", 0.6); // Quality 60%
 
       try {
-        const aiPref = getPreferredAi();
         const apiKey = "alopop-internal";
         if (!apiKey) {
           throw new Error("프로필 설정에서 AI 주치의 설정을 먼저 확인해주세요.");
@@ -540,7 +549,7 @@ export default function CarePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Hidden File Input */}
       <input 
         type="file" 
@@ -649,7 +658,7 @@ export default function CarePage() {
         {/* Main AI Camera Button */}
         <button 
           onClick={handleCameraClick}
-          className="relative w-full bg-gradient-to-r from-[#9c48ea] via-[#cc97ff] to-[#62fae3] rounded-[32px] p-6 flex items-center gap-4 text-left shadow-lg shadow-[#9c48ea]/20 active:scale-[0.98] transition-transform overflow-hidden group"
+          className="relative w-full pet365-gradient-hero rounded-[28px] p-6 flex items-center gap-4 text-left active:scale-[0.98] transition-transform overflow-hidden group"
         >
           {/* Decorative Circles */}
           <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
@@ -670,7 +679,7 @@ export default function CarePage() {
         </button>
 
         {/* AI Daily Diagnosis */}
-        <div onClick={() => fetchAiDailyDiagnosis(true)} className="bg-[#efe7ff] rounded-[32px] p-6 flex items-start gap-4 shadow-sm border border-[#9c48ea]/10 cursor-pointer hover:bg-[#e8ddff] transition-colors relative overflow-hidden group">
+        <div onClick={() => fetchAiDailyDiagnosis(true)} className="pet365-soft-panel rounded-[24px] p-6 flex items-start gap-4 cursor-pointer transition-colors relative overflow-hidden group">
           <div className="absolute top-4 right-4 text-[#9c48ea]/40 opacity-0 group-hover:opacity-100 transition-opacity">
             <RefreshCw size={18} />
           </div>
@@ -693,10 +702,10 @@ export default function CarePage() {
         </div>
 
         {/* Promotion Box */}
-        <div className="bg-[#e8fbf8] rounded-[32px] p-6 flex flex-col gap-4 shadow-sm relative overflow-hidden">
+        <div className="pet365-card rounded-[24px] p-6 flex flex-col gap-4 relative overflow-hidden">
           {/* Cutout illusion dots */}
-          <div className="absolute top-1/2 -left-4 -translate-y-1/2 w-8 h-8 rounded-full bg-[#f7f5fb]"></div>
-          <div className="absolute top-1/2 -right-4 -translate-y-1/2 w-8 h-8 rounded-full bg-[#f7f5fb]"></div>
+          <div className="absolute top-1/2 -left-4 -translate-y-1/2 w-8 h-8 rounded-full bg-[var(--pet365-bg)]"></div>
+          <div className="absolute top-1/2 -right-4 -translate-y-1/2 w-8 h-8 rounded-full bg-[var(--pet365-bg)]"></div>
 
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 flex items-center justify-center text-[#9c48ea]">
@@ -707,20 +716,20 @@ export default function CarePage() {
                 <p className="text-xs font-medium text-gray-600">프리미엄 관절 영양제는 어떠세요?</p>
              </div>
           </div>
-          <button className="w-full py-4 bg-[#09070d] hover:bg-[#17111f] text-white font-bold rounded-2xl shadow-md transition-colors text-sm tracking-wide">
+          <button className="w-full py-4 pet365-night-action font-bold rounded-2xl transition-colors text-sm tracking-wide">
             20% 할인 쿠폰 받기
           </button>
         </div>
 
         {/* Toggle Switch */}
-        <div className="bg-[#EBEBEF] p-1.5 rounded-[24px] flex mt-2 shadow-inner">
+        <div className="bg-white/60 p-1.5 rounded-[24px] flex mt-2 shadow-inner border border-[#9c48ea]/10">
           {["일상", "의료", "기록"].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 py-3 text-sm font-bold rounded-[20px] transition-all duration-300 ${
                 activeTab === tab
-                  ? "bg-[#9c48ea] text-white shadow-md"
+                  ? "pet365-chip-active shadow-md"
                   : "text-gray-500 hover:text-gray-800"
               }`}
             >
@@ -738,7 +747,7 @@ export default function CarePage() {
                 <button 
                   key={p.id}
                   onClick={() => setDailyPetId(p.id)}
-                  className={`px-4 py-2.5 rounded-[20px] text-sm font-bold border transition-all ${dailyPetId === p.id ? 'bg-[#09070d] text-white border-[#09070d] shadow-md scale-105' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                  className={`px-4 py-2.5 rounded-[20px] text-sm font-bold border transition-all ${dailyPetId === p.id ? 'pet365-chip-active shadow-md scale-105' : 'pet365-chip hover:bg-white'}`}
                 >
                   {p.name}
                 </button>
@@ -747,7 +756,7 @@ export default function CarePage() {
 
             {/* Weekly Average Progress */}
             {weeklyStats && (
-              <div className="bg-white rounded-[24px] p-5 flex items-center justify-between shadow-sm border border-gray-100">
+              <div className="pet365-card p-5 flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-gray-900 mb-1">이번 주 평균 루틴 달성률</h3>
                   <p className="text-xs font-medium text-gray-500">{weeklyStats.overallRate >= 80 ? "완벽해요! 아주 건강한 한 주예요 🎉" : "꾸준한 케어가 건강의 비결이에요!"}</p>
@@ -764,7 +773,7 @@ export default function CarePage() {
 
             {/* Weekly Bar Chart */}
             {weeklyStats && (
-              <div className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100">
+              <div className="pet365-card p-5">
                 <h3 className="font-bold text-gray-900 mb-4 text-sm">최근 7일 루틴 기록</h3>
                 <div className="flex items-end justify-between h-32 gap-2 mt-2">
                   {weeklyStats.dailyRates.map((day, i) => (
@@ -799,7 +808,7 @@ export default function CarePage() {
                   if (stat.category === "brush") { name = "빗질"; icon = <Sparkles size={20} />; }
 
                   return (
-                    <div key={stat.category} className="bg-white rounded-2xl p-3 flex flex-col items-center justify-center gap-1 shadow-sm border border-gray-100 relative overflow-hidden">
+                    <div key={stat.category} className="pet365-card-tight p-3 flex flex-col items-center justify-center gap-1 relative overflow-hidden">
                       <div className="text-[#9c48ea] mb-1">{icon}</div>
                       <span className="text-[11px] font-bold text-gray-700">{name}</span>
                       <span className="text-[10px] font-black text-[#9c48ea]">{stat.rate}%</span>
@@ -813,7 +822,7 @@ export default function CarePage() {
             )}
 
             {/* AI Weekly Coaching */}
-            <div className="bg-[#efe7ff] rounded-[32px] p-6 shadow-sm border border-[#9c48ea]/10 relative overflow-hidden">
+            <div className="pet365-soft-panel rounded-[24px] p-6 relative overflow-hidden">
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-[#9c48ea]/5 rounded-full blur-2xl pointer-events-none"></div>
               
               <div className="flex justify-between items-start mb-3">
@@ -860,7 +869,7 @@ export default function CarePage() {
                 <button 
                   key={p.id}
                   onClick={() => setMedicalPetId(p.id)}
-                  className={`px-4 py-2.5 rounded-[20px] text-sm font-bold border transition-all ${medicalPetId === p.id ? 'bg-[#09070d] text-white border-[#09070d] shadow-md scale-105' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                  className={`px-4 py-2.5 rounded-[20px] text-sm font-bold border transition-all ${medicalPetId === p.id ? 'pet365-chip-active shadow-md scale-105' : 'pet365-chip hover:bg-white'}`}
                 >
                   {p.name}
                 </button>
@@ -873,7 +882,7 @@ export default function CarePage() {
               return (
                 <div className="flex flex-col gap-4 pb-24">
                   {/* Static Profile Tags (Neutering, Allergies, Chronic) */}
-                  <div className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100 relative">
+                  <div className="pet365-card p-5 relative">
                     <button onClick={() => { setTagsForm({ allergies: selectedPet.allergies || "", chronicDiseases: selectedPet.chronicDiseases || "" }); setIsEditTagsOpen(true); }} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-full transition-colors">
                       <Edit2 size={16} />
                     </button>
@@ -916,7 +925,7 @@ export default function CarePage() {
                     {medications.length === 0 ? (
                       <div className="bg-gray-50 rounded-[24px] p-6 text-center border border-dashed border-gray-200">
                         <p className="text-sm font-medium text-gray-500 mb-1">등록된 복용 약이 없습니다.</p>
-                        <p className="text-xs text-gray-400">우측 상단 '약 추가'를 눌러 등록해보세요!</p>
+                        <p className="text-xs text-gray-400">우측 상단 &apos;약 추가&apos;를 눌러 등록해보세요!</p>
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
@@ -924,7 +933,7 @@ export default function CarePage() {
                           const today = new Date().toISOString().split('T')[0];
                           const isChecked = (med.checkLogs || []).includes(today);
                           return (
-                            <div key={med.id} className="bg-white rounded-[20px] p-4 flex items-center justify-between gap-3 shadow-sm border border-gray-100">
+                            <div key={med.id} className="pet365-card-tight p-4 flex items-center justify-between gap-3">
                               <div className="flex-1 min-w-0">
                                 <p className="font-bold text-gray-900 truncate">{med.name}</p>
                                 <div className="flex gap-2 mt-1">
@@ -943,7 +952,7 @@ export default function CarePage() {
                                 </div>
                                 <button 
                                   onClick={() => handleToggleMedCheck(med)}
-                                  className={`w-12 h-12 flex items-center justify-center rounded-2xl transition-all shrink-0 ${isChecked ? 'bg-gradient-to-br from-[#9c48ea] to-[#6d28d9] text-white shadow-md shadow-purple-500/20' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                                  className={`w-12 h-12 flex items-center justify-center rounded-2xl transition-all shrink-0 ${isChecked ? 'pet365-primary-action shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
                                 >
                                   {isChecked ? <div className="w-5 h-5 border-2 border-white rounded-full flex items-center justify-center"><div className="w-2.5 h-2.5 bg-white rounded-full" /></div> : <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />}
                                 </button>
@@ -966,7 +975,7 @@ export default function CarePage() {
                       </div>
                     ) : (
                       medicalRecords.map((record) => (
-                        <div key={record.id} className="bg-white rounded-2xl p-4 flex items-start gap-3 shadow-sm border border-gray-100 active:scale-[0.98] transition-transform">
+                        <div key={record.id} className="pet365-card-tight p-4 flex items-start gap-3 active:scale-[0.98] transition-transform">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-inner ${record.type === 'VAX' ? 'bg-blue-100 text-blue-600' : record.type === 'PARASITE' ? 'bg-emerald-100 text-emerald-600' : record.type === 'SYMPTOM' ? 'bg-red-100 text-red-600' : 'bg-purple-100 text-purple-600'}`}>
                             {record.type === 'VAX' ? '💉' : record.type === 'PARASITE' ? '🐛' : record.type === 'SYMPTOM' ? '🤢' : '🏥'}
                           </div>
@@ -1018,7 +1027,7 @@ export default function CarePage() {
             {/* Universal Add Button (FAB) */}
             <button
               onClick={() => setIsAddMenuOpen(true)}
-              className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-r from-[#9c48ea] to-[#6d28d9] text-white rounded-full flex items-center justify-center shadow-lg shadow-purple-500/30 hover:scale-105 active:scale-95 transition-all z-20"
+              className="fixed bottom-24 right-5 w-14 h-14 pet365-primary-action rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all z-20"
             >
               <Plus size={28} />
             </button>
@@ -1124,7 +1133,7 @@ export default function CarePage() {
                       </div>
                     )}
                     
-                    <button type="submit" className="w-full bg-gradient-to-r from-[#9c48ea] to-[#6d28d9] text-white font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
+                    <button type="submit" className="w-full pet365-primary-action font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
                       기록 저장하기
                     </button>
                   </form>
@@ -1193,7 +1202,7 @@ export default function CarePage() {
                       <label className="text-sm font-bold text-gray-700">추가 메모</label>
                       <input type="text" value={medForm.memo} onChange={e => setMedForm({...medForm, memo: e.target.value})} placeholder="예: 식후 복용, 반 알만 쪼개서 등" className="w-full bg-gray-50 rounded-xl px-4 py-3 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
                     </div>
-                    <button type="submit" className="w-full bg-gradient-to-r from-[#9c48ea] to-[#6d28d9] text-white font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
+                    <button type="submit" className="w-full pet365-primary-action font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
                       추가하기
                     </button>
                   </form>
@@ -1299,7 +1308,7 @@ export default function CarePage() {
                 <Loader2 className="animate-spin text-[#9c48ea]" size={24} />
               </div>
             ) : filteredHistory.length === 0 ? (
-              <div className="bg-white rounded-[24px] p-8 text-center shadow-sm border border-gray-100">
+              <div className="pet365-card p-8 text-center">
                 <FileText size={32} className="mx-auto text-gray-300 mb-3" />
                 <p className="text-sm font-medium text-gray-500">해당 동물의 분석 기록이 없습니다.</p>
               </div>
@@ -1313,7 +1322,7 @@ export default function CarePage() {
                   return (
                     <div 
                       key={record.id} 
-                      className="bg-white rounded-[24px] p-5 flex flex-col gap-3 shadow-sm border border-transparent hover:border-[#9c48ea]/20 transition-all"
+                      className="pet365-card p-5 flex flex-col gap-3 transition-all"
                     >
                        <div 
                          className="flex justify-between items-center cursor-pointer"

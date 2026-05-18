@@ -185,7 +185,7 @@ export default function SocialPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center justify-between p-5 pt-6">
         <div className="flex items-center gap-3">
@@ -203,7 +203,7 @@ export default function SocialPage() {
             <h2 className="text-2xl font-bold text-gray-900 leading-tight">우리 동네 인기 모임</h2>
             <p className="text-sm font-semibold text-[#9c48ea]">지금 가장 핫한 펫 모임을 확인해보세요 🔥</p>
           </div>
-          <div className="h-52 rounded-[32px] overflow-hidden relative shadow-md bg-gradient-to-br from-[#9c48ea] via-[#cc97ff] to-[#62fae3]">
+          <div className="h-52 rounded-[28px] overflow-hidden relative pet365-gradient-hero">
             <div className="absolute inset-0 flex items-center justify-center opacity-20 text-[100px]">🐕‍🦺🐕</div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
             <div className="absolute bottom-5 left-5 right-5 flex flex-col gap-1.5">
@@ -220,7 +220,7 @@ export default function SocialPage() {
         {/* Activity Categories */}
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-bold text-gray-900 px-1">어떤 활동을 찾으시나요?</h2>
-          <div className="bg-[#efe7ff] rounded-[28px] p-4 flex items-center justify-between cursor-pointer hover:bg-[#e6d8ff] transition-colors relative overflow-hidden h-24 shadow-sm">
+          <div className="pet365-soft-panel rounded-[24px] p-4 flex items-center justify-between cursor-pointer transition-colors relative overflow-hidden h-24">
             <div className="flex flex-col z-10 pl-1">
               <h3 className="text-base font-bold text-gray-900 mb-0.5">📸 일상 공유</h3>
               <p className="text-xs text-gray-600 font-medium">우리 아이의 귀여운 순간을<br/>자랑해보세요</p>
@@ -230,12 +230,12 @@ export default function SocialPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-[28px] p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 transition-colors shadow-sm h-28">
+            <div className="pet365-card-tight p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-colors h-28">
               <div className="w-10 h-10 bg-[#FFF3CD] rounded-full flex items-center justify-center text-lg mb-2">📍</div>
               <h3 className="text-sm font-bold text-gray-900">지역 모임</h3>
               <p className="text-[10px] text-gray-500 font-medium mt-0.5">동네 친구 만들기</p>
             </div>
-            <div className="bg-white rounded-[28px] p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 transition-colors shadow-sm h-28">
+            <div className="pet365-card-tight p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-colors h-28">
               <div className="w-10 h-10 bg-[#F2C99D]/40 rounded-full flex items-center justify-center text-lg mb-2">🐾</div>
               <h3 className="text-sm font-bold text-gray-900">산책 메이트</h3>
               <p className="text-[10px] text-gray-500 font-medium mt-0.5">함께 걷는 즐거움</p>
@@ -269,14 +269,14 @@ export default function SocialPage() {
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="animate-spin text-[#9c48ea]" size={28} /></div>
         ) : posts.length === 0 ? (
-          <div className="bg-white rounded-[32px] p-8 flex flex-col items-center text-center shadow-sm">
+          <div className="pet365-card p-8 flex flex-col items-center text-center">
             <span className="text-5xl mb-3">📝</span>
             <p className="text-sm text-gray-500 font-medium">아직 게시물이 없어요.<br/>첫 번째 글을 작성해보세요!</p>
           </div>
         ) : (
           <>
             {posts.map(post => (
-              <article key={post.id} className="bg-white rounded-[28px] overflow-hidden shadow-sm">
+              <article key={post.id} className="pet365-card overflow-hidden">
                 {/* Author */}
                 <div className="flex items-center gap-3 p-4 pb-2">
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#9c48ea] to-[#62fae3] flex items-center justify-center overflow-hidden shadow-sm">

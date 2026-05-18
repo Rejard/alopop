@@ -4,7 +4,7 @@ import { CalendarCheck } from "lucide-react";
 
 export default function HealthPage() {
   return (
-    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center justify-between p-6">
         <div className="flex items-center gap-3">
@@ -20,7 +20,7 @@ export default function HealthPage() {
       <main className="px-6 flex flex-col gap-8">
         
         {/* Premium Membership Card */}
-        <div className="bg-gradient-to-br from-[#09070d] via-[#9c48ea] to-[#62fae3] rounded-[32px] p-8 text-white relative overflow-hidden shadow-xl shadow-[#9c48ea]/20 h-64 flex flex-col justify-end group cursor-pointer">
+        <div className="bg-gradient-to-br from-[#09070d] via-[#9c48ea] to-[#62fae3] rounded-[28px] p-8 text-white relative overflow-hidden shadow-xl shadow-[#9c48ea]/20 h-64 flex flex-col justify-end group cursor-pointer">
            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-xl translate-x-12 -translate-y-4"></div>
            <div className="absolute top-8 left-8">
              <span className="bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-bold tracking-wide">프리미엄 멤버십</span>
@@ -41,7 +41,7 @@ export default function HealthPage() {
           <h3 className="text-xl font-bold text-gray-900 px-1">특별한 혜택</h3>
 
           {/* AI Vet */}
-          <div className="bg-white rounded-[32px] p-6 flex items-start gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer">
+          <div className="pet365-card p-6 flex items-start gap-4 cursor-pointer">
             <div className="w-14 h-14 bg-[#efe7ff] rounded-full flex items-center justify-center text-[#9c48ea] shrink-0">
                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256"><path d="M216,40V216a24,24,0,0,1-24,24H64a24,24,0,0,1-24-24V40A24,24,0,0,1,64,16H192A24,24,0,0,1,216,40ZM192,32H64a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H192a8,8,0,0,0,8-8V40A8,8,0,0,0,192,32ZM136,88v24h24a8,8,0,0,1,0,16H136v24a8,8,0,0,1-16,0V128H96a8,8,0,0,1,0-16h24V88a8,8,0,0,1,16,0Z"></path></svg>
             </div>
@@ -52,7 +52,7 @@ export default function HealthPage() {
           </div>
 
           {/* Hospital Priority */}
-          <div className="bg-white rounded-[32px] p-6 flex items-start gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer">
+          <div className="pet365-card p-6 flex items-start gap-4 cursor-pointer">
             <div className="w-14 h-14 bg-[#e8fbf8] rounded-full flex items-center justify-center text-[#0f766e] shrink-0">
                <CalendarCheck size={28} />
             </div>
