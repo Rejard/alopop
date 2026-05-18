@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Syringe, Plus, Download, Upload, CloudDownload } from "lucide-react";
+import { ChevronRight, Heart, X, Loader2, BarChart3, Pencil, Trash2, Syringe, Plus, Download, Upload, CloudDownload, AlertTriangle } from "lucide-react";
 import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
 import Link from "next/link";
 import {
@@ -9,12 +9,21 @@ import {
   deletePet as deletePetStore, addVaccination as addVaxStore,
   deleteVaccination as deleteVaxStore,
   exportStore, importStore, getBackupStats,
-  type Pet, type Vaccination,
+  type BackupSummary,
+  type Pet,
 } from "@/lib/pet365care/local-store";
 import { notifyPetRegistered, notifyPetUpdated, notifyPetDeleted, notifyVaccination } from "@/lib/pet365care/notify";
 import LZString from "lz-string";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
 
 type PetWithVax = Pet;
+type BackupInfo = {
+  size: number;
+  petCount: number;
+  version: number;
+  updatedAt: string;
+  summary?: BackupSummary;
+};
 
 const SPECIES = [
   { value: "dog", label: "강아지", emoji: "🐶" },
@@ -31,13 +40,15 @@ const SPECIES = [
 const getEmoji = (s: string) => SPECIES.find(x => x.value === s)?.emoji || "🐾";
 
 export default function ProfilePage() {
-  const { user, logout } = usePet365Auth();
+  const confirmModal = useConfirm();
+  const { user } = usePet365Auth();
   
   const [pets, setPets] = useState<PetWithVax[]>([]);
   const [loadingPets, setLoadingPets] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [selectedPet, setSelectedPet] = useState<PetWithVax | null>(null);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [isVaxModalOpen, setIsVaxModalOpen] = useState(false);
   const [vaxForm, setVaxForm] = useState({ name: "", date: "", nextDate: "", hospital: "", memo: "" });
@@ -48,19 +59,22 @@ export default function ProfilePage() {
   const [recoverMsg, setRecoverMsg] = useState("");
 
   // 백업 상태
-  const [backupInfo, setBackupInfo] = useState<{ size: number; petCount: number; version: number; updatedAt: string } | null>(null);
+  const [backupInfo, setBackupInfo] = useState<BackupInfo | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupMsg, setBackupMsg] = useState("");
 
   useEffect(() => {
     if (user?.id) {
-      setLoadingPets(true);
-      setPets(getPets());
-      setLoadingPets(false);
-      // 서버 백업 상태 조회
-      fetch('/api/pet365care/backup').then(r => r.json()).then(d => {
-        if (d.success && d.data) setBackupInfo(d.data);
-      }).catch(() => {});
+      const timer = window.setTimeout(() => {
+        setLoadingPets(true);
+        setPets(getPets());
+        setLoadingPets(false);
+        // 서버 백업 상태 조회
+        fetch('/api/pet365care/backup').then(r => r.json()).then(d => {
+          if (d.success && d.data) setBackupInfo(d.data);
+        }).catch(() => {});
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [user]);
 
@@ -143,11 +157,12 @@ export default function ProfilePage() {
   };
 
   const handleDeletePet = () => {
-    if (!selectedPet || !confirm(`정말 ${selectedPet.name}을(를) 삭제하시겠어요?`)) return;
+    if (!selectedPet) return;
     deletePetStore(selectedPet.id);
     notifyPetDeleted(selectedPet.name, selectedPet.species);
     setPets(pets.filter(p => p.id !== selectedPet.id));
     setSelectedPet(null);
+    setIsConfirmingDelete(false);
   };
 
   const handleAddVax = (e: React.FormEvent) => {
@@ -167,8 +182,15 @@ export default function ProfilePage() {
     }
   };
 
-  const handleDeleteVax = (vacId: string) => {
-    if (!selectedPet || !confirm("이 접종 기록을 삭제하시겠어요?")) return;
+  const handleDeleteVax = async (vacId: string) => {
+    if (!selectedPet) return;
+    const isOk = await confirmModal({
+      title: "접종 기록 삭제",
+      message: "이 접종 기록을 삭제하시겠어요?",
+      type: "danger",
+      confirmText: "삭제",
+    });
+    if (!isOk) return;
     deleteVaxStore(selectedPet.id, vacId);
     const updatedPet = getPets().find(p => p.id === selectedPet.id)!;
     setSelectedPet(updatedPet);
@@ -180,8 +202,12 @@ export default function ProfilePage() {
     setEditMode(true);
   };
 
+  const formatBackupSummary = (summary: BackupSummary) => (
+    `펫 ${summary.petCount}마리 · 접종 ${summary.vaxCount}건 · 케어 ${summary.careCount}건 · 활동 ${summary.activityCount}건 · 분석 ${summary.healthCount}건`
+  );
+
   return (
-    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center justify-center p-6 bg-white rounded-b-[40px] shadow-sm">
         <h1 className="text-gray-900 font-extrabold text-xl tracking-tight">내 정보</h1>
@@ -216,11 +242,11 @@ export default function ProfilePage() {
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between px-1">
              <h3 className="font-bold text-gray-900 text-lg">나의 반려동물</h3>
-             <button onClick={() => setIsAddModalOpen(true)} className="text-sm font-semibold text-[#FF7B6E]">+ 추가하기</button>
+             <button onClick={() => setIsAddModalOpen(true)} className="text-sm font-semibold text-[#9c48ea]">+ 추가하기</button>
           </div>
           
           {loadingPets ? (
-             <div className="flex justify-center p-4"><Loader2 className="animate-spin text-[#FF7B6E]" /></div>
+             <div className="flex justify-center p-4"><Loader2 className="animate-spin text-[#9c48ea]" /></div>
           ) : pets.length === 0 ? (
              <div className="bg-white rounded-[32px] p-6 flex flex-col items-center justify-center text-center shadow-sm">
                 <span className="text-4xl mb-3">🐶</span>
@@ -228,7 +254,7 @@ export default function ProfilePage() {
                 <button
                   onClick={handleRecoverPets}
                   disabled={recovering}
-                  className="mt-4 flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-400 text-white font-bold text-sm px-5 py-2.5 rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+                  className="mt-4 flex items-center gap-2 bg-gradient-to-r from-[#9c48ea] to-[#62fae3] text-white font-bold text-sm px-5 py-2.5 rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
                 >
                   {recovering ? <><Loader2 size={16} className="animate-spin" /> 복구 중...</> : <><Download size={16} /> 채팅방에서 불러오기</>}
                 </button>
@@ -236,7 +262,7 @@ export default function ProfilePage() {
              </div>
           ) : (
              pets.map((pet) => (
-                <div key={pet.id} onClick={() => { setSelectedPet(pet); setEditMode(false); }} className="bg-white rounded-[32px] p-5 flex items-center gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer active:scale-[0.98] transition-all">
+                <div key={pet.id} onClick={() => { setSelectedPet(pet); setEditMode(false); setIsConfirmingDelete(false); }} className="bg-white rounded-[32px] p-5 flex items-center gap-4 shadow-sm border border-transparent hover:border-gray-100 cursor-pointer active:scale-[0.98] transition-all">
                    <div className="w-12 h-12 bg-[#FFF3CD] rounded-2xl flex items-center justify-center text-xl">{getEmoji(pet.species)}</div>
                    <div className="flex-1">
                      <h4 className="font-bold text-gray-900 text-[15px]">{pet.name}</h4>
@@ -255,7 +281,7 @@ export default function ProfilePage() {
         <section className="bg-white rounded-[32px] p-2 shadow-sm flex flex-col">
 
           <Link href="/pet365care/hospitals" className="flex items-center gap-4 p-4 hover:bg-gray-50 rounded-2xl transition-colors text-left group">
-            <div className="w-10 h-10 bg-rose-50 rounded-full flex items-center justify-center text-rose-500 group-hover:bg-rose-100 transition-colors">
+            <div className="w-10 h-10 bg-[#efe7ff] rounded-full flex items-center justify-center text-[#9c48ea] group-hover:bg-[#e8ddff] transition-colors">
                <Heart size={20} />
             </div>
             <div className="flex-1 font-semibold text-[15px] text-gray-800">동물 병원 찾기</div>
@@ -288,7 +314,7 @@ export default function ProfilePage() {
                   <span className="text-[10px] font-semibold text-gray-400">v{backupInfo.version}</span>
                 </div>
                 <p className="text-xs text-gray-500 font-medium">
-                  마지막 백업: {new Date(backupInfo.updatedAt).toLocaleString('ko-KR')} · 펫 {backupInfo.petCount}마리 · {(backupInfo.size / 1024).toFixed(1)}KB
+                  마지막 백업: {new Date(backupInfo.updatedAt).toLocaleString('ko-KR')} · {backupInfo.summary ? formatBackupSummary(backupInfo.summary) : `펫 ${backupInfo.petCount}마리`} · {(backupInfo.size / 1024).toFixed(1)}KB
                 </p>
               </div>
             ) : (
@@ -311,15 +337,15 @@ export default function ProfilePage() {
                     });
                     const d = await r.json();
                     if (d.success) {
-                      setBackupInfo(d.data);
+                      setBackupInfo({ ...d.data, summary: stats });
                       const ratio = Math.round((1 - compressed.length / raw.length) * 100);
-                      setBackupMsg(`✅ 백업 완료! (${(stats.sizeBytes / 1024).toFixed(1)}KB → ${(compressed.length * 2 / 1024).toFixed(1)}KB, ${ratio}% 압축)`);
+                      setBackupMsg(`✅ 백업 완료! ${formatBackupSummary(stats)} (${(stats.sizeBytes / 1024).toFixed(1)}KB → ${(compressed.length * 2 / 1024).toFixed(1)}KB, ${ratio}% 압축)`);
                     } else setBackupMsg(`❌ ${d.error}`);
                   } catch { setBackupMsg('❌ 백업 실패'); }
                   finally { setBackupLoading(false); }
                 }}
                 disabled={backupLoading}
-                className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-blue-500 to-blue-400 text-white font-bold text-sm rounded-2xl active:scale-[0.98] transition-transform disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-[#9c48ea] to-[#62fae3] text-white font-bold text-sm rounded-2xl active:scale-[0.98] transition-transform disabled:opacity-50"
               >
                 {backupLoading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                 백업
@@ -328,7 +354,13 @@ export default function ProfilePage() {
               {/* 서버에서 복원 */}
               <button
                 onClick={async () => {
-                  if (!confirm('서버 백업 데이터로 복원합니다.\n현재 로컬 데이터를 덮어씁니다. 계속하시겠습니까?')) return;
+                  const isOk = await confirmModal({
+                    title: "서버 백업 복원",
+                    message: "서버 백업 데이터로 복원합니다.\n현재 로컬 데이터를 덮어씁니다.\n계속하시겠습니까?",
+                    type: "danger",
+                    confirmText: "복원하기"
+                  });
+                  if (!isOk) return;
                   setBackupLoading(true); setBackupMsg('');
                   try {
                     const r = await fetch('/api/pet365care/backup', { method: 'PUT' });
@@ -336,9 +368,19 @@ export default function ProfilePage() {
                     if (d.success && d.data?.compressed) {
                       const raw = LZString.decompressFromUTF16(d.data.compressed);
                       if (!raw) { setBackupMsg('❌ 데이터 해제 실패'); return; }
+                      const beforeRestore = exportStore();
                       const result = importStore(raw);
-                      setPets(getPets());
-                      setBackupMsg(`✅ 복원 완료! ${result.petCount}마리 반려동물 로드됨`);
+                      if (!result.verified || result.petCount !== d.data.petCount) {
+                        importStore(beforeRestore);
+                        setPets(getPets());
+                        setBackupMsg('❌ 복원 검증 실패: 백업 수량과 복원 수량이 일치하지 않아 이전 데이터로 되돌렸습니다.');
+                        return;
+                      }
+                      const restoredPets = getPets();
+                      setPets(restoredPets);
+                      setSelectedPet(current => current ? restoredPets.find(pet => pet.id === current.id) || null : null);
+                      setBackupInfo({ ...d.data, summary: result });
+                      setBackupMsg(`✅ 복원 완료! ${formatBackupSummary(result)} 로드됨`);
                     } else setBackupMsg(`❌ ${d.error || '백업이 없습니다'}`);
                   } catch { setBackupMsg('❌ 복원 실패'); }
                   finally { setBackupLoading(false); }
@@ -360,7 +402,7 @@ export default function ProfilePage() {
 
       {/* Add Pet Bottom Sheet Modal */}
       {isAddModalOpen && (
-         <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+         <div className="fixed inset-0 z-[300] flex flex-col justify-end">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsAddModalOpen(false)}></div>
             <div className="bg-white w-full rounded-t-[40px] px-6 py-8 relative z-10 animate-in slide-in-from-bottom-full duration-300 shadow-2xl flex flex-col max-h-[90vh]">
                <button onClick={() => setIsAddModalOpen(false)} className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
@@ -372,18 +414,18 @@ export default function ProfilePage() {
                <form onSubmit={handleAddPet} className="flex flex-col gap-4 overflow-y-auto hide-scrollbar pb-6">
                   <div className="flex flex-col gap-2">
                      <label className="text-sm font-bold text-gray-700 ml-1">이름 *</label>
-                     <input type="text" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="초코" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                     <input type="text" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="초코" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                      <div className="flex flex-col gap-2">
                         <label className="text-sm font-bold text-gray-700 ml-1">동물 종류 *</label>
-                        <select value={form.species} onChange={e => setForm({...form, species: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 appearance-none cursor-pointer">
+                        <select value={form.species} onChange={e => setForm({...form, species: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 appearance-none cursor-pointer">
                            {SPECIES.map(s => <option key={s.value} value={s.value}>{s.label} {s.emoji}</option>)}
                         </select>
                      </div>
                      <div className="flex flex-col gap-2">
                         <label className="text-sm font-bold text-gray-700 ml-1">성별 *</label>
-                        <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 appearance-none cursor-pointer">
+                        <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 appearance-none cursor-pointer">
                            <option value="male">왕자님 ♂</option>
                            <option value="female">공주님 ♀</option>
                         </select>
@@ -391,37 +433,37 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex flex-col gap-2">
                      <label className="text-sm font-bold text-gray-700 ml-1">품종 *</label>
-                     <input type="text" required value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} placeholder="푸들, 말티즈 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                     <input type="text" required value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} placeholder="푸들, 말티즈 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                      <div className="flex flex-col gap-2">
                         <label className="text-sm font-bold text-gray-700 ml-1">나이 *</label>
-                        <input type="number" min="0" max="30" required value={form.age} onChange={e => setForm({...form, age: e.target.value})} placeholder="3" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                        <input type="number" min="0" max="30" required value={form.age} onChange={e => setForm({...form, age: e.target.value})} placeholder="3" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                      </div>
                      <div className="flex flex-col gap-2">
                         <label className="text-sm font-bold text-gray-700 ml-1">체중 (kg)</label>
-                        <input type="number" step="0.1" min="0" value={form.weight} onChange={e => setForm({...form, weight: e.target.value})} placeholder="5.2" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                        <input type="number" step="0.1" min="0" value={form.weight} onChange={e => setForm({...form, weight: e.target.value})} placeholder="5.2" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                      </div>
                   </div>
                   <div className="flex flex-col gap-2">
                      <label className="text-sm font-bold text-gray-700 ml-1">생년월일</label>
-                     <input type="date" value={form.birthday} onChange={e => setForm({...form, birthday: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                     <input type="date" value={form.birthday} onChange={e => setForm({...form, birthday: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <label className="flex items-center gap-3 bg-gray-50 rounded-2xl px-5 py-3.5 cursor-pointer">
-                     <input type="checkbox" checked={form.isNeutered} onChange={e => setForm({...form, isNeutered: e.target.checked})} className="w-5 h-5 rounded accent-[#FF7B6E]" />
+                     <input type="checkbox" checked={form.isNeutered} onChange={e => setForm({...form, isNeutered: e.target.checked})} className="w-5 h-5 rounded accent-[#9c48ea]" />
                      <span className="font-medium text-gray-700">중성화 완료</span>
                   </label>
                   <div className="flex flex-col gap-2">
                      <label className="text-sm font-bold text-gray-700 ml-1">알레르기</label>
-                     <input type="text" value={form.allergies} onChange={e => setForm({...form, allergies: e.target.value})} placeholder="닭고기, 소고기 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                     <input type="text" value={form.allergies} onChange={e => setForm({...form, allergies: e.target.value})} placeholder="닭고기, 소고기 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <div className="flex flex-col gap-2">
                      <label className="text-sm font-bold text-gray-700 ml-1">메모/특이사항</label>
-                     <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} placeholder="특이사항을 자유롭게 기록하세요" rows={2} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30 resize-none" />
+                     <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} placeholder="특이사항을 자유롭게 기록하세요" rows={2} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30 resize-none" />
                   </div>
                   
                   {/* Submit Button */}
-                  <button type="submit" disabled={isAdding} className="w-full bg-gradient-to-r from-[#FF7B6E] to-[#FF6B6B] text-white font-bold text-lg rounded-2xl py-4 mt-2 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-transform flex items-center justify-center">
+                  <button type="submit" disabled={isAdding} className="w-full bg-gradient-to-r from-[#9c48ea] to-[#62fae3] text-white font-bold text-lg rounded-2xl py-4 mt-2 shadow-lg shadow-[#9c48ea]/20 active:scale-[0.98] transition-transform flex items-center justify-center">
                      {isAdding ? <Loader2 className="animate-spin" /> : "저장하기"}
                   </button>
                </form>
@@ -431,10 +473,10 @@ export default function ProfilePage() {
 
       {/* Pet Detail Modal */}
       {selectedPet && (
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setSelectedPet(null); setEditMode(false); }}></div>
+        <div className="fixed inset-0 z-[300] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { setSelectedPet(null); setEditMode(false); setIsConfirmingDelete(false); }}></div>
           <div className="bg-white w-full rounded-t-[40px] px-6 py-8 relative z-10 shadow-2xl flex flex-col max-h-[90vh]">
-            <button onClick={() => { setSelectedPet(null); setEditMode(false); }} className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><X size={20} /></button>
+            <button onClick={() => { setSelectedPet(null); setEditMode(false); setIsConfirmingDelete(false); }} className="absolute top-6 right-6 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><X size={20} /></button>
 
             {editMode ? (
               <>
@@ -442,7 +484,7 @@ export default function ProfilePage() {
                 <form onSubmit={handleUpdatePet} className="flex flex-col gap-4 overflow-y-auto hide-scrollbar pb-6">
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-bold text-gray-700 ml-1">이름 *</label>
-                    <input type="text" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                    <input type="text" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-2">
@@ -460,35 +502,35 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-bold text-gray-700 ml-1">품종</label>
-                    <input type="text" required value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                    <input type="text" required value={form.breed} onChange={e => setForm({...form, breed: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-2">
                       <label className="text-sm font-bold text-gray-700 ml-1">나이</label>
-                      <input type="number" min="0" max="30" required value={form.age} onChange={e => setForm({...form, age: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                      <input type="number" min="0" max="30" required value={form.age} onChange={e => setForm({...form, age: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                     </div>
                     <div className="flex flex-col gap-2">
                       <label className="text-sm font-bold text-gray-700 ml-1">체중 (kg)</label>
-                      <input type="number" step="0.1" min="0" value={form.weight} onChange={e => setForm({...form, weight: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                      <input type="number" step="0.1" min="0" value={form.weight} onChange={e => setForm({...form, weight: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-bold text-gray-700 ml-1">생년월일</label>
-                    <input type="date" value={form.birthday} onChange={e => setForm({...form, birthday: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                    <input type="date" value={form.birthday} onChange={e => setForm({...form, birthday: e.target.value})} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <label className="flex items-center gap-3 bg-gray-50 rounded-2xl px-5 py-3.5 cursor-pointer">
-                    <input type="checkbox" checked={form.isNeutered} onChange={e => setForm({...form, isNeutered: e.target.checked})} className="w-5 h-5 rounded accent-[#FF7B6E]" />
+                    <input type="checkbox" checked={form.isNeutered} onChange={e => setForm({...form, isNeutered: e.target.checked})} className="w-5 h-5 rounded accent-[#9c48ea]" />
                     <span className="font-medium text-gray-700">중성화 완료</span>
                   </label>
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-bold text-gray-700 ml-1">알레르기</label>
-                    <input type="text" value={form.allergies} onChange={e => setForm({...form, allergies: e.target.value})} placeholder="닭고기, 소고기 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30" />
+                    <input type="text" value={form.allergies} onChange={e => setForm({...form, allergies: e.target.value})} placeholder="닭고기, 소고기 등" className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30" />
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-bold text-gray-700 ml-1">메모</label>
-                    <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} rows={2} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF7B6E]/30 border border-transparent focus:border-[#FF7B6E]/30 resize-none" />
+                    <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})} rows={2} className="w-full bg-gray-50 rounded-2xl px-5 py-3.5 font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/30 border border-transparent focus:border-[#9c48ea]/30 resize-none" />
                   </div>
-                  <button type="submit" disabled={isAdding} className="w-full bg-gradient-to-r from-[#FF7B6E] to-[#FF6B6B] text-white font-bold text-lg rounded-2xl py-4 mt-2 shadow-lg shadow-red-500/20 active:scale-[0.98] transition-transform flex items-center justify-center">
+                  <button type="submit" disabled={isAdding} className="w-full bg-gradient-to-r from-[#9c48ea] to-[#62fae3] text-white font-bold text-lg rounded-2xl py-4 mt-2 shadow-lg shadow-[#9c48ea]/20 active:scale-[0.98] transition-transform flex items-center justify-center">
                     {isAdding ? <Loader2 className="animate-spin" /> : "수정 완료"}
                   </button>
                 </form>
@@ -496,14 +538,23 @@ export default function ProfilePage() {
             ) : (
               <div className="overflow-y-auto hide-scrollbar pb-6">
                 {/* Pet Header */}
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 bg-[#FFF3CD] rounded-3xl flex items-center justify-center text-3xl">{getEmoji(selectedPet.species)}</div>
-                  <div className="flex-1">
-                    <h2 className="text-2xl font-black text-gray-900">{selectedPet.name}</h2>
-                    <p className="text-sm text-gray-500 font-medium">{SPECIES.find(s => s.value === selectedPet.species)?.label} · {selectedPet.breed}</p>
+                <div className="flex items-center gap-4 mb-6 pr-12">
+                  <div className="w-16 h-16 bg-[#FFF3CD] rounded-3xl flex items-center justify-center shrink-0 text-3xl">{getEmoji(selectedPet.species)}</div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-2xl font-black text-gray-900 truncate">{selectedPet.name}</h2>
+                    <p className="text-sm text-gray-500 font-medium truncate">{SPECIES.find(s => s.value === selectedPet.species)?.label} · {selectedPet.breed}</p>
                   </div>
-                  <button onClick={() => openEdit(selectedPet)} className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-blue-500"><Pencil size={18} /></button>
-                  <button onClick={handleDeletePet} className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center text-red-400"><Trash2 size={18} /></button>
+                  <button onClick={() => openEdit(selectedPet)} className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center shrink-0 text-blue-500"><Pencil size={18} /></button>
+                  <button onClick={() => {
+                    if (isConfirmingDelete) {
+                      handleDeletePet();
+                    } else {
+                      setIsConfirmingDelete(true);
+                      setTimeout(() => setIsConfirmingDelete(false), 3000); // 3초 후 원래대로 복구
+                    }
+                  }} className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors ${isConfirmingDelete ? 'bg-red-500 text-white' : 'bg-red-50 text-red-400'}`}>
+                    {isConfirmingDelete ? <AlertTriangle size={18} /> : <Trash2 size={18} />}
+                  </button>
                 </div>
 
                 {/* Info Grid */}

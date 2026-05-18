@@ -57,3 +57,63 @@ export async function generateCareTip(petName: string, species: string, breed: s
     return { title: "오늘의 케어 팁", content: "반려동물과 함께하는 하루를 즐겨보세요!", iconType: "Heart" };
   }
 }
+
+export async function generateHistorySummary(petName: string, recordsText: string): Promise<string> {
+  try {
+    const res = await fetch("/api/pet365care/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "generateHistorySummary",
+        petName, recordsText,
+      }),
+    });
+    if (!res.ok) {
+      return "분석 기록 요약에 실패했습니다.";
+    }
+    const data = await res.json();
+    return data.summary || "분석 기록을 요약할 수 없습니다.";
+  } catch {
+    return "분석 기록 요약 중 오류가 발생했습니다.";
+  }
+}
+
+export async function generateDailyCoaching(petName: string, checksText: string): Promise<string> {
+  try {
+    const res = await fetch("/api/pet365care/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "generateDailyCoaching",
+        petName, checksText,
+      }),
+    });
+    if (!res.ok) {
+      return "오늘도 우리 아이와 즐거운 하루 보내세요!";
+    }
+    const data = await res.json();
+    return data.coaching || "오늘도 우리 아이와 즐거운 하루 보내세요!";
+  } catch {
+    return "오늘도 우리 아이와 즐거운 하루 보내세요!";
+  }
+}
+
+export async function generateWeeklyRoutineCoaching(petName: string, weeklyStatsText: string, userName?: string): Promise<string> {
+  try {
+    const res = await fetch("/api/pet365care/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "generateWeeklyRoutineCoaching",
+        petName, weeklyStatsText, userName,
+      }),
+    });
+    if (!res.ok) {
+      return "데이터를 바탕으로 루틴을 점검해 보세요!";
+    }
+    const data = await res.json();
+    return data.coaching || "데이터를 바탕으로 루틴을 점검해 보세요!";
+  } catch {
+    return "데이터를 바탕으로 루틴을 점검해 보세요!";
+  }
+}

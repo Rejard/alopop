@@ -43,6 +43,8 @@ export const viewport: Viewport = {
   themeColor: "#130b1a",
 };
 
+import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -57,7 +59,9 @@ export default function RootLayout({
         className={`${plusJakarta.variable} antialiased overflow-hidden overscroll-none fixed inset-0 font-sans`}
       >
         <PwaRegistry />
-        {children}
+        <ConfirmProvider>
+          {children}
+        </ConfirmProvider>
       </body>
     </html>
   );

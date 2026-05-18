@@ -42,6 +42,7 @@ export interface CareCheck {
   date: string;
   category: string;
   checked: boolean;
+  value?: string; // Additional data like '30분' or '꿀잠'
 }
 
 export interface ActivityLog {
@@ -67,10 +68,44 @@ export interface PetStore {
   careChecks: CareCheck[];
   activityLogs: ActivityLog[];
   healthRecords: HealthRecord[];
+  aiSummaries?: Record<string, {text: string, updatedAt: string}>;
+  aiWeeklyCoaching?: Record<string, {text: string, updatedAt: string}>;
   settings: {
     geminiApiKey?: string;
     hospitalDbVersion?: string;
   };
+}
+
+export interface BackupSummary {
+  petCount: number;
+  vaxCount: number;
+  careCount: number;
+  activityCount: number;
+  healthCount: number;
+  settingsCount: number;
+  sizeBytes: number;
+}
+
+export interface BackupImportResult extends BackupSummary {
+  expected?: BackupSummary;
+  verified: boolean;
+}
+
+interface PetStoreBackupEnvelope {
+  format: "pet365care-store";
+  version: 2;
+  createdAt: string;
+  summary: BackupSummary;
+  store: PetStore;
+}
+
+type StoredPet365Shape = Partial<PetStore> & {
+  format?: string;
+  store?: Partial<PetStore>;
+};
+
+function isBackupEnvelope(data: StoredPet365Shape | PetStoreBackupEnvelope): data is PetStoreBackupEnvelope {
+  return data.format === "pet365care-store" && "summary" in data && "store" in data;
 }
 
 // ======= 유틸 =======
@@ -95,14 +130,86 @@ const DEFAULT_STORE: PetStore = {
   careChecks: [],
   activityLogs: [],
   healthRecords: [],
+  aiSummaries: {},
+  aiWeeklyCoaching: {},
   settings: {},
 };
+
+function unwrapStore(data: StoredPet365Shape): Partial<PetStore> {
+  if (data?.store && typeof data.store === "object") {
+    const nestedStore = data.store;
+    const hasNestedData = (
+      Array.isArray(nestedStore.pets) ||
+      Array.isArray(nestedStore.careChecks) ||
+      Array.isArray(nestedStore.activityLogs) ||
+      Array.isArray(nestedStore.healthRecords)
+    );
+    const hasTopLevelData = (
+      Array.isArray(data.pets) && data.pets.length > 0
+    );
+
+    if (data.format === "pet365care-store" || (hasNestedData && !hasTopLevelData)) {
+      return nestedStore;
+    }
+  }
+
+  return data;
+}
+
+function normalizeStore(data: StoredPet365Shape): PetStore {
+  const source = unwrapStore(data);
+  const pets = Array.isArray(source.pets) ? source.pets : [];
+  return {
+    pets: pets.map((pet) => ({
+      ...pet,
+      vaccinations: Array.isArray(pet.vaccinations) ? pet.vaccinations : [],
+    })),
+    careChecks: Array.isArray(source.careChecks) ? source.careChecks : [],
+    activityLogs: Array.isArray(source.activityLogs) ? source.activityLogs : [],
+    healthRecords: Array.isArray(source.healthRecords) ? source.healthRecords : [],
+    aiSummaries: source.aiSummaries && typeof source.aiSummaries === "object" ? source.aiSummaries : {},
+    aiWeeklyCoaching: source.aiWeeklyCoaching && typeof source.aiWeeklyCoaching === "object" ? source.aiWeeklyCoaching : {},
+    settings: source.settings && typeof source.settings === "object" ? source.settings : {},
+  };
+}
+
+function countStore(store: PetStore, raw?: string): BackupSummary {
+  const serialized = raw ?? JSON.stringify(store);
+  return {
+    petCount: store.pets.length,
+    vaxCount: store.pets.reduce((sum, pet) => sum + (pet.vaccinations?.length || 0), 0),
+    careCount: store.careChecks.length,
+    activityCount: store.activityLogs.length,
+    healthCount: store.healthRecords.length,
+    settingsCount: Object.keys(store.settings || {}).length,
+    sizeBytes: new TextEncoder().encode(serialized).length,
+  };
+}
+
+export function summarizeStore(): BackupSummary {
+  return countStore(loadStore());
+}
+
+function summariesMatch(actual: BackupSummary, expected: BackupSummary): boolean {
+  return (
+    actual.petCount === expected.petCount &&
+    actual.vaxCount === expected.vaxCount &&
+    actual.careCount === expected.careCount &&
+    actual.activityCount === expected.activityCount &&
+    actual.healthCount === expected.healthCount &&
+    actual.settingsCount === expected.settingsCount
+  );
+}
 
 export function loadStore(): PetStore {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return { ...DEFAULT_STORE };
-    return { ...DEFAULT_STORE, ...JSON.parse(raw) };
+    const normalized = normalizeStore(JSON.parse(raw));
+    if (raw.includes('"store"')) {
+      saveStore(normalized);
+    }
+    return normalized;
   } catch {
     return { ...DEFAULT_STORE };
   }
@@ -185,22 +292,28 @@ export function deleteVaccination(petId: string, vaxId: string): boolean {
 
 // ======= 케어 체크리스트 =======
 
-const DEFAULT_CATEGORIES = ["feed", "water", "walk", "snack", "play", "teeth"];
+const DEFAULT_CATEGORIES = ["feed", "water", "snack", "play", "teeth", "walk", "sleep", "brush"];
 
 export function getCareChecklist(petId: string, date?: string): { items: CareCheck[]; checkedCount: number; totalCount: number; completionRate: number } {
   const store = loadStore();
   const d = date || todayStr();
   let items = store.careChecks.filter(c => c.petId === petId && c.date === d);
 
-  // 없으면 기본 항목 생성
-  if (items.length === 0) {
-    items = DEFAULT_CATEGORIES.map(category => ({
-      petId,
-      date: d,
-      category,
-      checked: false,
-    }));
-    store.careChecks.push(...items);
+  let updated = false;
+  // 누락된 기본 항목 추가
+  for (const cat of DEFAULT_CATEGORIES) {
+    if (!items.find(i => i.category === cat)) {
+      const newItem = { petId, date: d, category: cat, checked: false };
+      items.push(newItem);
+      store.careChecks.push(newItem);
+      updated = true;
+    }
+  }
+
+  // 항목 순서를 DEFAULT_CATEGORIES 순서에 맞게 정렬
+  items.sort((a, b) => DEFAULT_CATEGORIES.indexOf(a.category) - DEFAULT_CATEGORIES.indexOf(b.category));
+
+  if (updated) {
     saveStore(store);
   }
 
@@ -214,14 +327,87 @@ export function getCareChecklist(petId: string, date?: string): { items: CareChe
   };
 }
 
-export function toggleCareCheck(petId: string, category: string, checked: boolean, date?: string): void {
+export type WeeklyCareStats = {
+  dailyRates: { date: string; dayName: string; rate: number }[];
+  itemStats: { category: string; checkedCount: number; rate: number }[];
+  overallRate: number;
+};
+
+export function getWeeklyCareStats(petId: string): WeeklyCareStats {
+  const store = loadStore();
+  const today = new Date();
+  const dailyRates: { date: string; dayName: string; rate: number }[] = [];
+  
+  const itemCounts: Record<string, number> = {};
+  DEFAULT_CATEGORIES.forEach(c => itemCounts[c] = 0);
+
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+
+  let totalPossible = 0;
+  let totalChecked = 0;
+
+  // 최근 7일치 계산 (오늘 포함)
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    
+    // Use local time for formatting to match todayStr() and avoid UTC mismatch
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const dayName = days[d.getDay()];
+
+    const items = store.careChecks.filter(c => c.petId === petId && c.date === dateStr);
+    
+    // 만약 해당 날짜에 데이터가 없으면, 기본 8개 항목에 대해 0%로 간주
+    if (items.length === 0) {
+      dailyRates.push({ date: dateStr, dayName, rate: 0 });
+      totalPossible += DEFAULT_CATEGORIES.length;
+      continue;
+    }
+
+    const checked = items.filter(item => item.checked).length;
+    const total = DEFAULT_CATEGORIES.length; // 항상 8개 기준으로 계산
+    
+    items.forEach(item => {
+      if (item.checked && itemCounts[item.category] !== undefined) {
+        itemCounts[item.category]++;
+      }
+    });
+
+    dailyRates.push({
+      date: dateStr,
+      dayName,
+      rate: Math.round((checked / total) * 100)
+    });
+
+    totalPossible += total;
+    totalChecked += checked;
+  }
+
+  const itemStats = DEFAULT_CATEGORIES.map(category => ({
+    category,
+    checkedCount: itemCounts[category],
+    rate: Math.round((itemCounts[category] / 7) * 100)
+  })).sort((a, b) => b.rate - a.rate);
+
+  return {
+    dailyRates,
+    itemStats,
+    overallRate: totalPossible > 0 ? Math.round((totalChecked / totalPossible) * 100) : 0
+  };
+}
+
+export function toggleCareCheck(petId: string, category: string, checked: boolean, date?: string, value?: string): void {
   const store = loadStore();
   const d = date || todayStr();
   const idx = store.careChecks.findIndex(c => c.petId === petId && c.date === d && c.category === category);
   if (idx !== -1) {
     store.careChecks[idx].checked = checked;
+    if (value !== undefined) store.careChecks[idx].value = value;
   } else {
-    store.careChecks.push({ petId, date: d, category, checked });
+    store.careChecks.push({ petId, date: d, category, checked, value });
   }
   saveStore(store);
 }
@@ -354,6 +540,39 @@ export function getHealthRecords(): HealthRecord[] {
   return loadStore().healthRecords;
 }
 
+export function updateHealthRecord(id: string, updates: Partial<Omit<HealthRecord, "id" | "createdAt">>): HealthRecord | null {
+  const store = loadStore();
+  const idx = store.healthRecords.findIndex(r => r.id === id);
+  if (idx === -1) return null;
+  store.healthRecords[idx] = { ...store.healthRecords[idx], ...updates };
+  saveStore(store);
+  return store.healthRecords[idx];
+}
+
+export function getAiSummary(petId: string): {text: string, updatedAt: string} | null {
+  const store = loadStore();
+  return store.aiSummaries?.[petId] || null;
+}
+
+export function saveAiSummary(petId: string, text: string) {
+  const store = loadStore();
+  if (!store.aiSummaries) store.aiSummaries = {};
+  store.aiSummaries[petId] = { text, updatedAt: nowISO() };
+  saveStore(store);
+}
+
+export function getAiWeeklyCoaching(petId: string): {text: string, updatedAt: string} | null {
+  const store = loadStore();
+  return store.aiWeeklyCoaching?.[petId] || null;
+}
+
+export function saveAiWeeklyCoaching(petId: string, text: string) {
+  const store = loadStore();
+  if (!store.aiWeeklyCoaching) store.aiWeeklyCoaching = {};
+  store.aiWeeklyCoaching[petId] = { text, updatedAt: nowISO() };
+  saveStore(store);
+}
+
 // ======= 설정 =======
 
 export function getSettings(): PetStore["settings"] {
@@ -370,27 +589,32 @@ export function updateSettings(updates: Partial<PetStore["settings"]>): void {
 
 /** 전체 스토어를 JSON 문자열로 내보내기 */
 export function exportStore(): string {
-  return JSON.stringify(loadStore());
+  const store = loadStore();
+  return JSON.stringify({
+    format: "pet365care-store",
+    version: 2,
+    createdAt: nowISO(),
+    summary: countStore(store),
+    store,
+  } satisfies PetStoreBackupEnvelope);
 }
 
 /** JSON 문자열로 전체 스토어 덮어쓰기 (복원) */
-export function importStore(json: string): { petCount: number } {
-  const data = JSON.parse(json) as PetStore;
-  // 기본값 병합 (누락된 필드 방어)
-  const store: PetStore = { ...DEFAULT_STORE, ...data };
+export function importStore(json: string): BackupImportResult {
+  const parsed = JSON.parse(json) as StoredPet365Shape | PetStoreBackupEnvelope;
+  const envelope = isBackupEnvelope(parsed) ? parsed : null;
+  const store = normalizeStore((envelope?.store ?? parsed) as StoredPet365Shape);
   saveStore(store);
-  return { petCount: store.pets.length };
+  const actual = summarizeStore();
+  const expected = envelope?.summary;
+  return {
+    ...actual,
+    expected,
+    verified: expected ? summariesMatch(actual, expected) : true,
+  };
 }
 
 /** 백업 메타 정보 */
-export function getBackupStats(): { petCount: number; vaxCount: number; careCount: number; healthCount: number; sizeBytes: number } {
-  const store = loadStore();
-  const raw = JSON.stringify(store);
-  return {
-    petCount: store.pets.length,
-    vaxCount: store.pets.reduce((sum, p) => sum + (p.vaccinations?.length || 0), 0),
-    careCount: store.careChecks.length,
-    healthCount: store.healthRecords.length,
-    sizeBytes: new TextEncoder().encode(raw).length,
-  };
+export function getBackupStats(): BackupSummary {
+  return summarizeStore();
 }

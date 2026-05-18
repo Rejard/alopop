@@ -1,25 +1,33 @@
-/* Pet365Care 레이아웃 — 콘텐츠와 하단바 물리적 분리 */
+:root {
+  --pet365-alo-bg: #09070d;
+  --pet365-alo-surface: #14101d;
+  --pet365-alo-accent: #62fae3;
+}
+
+/* Pet365Care keeps its friendly light service body, wrapped by Alopop night chrome. */
 .pet365-root {
-  width: 100%;
-  height: 100vh;
-  height: 100dvh;
-  display: grid;
-  grid-template-rows: 1fr auto;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  background: #F4F4F6;
+  background:
+    linear-gradient(180deg, rgba(9, 7, 13, 0.08), rgba(9, 7, 13, 0.02)),
+    #F4F4F6;
 }
 
 .pet365-content {
+  flex: 1 1 0%;
   overflow-y: auto;
   min-height: 0;
   -webkit-overflow-scrolling: touch;
   position: relative;
 }
 
-/* hide scrollbar */
 .pet365-content::-webkit-scrollbar {
   display: none;
 }
+
 .pet365-content {
   -ms-overflow-style: none;
   scrollbar-width: none;

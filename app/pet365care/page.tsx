@@ -24,16 +24,17 @@ type ActivityData = { walkDistance: number; sleepHours: number; sleepMinutes: nu
 
 const CATEGORY_MAP: Record<string, { emoji: string; label: string }> = {
   feed: { emoji: "🍚", label: "밥" }, water: { emoji: "💧", label: "물" },
-  walk: { emoji: "🐕", label: "산책" }, snack: { emoji: "🦴", label: "간식" },
-  play: { emoji: "🎾", label: "놀이" }, teeth: { emoji: "🪥", label: "양치" },
+  snack: { emoji: "🦴", label: "간식" }, play: { emoji: "🎾", label: "놀이" }, 
+  teeth: { emoji: "🪥", label: "양치" }, walk: { emoji: "🦮", label: "산책" }, 
+  sleep: { emoji: "💤", label: "수면" }, brush: { emoji: "✨", label: "빗질" }
 };
 
 const SPECIES_COLOR: Record<string, string> = {
-  dog: "from-amber-400 to-orange-500", cat: "from-purple-400 to-pink-500",
-  rabbit: "from-pink-300 to-rose-400", hamster: "from-yellow-400 to-amber-500",
-  bird: "from-green-400 to-emerald-500", turtle: "from-teal-400 to-cyan-500",
-  duck: "from-yellow-300 to-orange-400", hedgehog: "from-stone-400 to-zinc-500",
-  fish: "from-blue-400 to-cyan-500", other: "from-gray-400 to-zinc-500",
+  dog: "from-[#9c48ea] to-[#62fae3]", cat: "from-[#cc97ff] to-[#9c48ea]",
+  rabbit: "from-[#cc97ff] to-[#62fae3]", hamster: "from-[#62fae3] to-[#9c48ea]",
+  bird: "from-emerald-400 to-[#62fae3]", turtle: "from-teal-400 to-[#62fae3]",
+  duck: "from-[#62fae3] to-[#cc97ff]", hedgehog: "from-zinc-500 to-[#9c48ea]",
+  fish: "from-sky-400 to-[#62fae3]", other: "from-gray-500 to-[#9c48ea]",
 };
 
 // 펫별 케어 카드 컴포넌트
@@ -58,7 +59,10 @@ function PetCareCard({ pet, isExpanded, onToggle }: { pet: Pet; isExpanded: bool
     }
   }, [isExpanded, pet.id]);
 
-  useEffect(() => { fetchPetData(); }, [fetchPetData]);
+  useEffect(() => {
+    const timer = window.setTimeout(fetchPetData, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchPetData]);
 
   const toggleCheck = (category: string, currentChecked: boolean) => {
     toggleCareCheckStore(pet.id, category, !currentChecked);
@@ -116,16 +120,16 @@ function PetCareCard({ pet, isExpanded, onToggle }: { pet: Pet; isExpanded: bool
           ) : (
             <>
               {streak && streak.currentStreak > 0 && (
-                <div className="flex items-center gap-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl p-3.5 border border-orange-100">
-                  <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-full flex items-center justify-center text-white shadow-sm"><Flame size={20} /></div>
+                <div className="flex items-center gap-3 bg-gradient-to-r from-[#efe7ff] to-[#e8fbf8] rounded-2xl p-3.5 border border-[#9c48ea]/15">
+                  <div className="w-10 h-10 bg-gradient-to-br from-[#9c48ea] to-[#62fae3] rounded-full flex items-center justify-center text-white shadow-sm"><Flame size={20} /></div>
                   <div className="flex-1">
-                    <p className="text-[10px] font-bold text-orange-600">연속 산책</p>
+                    <p className="text-[10px] font-bold text-[#9c48ea]">연속 산책</p>
                     <span className="text-xl font-black text-gray-900">{streak.currentStreak}</span>
                     <span className="text-xs font-semibold text-gray-500 ml-0.5">일</span>
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-bold text-gray-400">최고</p>
-                    <span className="text-sm font-black text-orange-500">{streak.bestStreak}일</span>
+                    <span className="text-sm font-black text-[#9c48ea]">{streak.bestStreak}일</span>
                   </div>
                 </div>
               )}
@@ -141,7 +145,7 @@ function PetCareCard({ pet, isExpanded, onToggle }: { pet: Pet; isExpanded: bool
                   <div className="w-full h-1.5 bg-gray-100 rounded-full mb-3 overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full transition-all duration-500" style={{ width: `${checklist.completionRate}%` }} />
                   </div>
-                  <div className="grid grid-cols-6 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     {checklist.items.map(item => {
                       const info = CATEGORY_MAP[item.category] || { emoji: "✅", label: item.category };
                       return (
@@ -159,29 +163,6 @@ function PetCareCard({ pet, isExpanded, onToggle }: { pet: Pet; isExpanded: bool
                         </button>
                       );
                     })}
-                  </div>
-                </div>
-              )}
-
-              {activity && (
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className={`rounded-2xl p-3.5 flex items-center gap-3 transition-all ${activity.activeWalkId ? "bg-orange-50 border-2 border-orange-300" : "bg-gray-50 border-2 border-transparent"}`}>
-                    <button onClick={() => toggleAction("WALK")} className={`w-9 h-9 rounded-full flex items-center justify-center text-white shadow-sm shrink-0 ${activity.activeWalkId ? "bg-red-500" : "bg-emerald-500"}`}>
-                      {activity.activeWalkId ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
-                    </button>
-                    <div>
-                      <p className="text-[10px] font-bold text-gray-400">산책</p>
-                      <p className="text-lg font-black text-gray-900">{activity.walkDistance}<span className="text-[10px] font-medium text-gray-400 ml-0.5">km</span></p>
-                    </div>
-                  </div>
-                  <div className={`rounded-2xl p-3.5 flex items-center gap-3 transition-all ${activity.activeSleepId ? "bg-indigo-50 border-2 border-indigo-300" : "bg-gray-50 border-2 border-transparent"}`}>
-                    <button onClick={() => toggleAction("SLEEP")} className={`w-9 h-9 rounded-full flex items-center justify-center text-white shadow-sm shrink-0 ${activity.activeSleepId ? "bg-red-500" : "bg-indigo-500"}`}>
-                      {activity.activeSleepId ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
-                    </button>
-                    <div>
-                      <p className="text-[10px] font-bold text-gray-400">수면</p>
-                      <p className="text-lg font-black text-gray-900">{activity.sleepHours}<span className="text-[10px] font-medium text-gray-400">h</span> {activity.sleepMinutes}<span className="text-[10px] font-medium text-gray-400">m</span></p>
-                    </div>
                   </div>
                 </div>
               )}
@@ -214,25 +195,28 @@ export default function HomePage() {
   const [tipModalOpen, setTipModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!user?.id) {
+    const timer = window.setTimeout(() => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+      const loadedPets = getPets();
+      setPets(loadedPets);
+      if (loadedPets.length > 0) setExpandedPetId(loadedPets[0].id);
       setLoading(false);
-      return;
-    }
-    const loadedPets = getPets();
-    setPets(loadedPets);
-    if (loadedPets.length > 0) setExpandedPetId(loadedPets[0].id);
-    setLoading(false);
 
-    // AI 케어 팁 (Gemini API 키가 있을 때만)
+      // AI 케어 팁 (Gemini API 키가 있을 때만)
 
-    if (loadedPets.length > 0) {
-      const firstPet = loadedPets[0];
-      generateCareTip(firstPet.name, firstPet.species, firstPet.breed, firstPet.age)
-        .then(t => setTip(t))
-        .catch(() => setTip({ title: "반려동물과 함께하는 하루", content: "오늘도 사랑으로 케어해주세요! 🐾", iconType: "Heart" }));
-    } else {
-      setTip({ title: "반려동물과 함께하는 하루", content: "오늘도 사랑으로 케어해주세요! 🐾", iconType: "Apple" });
-    }
+      if (loadedPets.length > 0) {
+        const firstPet = loadedPets[0];
+        generateCareTip(firstPet.name, firstPet.species, firstPet.breed, firstPet.age)
+          .then(t => setTip(t))
+          .catch(() => setTip({ title: "반려동물과 함께하는 하루", content: "오늘도 사랑으로 케어해주세요! 🐾", iconType: "Heart" }));
+      } else {
+        setTip({ title: "반려동물과 함께하는 하루", content: "오늘도 사랑으로 케어해주세요! 🐾", iconType: "Apple" });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [user?.id]);
 
   const getIcon = (type: string) => {
@@ -247,7 +231,7 @@ export default function HomePage() {
 
   if (!loading && pets.length === 0) {
     return (
-      <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+      <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
         <header className="flex items-center justify-between p-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
@@ -293,7 +277,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       <header className="flex items-center justify-between p-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
@@ -307,10 +291,6 @@ export default function HomePage() {
             <p className="text-xs text-gray-500 font-medium">오늘도 산뜻한 하루 보내세요!</p>
           </div>
         </div>
-        <button className="text-[#FF7B6E] p-2 bg-white rounded-full shadow-sm relative">
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
-          <Bell strokeWidth={2.5} size={20} />
-        </button>
       </header>
       <main className="px-5 flex flex-col gap-3">
         <div className="flex items-center justify-between px-1">
@@ -334,7 +314,7 @@ export default function HomePage() {
           <section onClick={() => setTipModalOpen(true)}
             className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-[28px] p-5 text-white flex items-center justify-between shadow-lg cursor-pointer hover:bg-gray-800 transition-all active:scale-[0.98] mt-1">
             <div className="flex items-center gap-3.5 w-[85%]">
-              <div className="w-11 h-11 shrink-0 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm text-yellow-400">{getIcon(tip.iconType)}</div>
+              <div className="w-11 h-11 shrink-0 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm text-[#62fae3]">{getIcon(tip.iconType)}</div>
               <div className="w-full">
                 <p className="text-[10px] text-white/70 font-semibold mb-0.5">오늘의 AI 케어 팁 ✨</p>
                 <h4 className="text-sm font-bold leading-tight truncate">{tip.title}</h4>
@@ -349,9 +329,9 @@ export default function HomePage() {
           <div className="bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl relative">
             <button onClick={() => setTipModalOpen(false)} className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={20} /></button>
             <div className="p-8 pt-10 pb-6 flex flex-col items-center text-center">
-              <div className="w-16 h-16 bg-gradient-to-tr from-yellow-100 to-amber-50 rounded-full flex items-center justify-center text-amber-500 mb-4 shadow-inner">{getIcon(tip.iconType)}</div>
+              <div className="w-16 h-16 bg-gradient-to-tr from-[#efe7ff] to-[#e8fbf8] rounded-full flex items-center justify-center text-[#9c48ea] mb-4 shadow-inner">{getIcon(tip.iconType)}</div>
               <h3 className="text-2xl font-extrabold text-gray-900 mb-3">{tip.title}</h3>
-              <div className="w-10 h-1 bg-amber-400 rounded-full mb-5"></div>
+              <div className="w-10 h-1 bg-[#62fae3] rounded-full mb-5"></div>
               <p className="text-gray-600 text-sm leading-relaxed text-left bg-gray-50 p-4 rounded-2xl border border-gray-100">{tip.content}</p>
             </div>
             <div className="p-4 bg-gray-50 border-t border-gray-100">

@@ -1,24 +1,41 @@
 ﻿@import "tailwindcss";
 
 @theme inline {
+  --color-background: #09070d;
   --color-primary: #cc97ff;
   --color-primary-dim: #9c48ea;
+  --color-on-primary: #08060b;
   --color-secondary: #62fae3;
+  --color-tertiary: #ffb4a6;
+  --color-on-tertiary: #160b08;
+  --color-error: #ff6b8a;
   --color-surface-container-lowest: #000000;
-  --color-surface-container-low: #190f21;
-  --color-surface-container: #201528;
-  --color-surface-container-high: #261b30;
-  --color-surface-variant: #2d2137;
+  --color-surface-container-low: #120d18;
+  --color-surface-container: #1b1422;
+  --color-surface-container-high: #241a2e;
+  --color-surface-variant: #2f2438;
   --color-outline-variant: #4f4456;
   --color-on-surface: #f6e6fd;
   --color-on-surface-variant: #d8c9e0;
   --color-on-primary-container: #ffffff;
-  --color-dark-bg: #130b1a;
+  --color-dark-bg: #09070d;
 
   --font-sans: var(--font-plus-jakarta);
 
   --shadow-ambient: 0 0 32px 0 rgba(204, 151, 255, 0.08);
   --shadow-inner-glow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+
+  --alo-bg-night: #09070d;
+  --alo-bg-deep: #130b1a;
+  --alo-surface: rgba(255, 255, 255, 0.07);
+  --alo-surface-strong: rgba(255, 255, 255, 0.11);
+  --alo-line: rgba(255, 255, 255, 0.12);
+  --alo-text: #f8f5ff;
+  --alo-text-muted: rgba(248, 245, 255, 0.72);
+  --alo-text-soft: rgba(248, 245, 255, 0.48);
+  --alo-accent-purple: #9c48ea;
+  --alo-accent-pink: #cc97ff;
+  --alo-accent-mint: #62fae3;
 }
 
 body {
@@ -56,4 +73,109 @@ body {
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+.alo-mobile-shell {
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 86% 0%, rgba(156, 72, 234, 0.6), transparent 32%),
+    radial-gradient(circle at 0% 46%, rgba(98, 250, 227, 0.14), transparent 26%),
+    linear-gradient(180deg, var(--alo-bg-deep) 0%, var(--alo-bg-night) 58%, #060409 100%);
+  color: var(--alo-text);
+}
+
+.alo-app-shell {
+  background:
+    radial-gradient(circle at 92% 0%, rgba(156, 72, 234, 0.34), transparent 28%),
+    radial-gradient(circle at 0% 62%, rgba(98, 250, 227, 0.09), transparent 28%),
+    linear-gradient(180deg, var(--alo-bg-deep) 0%, var(--alo-bg-night) 48%, #050408 100%);
+}
+
+.alo-side-rail {
+  background: linear-gradient(180deg, rgba(18, 13, 24, 0.96), rgba(5, 4, 8, 0.98));
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset -1px 0 0 rgba(98, 250, 227, 0.04);
+}
+
+.alo-content-panel {
+  background:
+    linear-gradient(180deg, rgba(27, 20, 34, 0.94), rgba(11, 8, 14, 0.98)),
+    var(--color-surface-container);
+}
+
+.alo-chat-composer {
+  background: rgba(18, 13, 24, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.alo-mobile-frame {
+  width: min(100%, 430px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 24px);
+}
+
+.alo-card {
+  background: var(--alo-surface);
+  border: 1px solid var(--alo-line);
+  border-radius: 24px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 24px 64px rgba(0, 0, 0, 0.24);
+}
+
+.alo-card-strong {
+  background: var(--alo-surface-strong);
+  border: 1px solid var(--alo-line);
+  border-radius: 24px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+
+.alo-logo-tile {
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--alo-accent-pink), var(--alo-accent-purple));
+  color: white;
+  font-weight: 950;
+  box-shadow: 0 14px 34px rgba(156, 72, 234, 0.42);
+  transform: rotate(8deg);
+}
+
+.alo-primary-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--alo-accent-purple), var(--alo-accent-mint));
+  color: #08060b;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+  box-shadow: 0 18px 50px rgba(98, 250, 227, 0.2), 0 18px 50px rgba(156, 72, 234, 0.24);
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.alo-primary-action:active {
+  transform: scale(0.98);
+  filter: brightness(0.96);
+}
+
+.alo-secondary-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--alo-line);
+  border-radius: 18px;
+  background: var(--alo-surface);
+  color: var(--alo-accent-mint);
+  font-weight: 900;
+}
+
+.alo-muted {
+  color: var(--alo-text-muted);
+}
+
+.alo-soft {
+  color: var(--alo-text-soft);
 }

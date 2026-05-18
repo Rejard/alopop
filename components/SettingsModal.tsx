@@ -1,11 +1,58 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { X, Key, Bot, LogOut, Users, EyeOff, UserX, Trash2, RefreshCw, Check } from 'lucide-react';
+import { type CSSProperties, useCallback, useEffect, useState } from 'react';
+import { X, Key, Bot, LogOut, Users, UserX, Trash2, RefreshCw, Check } from 'lucide-react';
 import { useSettingsStore, AIProvider } from '@/store/useSettingsStore';
+import { useConfirm } from '@/components/ui/ConfirmProvider';
 import { useRouter } from 'next/navigation';
 
-export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: any }) {
+type RoomMember = {
+  userId: string;
+  isHost?: boolean;
+};
+
+type SettingsRoom = {
+  id: string;
+  sponsorMode?: boolean;
+  sponsorPrice?: number;
+  sponsorModel?: string | null;
+  members?: RoomMember[];
+};
+
+type StoredUser = {
+  id: string;
+};
+
+type HiddenBlockedFriend = {
+  id: string;
+  friendId: string;
+  status: 'HIDDEN' | 'BLOCKED';
+  friend: {
+    username: string;
+  };
+};
+
+type AiModel = {
+  id: string;
+  name: string;
+};
+
+const secureTextStyle: CSSProperties & { WebkitTextSecurity?: string } = {
+  WebkitTextSecurity: 'disc',
+};
+
+function parseStoredUser(userStr: string | null): StoredUser | null {
+  if (!userStr) return null;
+  try {
+    const user = JSON.parse(userStr) as Partial<StoredUser>;
+    return typeof user.id === 'string' ? { id: user.id } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: SettingsRoom | null }) {
+  const confirmModal = useConfirm();
   const { isOpen, setIsOpen, forceGlobal, selectedProvider, apiKeys, setSelectedProvider, setApiKey, loadSettings } = useSettingsStore();
   
   // [신규] forceGlobal이 true라면, 방 안에 있어도 전역 설정 모드를 강제합니다.
@@ -18,7 +65,7 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
   const [inputValue, setInputValue] = useState('');
 
   // 친구 관리 탭
-  const [hiddenBlockedFriends, setHiddenBlockedFriends] = useState<any[]>([]);
+  const [hiddenBlockedFriends, setHiddenBlockedFriends] = useState<HiddenBlockedFriend[]>([]);
   const [isFriendsLoading, setIsFriendsLoading] = useState(false);
   // 신규: 커스텀 토스트 알림 상태
   const [toastMessage, setToastMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
@@ -39,7 +86,7 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
   const [hostSponsorLocked, setHostSponsorLocked] = useState<{ isLocked: boolean; modelName?: string }>({ isLocked: false });
   const [sponsorPrice, setSponsorPrice] = useState<number | string>(0);
   const [sponsorModelId, setSponsorModelId] = useState<string>('');
-  const [aiModels, setAiModels] = useState<Record<string, { id: string, name: string }[]>>({});
+  const [aiModels, setAiModels] = useState<Record<string, AiModel[]>>({});
 
   useEffect(() => {
     if (isOpen) {
@@ -50,7 +97,8 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
   useEffect(() => {
     if (roomPolicy === 'sponsor' && aiModels[activeTab]?.length > 0) {
       if (!sponsorModelId || !aiModels[activeTab].some(m => m.id === sponsorModelId)) {
-        setSponsorModelId(aiModels[activeTab][0].id);
+        const timeoutId = window.setTimeout(() => setSponsorModelId(aiModels[activeTab][0].id), 0);
+        return () => window.clearTimeout(timeoutId);
       }
     }
   }, [activeTab, aiModels, roomPolicy, sponsorModelId]);
@@ -58,17 +106,19 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
   useEffect(() => {
     if (isOpen) {
       if (!hostSponsorLocked.isLocked) {
-        setInputValue(apiKeys[activeTab] || '');
+        const timeoutId = window.setTimeout(() => setInputValue(apiKeys[activeTab] || ''), 0);
+        return () => window.clearTimeout(timeoutId);
       }
     }
   }, [isOpen, activeTab, apiKeys, hostSponsorLocked.isLocked]);
 
   const userStr = typeof window !== 'undefined' ? localStorage.getItem('alo_user') : null;
-  const parsedUser = userStr ? JSON.parse(userStr) : null;
-  const isAmIHost = currentRoom?.members?.find((m: any) => m.userId === parsedUser?.id)?.isHost;
+  const parsedUser = parseStoredUser(userStr);
+  const isAmIHost = currentRoom?.members?.find((m) => m.userId === parsedUser?.id)?.isHost;
 
   useEffect(() => {
     if (isOpen) {
+      const timeoutId = window.setTimeout(() => {
       setActiveLayerTab('ai');
       loadSettings();
       
@@ -81,16 +131,17 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
         setRoomPolicy('individual');
         setSponsorPrice(0);
       }
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
-  }, [isOpen, currentRoom]);
+  }, [currentRoom, isOpen, loadSettings]);
 
   useEffect(() => {
     if (isOpen) {
+      const timeoutId = window.setTimeout(() => {
       // 내가 게스트로 방에 들어가있고 방장이 스폰서 모드를 켰다면? 그 모델로 탭을 강제고정!
       let locked = false;
       if (currentRoom && parsedUser) {
-        let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
-        
         // 현재 내가 게스트이면서, 방의 sponsorMode가 켜져 있다면
         if (!isAmIHost && currentRoom.sponsorMode) {
           locked = true;
@@ -109,26 +160,24 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
            if (roomPolicy === 'free') setRoomPolicy('individual'); // gemini가 아닌 경우 free 락 풀기
         }
       }
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
-  }, [isOpen, currentRoom, selectedProvider]);
+  }, [currentRoom, isAmIHost, isOpen, parsedUser, roomPolicy, selectedProvider]);
 
-  useEffect(() => {
-    if (isOpen && activeLayerTab === 'friends') {
-      fetchHiddenBlockedFriends();
-    }
-  }, [isOpen, activeLayerTab]);
-
-  const fetchHiddenBlockedFriends = async () => {
+  const fetchHiddenBlockedFriends = useCallback(async () => {
     try {
       setIsFriendsLoading(true);
       const userStr = localStorage.getItem('alo_user');
       if (!userStr) return;
-      const parsedUser = JSON.parse(userStr);
+      const parsedUser = parseStoredUser(userStr);
+      if (!parsedUser) return;
 
       const res = await fetch(`/api/friends?userId=${parsedUser.id}`);
       if (res.ok) {
         const data = await res.json();
-        const inactive = data.friendships.filter((fs: any) => fs.status === 'HIDDEN' || fs.status === 'BLOCKED');
+        const friendships = Array.isArray(data.friendships) ? data.friendships as HiddenBlockedFriend[] : [];
+        const inactive = friendships.filter((fs) => fs.status === 'HIDDEN' || fs.status === 'BLOCKED');
         setHiddenBlockedFriends(inactive);
       }
     } catch (err) {
@@ -136,12 +185,22 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
     } finally {
       setIsFriendsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && activeLayerTab === 'friends') {
+      const timeoutId = window.setTimeout(() => {
+        void fetchHiddenBlockedFriends();
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, [activeLayerTab, fetchHiddenBlockedFriends, isOpen]);
 
   const handleUpdateFriendStatus = async (friendId: string, status: 'ACTIVE') => {
     const userStr = localStorage.getItem('alo_user');
     if (!userStr) return;
-    const parsedUser = JSON.parse(userStr);
+    const parsedUser = parseStoredUser(userStr);
+    if (!parsedUser) return;
 
     try {
       const res = await fetch(`/api/friends/${friendId}`, {
@@ -161,11 +220,18 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
   };
 
   const handleDeleteFriend = async (friendId: string) => {
-    if (!confirm("정말로 연락처에서 영구 삭제하시겠습니까? 되돌릴 수 없습니다.")) return;
+    const isOk = await confirmModal({
+      title: "연락처 삭제",
+      message: "정말로 연락처에서 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.",
+      type: "danger",
+      confirmText: "영구 삭제",
+    });
+    if (!isOk) return;
 
     const userStr = localStorage.getItem('alo_user');
     if (!userStr) return;
-    const parsedUser = JSON.parse(userStr);
+    const parsedUser = parseStoredUser(userStr);
+    if (!parsedUser) return;
 
     try {
       const res = await fetch(`/api/friends/${friendId}?userId=${parsedUser.id}`, { method: 'DELETE' });
@@ -180,7 +246,8 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
 
   useEffect(() => {
     // 탭이 바뀔 때 해당 Provider의 로컬 키값을 인풋에 셋팅
-    setInputValue(apiKeys[activeTab] || '');
+    const timeoutId = window.setTimeout(() => setInputValue(apiKeys[activeTab] || ''), 0);
+    return () => window.clearTimeout(timeoutId);
   }, [activeTab, apiKeys]);
 
   if (!isOpen) return null;
@@ -251,7 +318,7 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
           })
         });
 
-        const newModelName = aiModels[activeTab]?.find((m: any) => m.id === newModel)?.name || newModel;
+        const newModelName = aiModels[activeTab]?.find((m) => m.id === newModel)?.name || newModel;
 
         // [신규] 게스트에게 실시간으로 갱신내용을 브로드캐스트하기 위한 이벤트를 발생시킵니다.
         window.dispatchEvent(new CustomEvent('host_sponsor_settings_saved', {
@@ -382,7 +449,7 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
                   </label>
                   <input
                     type="text"
-                    style={{ WebkitTextSecurity: 'disc' } as any}
+                    style={secureTextStyle}
                     autoComplete="off"
                     name="alo_api_key_prevent_autofill"
                     value={inputValue}
@@ -522,7 +589,7 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
                   비활성화된 유저 정보가 없습니다.
                 </div>
               ) : (
-                hiddenBlockedFriends.map((fs: any) => (
+                hiddenBlockedFriends.map((fs) => (
                   <div key={fs.id} className="flex flex-col gap-3 p-4 bg-surface-container-low rounded-lg shadow-ambient">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">

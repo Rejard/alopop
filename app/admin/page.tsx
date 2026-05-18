@@ -1,9 +1,47 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldAlert, Send, Save, ChevronLeft, Gift, Trash2, Power, PowerOff, Users } from 'lucide-react';
 import AdminMembersPanel from './AdminMembersPanel';
+
+type AdminUser = {
+  id: string;
+  username?: string;
+  isAdmin?: boolean;
+};
+
+type Announcement = {
+  id: string;
+  title: string;
+  content: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+type AdminEvent = {
+  id: string;
+  title: string;
+  description?: string | null;
+  eventType?: 'REWARD' | 'FREE_AI';
+  isActive: boolean;
+  aiProvider?: string | null;
+  aiModel?: string | null;
+  dailyLimit?: number | null;
+  reward?: number | null;
+  rewardFrequency?: string | null;
+};
+
+type SystemSetting = {
+  key: string;
+  value: string;
+  description?: string | null;
+};
+
+type AiModel = {
+  id: string;
+  name: string;
+};
 
 function ChaosPanel() {
   const [userCount, setUserCount] = useState(100);
@@ -12,7 +50,6 @@ function ChaosPanel() {
   const [log, setLog] = useState('');
 
   useEffect(() => {
-    let interval: any;
     const fetchStatus = () => {
       fetch('/api/admin/chaos')
         .then(r => r.json())
@@ -22,7 +59,7 @@ function ChaosPanel() {
         }).catch(() => {});
     };
     fetchStatus();
-    interval = setInterval(fetchStatus, 2000);
+    const interval = setInterval(fetchStatus, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -36,7 +73,7 @@ function ChaosPanel() {
       });
       if (res.ok) setStatus('running');
       else alert('실행에 실패했습니다.');
-    } catch(e) {
+    } catch {
       alert('오류 발생');
     }
   };
@@ -89,17 +126,17 @@ function ChaosPanel() {
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AdminUser | null>(null);
   const [activeTab, setActiveTab] = useState<'MEMBERS' | 'ANNOUNCEMENT' | 'EVENT' | 'SYSTEM' | 'CHAOS'>('MEMBERS');
 
   // Announcement States
-  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [announceTitle, setAnnounceTitle] = useState('');
   const [announceContent, setAnnounceContent] = useState('');
   const [announceDuration, setAnnounceDuration] = useState('4');
 
   // Event States
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<AdminEvent[]>([]);
   const [eventTitle, setEventTitle] = useState('');
   const [eventDesc, setEventDesc] = useState('');
   const [eventReward, setEventReward] = useState(0);
@@ -113,7 +150,7 @@ export default function AdminDashboard() {
   const [aiModel, setAiModel] = useState('');
   const [eventApiKey, setEventApiKey] = useState('');
   const [dailyLimit, setDailyLimit] = useState<number | ''>(30);
-  const [aiModelsData, setAiModelsData] = useState<Record<string, any[]>>({});
+  const [aiModelsData, setAiModelsData] = useState<Record<string, AiModel[]>>({});
 
   useEffect(() => {
     fetch('/api/models')
@@ -128,8 +165,38 @@ export default function AdminDashboard() {
   }, []);
 
   // System States
-  const [systemSettings, setSystemSettings] = useState<any[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSetting[]>([]);
   const [dirtySettings, setDirtySettings] = useState<Record<string, string>>({});
+
+  const loadAnnouncements = useCallback(() => {
+    fetch('/api/admin/announcements')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setAnnouncements(data as Announcement[]);
+      });
+  }, []);
+
+  const loadEvents = useCallback(() => {
+    fetch('/api/admin/events')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setEvents(data as AdminEvent[]);
+      });
+  }, []);
+
+  const loadSystemSettings = useCallback(() => {
+    fetch('/api/admin/system')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+            const settings = data as SystemSetting[];
+            setSystemSettings(settings);
+            const initDirty: Record<string, string> = {};
+            settings.forEach(s => initDirty[s.key] = s.value);
+            setDirtySettings(initDirty);
+        }
+      });
+  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('alo_user');
@@ -152,38 +219,10 @@ export default function AdminDashboard() {
           loadSystemSettings();
         }
       });
-  }, [router]);
-
-  const loadAnnouncements = () => {
-    fetch('/api/admin/announcements')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setAnnouncements(data);
-      });
-  };
-
-  const loadEvents = () => {
-    fetch('/api/admin/events')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setEvents(data);
-      });
-  };
-
-  const loadSystemSettings = () => {
-    fetch('/api/admin/system')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-            setSystemSettings(data);
-            const initDirty: Record<string, string> = {};
-            data.forEach(s => initDirty[s.key] = s.value);
-            setDirtySettings(initDirty);
-        }
-      });
-  };
+  }, [loadAnnouncements, loadEvents, loadSystemSettings, router]);
 
   const handleCreateAnnouncement = async () => {
+    if (!user) return;
     if (!announceTitle.trim() || !announceContent.trim()) return;
     try {
       const durationMs = parseInt(announceDuration) > 0 ? parseInt(announceDuration) * 1000 : 4000;
@@ -199,13 +238,14 @@ export default function AdminDashboard() {
         loadAnnouncements();
         alert('공지사항이 등록되었습니다.');
       }
-    } catch (e) {
+    } catch {
       alert('오류가 발생했습니다.');
     }
   };
 
 
   const handleToggleAnnouncement = async (announcementId: string) => {
+    if (!user) return;
     try {
       const res = await fetch('/api/admin/announcements', {
         method: 'PUT',
@@ -213,10 +253,11 @@ export default function AdminDashboard() {
         body: JSON.stringify({ userId: user.id, announcementId, action: 'TOGGLE_ACTIVE' })
       });
       if (res.ok) loadAnnouncements();
-    } catch(e) { }
+    } catch { }
   };
 
   const handleDeleteAnnouncement = async (announcementId: string) => {
+    if (!user) return;
     if (!confirm('정말로 이 공지사항을 삭제하시겠습니까? (삭제 시 복구 불가)')) return;
     try {
       const res = await fetch(`/api/admin/announcements?userId=${user.id}&announcementId=${announcementId}`, {
@@ -228,10 +269,11 @@ export default function AdminDashboard() {
       } else {
         alert('삭제 실패');
       }
-    } catch(e) { }
+    } catch { }
   };
 
   const handleCreateEvent = async () => {
+    if (!user) return;
     if (!eventTitle.trim()) return;
     try {
       const res = await fetch('/api/admin/events', {
@@ -265,12 +307,13 @@ export default function AdminDashboard() {
         loadEvents();
         alert('이벤트가 생성되었습니다.');
       }
-    } catch (e) {
+    } catch {
       alert('이벤트 생성 오류 발생');
     }
   };
 
   const handleToggleEvent = async (eventId: string) => {
+    if (!user) return;
     try {
       const res = await fetch('/api/admin/events', {
         method: 'PUT',
@@ -278,10 +321,11 @@ export default function AdminDashboard() {
         body: JSON.stringify({ userId: user.id, eventId, action: 'TOGGLE_ACTIVE' })
       });
       if (res.ok) loadEvents();
-    } catch(e) { }
+    } catch { }
   };
 
   const handleDeleteEvent = async (eventId: string) => {
+    if (!user) return;
     if (!confirm('정말로 이 이벤트를 삭제하시겠습니까? (삭제 시 복구 불가)')) return;
     try {
       const res = await fetch(`/api/admin/events?userId=${user.id}&eventId=${eventId}`, {
@@ -293,12 +337,13 @@ export default function AdminDashboard() {
       } else {
         alert('삭제 실패');
       }
-    } catch(e) { }
+    } catch { }
   };
 
   // handleDistributeReward Removed
 
   const handleSaveSystemSettings = async () => {
+    if (!user) return;
     try {
       // transform dirtySettings back to array format required by API
       const settingsArr = Object.keys(dirtySettings).map(key => ({
@@ -316,7 +361,7 @@ export default function AdminDashboard() {
         alert('시스템 설정이 저장되었습니다.');
         loadSystemSettings();
       }
-    } catch(e) { }
+    } catch { }
   };
 
   if (!user) return <div className="min-h-screen bg-background flex justify-center items-center">Loading...</div>;
@@ -587,7 +632,7 @@ export default function AdminDashboard() {
 
             <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-on-surface-variant">이벤트 목록</h3>
             <div className="space-y-4">
-                {events.map((ev: any) => (
+                {events.map((ev) => (
                     <div key={ev.id} className={`bg-surface-container border ${ev.isActive ? 'border-tertiary/50 shadow-[0_0_10px_rgba(255,180,166,0.1)]' : 'border-outline-variant/20'} rounded-xl p-5 transition-all`}>
                         <div className="flex items-center justify-between mb-1">
                             <span className="font-bold text-lg">{ev.title}</span>

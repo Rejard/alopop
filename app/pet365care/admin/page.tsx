@@ -67,15 +67,15 @@ export default function Pet365AdminPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F4F4F6]">
-        <Loader2 className="animate-spin text-[#FF7B6E]" size={32} />
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f5fb]">
+        <Loader2 className="animate-spin text-[#9c48ea]" size={32} />
       </div>
     );
   }
 
   if (error || !stats) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#F4F4F6] px-8 text-center">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#f7f5fb] px-8 text-center">
         <AlertTriangle size={40} className="text-amber-500 mb-4" />
         <p className="text-sm font-medium text-gray-600">{error || "데이터를 불러올 수 없습니다."}</p>
       </div>
@@ -83,7 +83,7 @@ export default function Pet365AdminPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center gap-3 p-6">
         <Link href="/pet365care/profile" className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-gray-600">
@@ -102,7 +102,7 @@ export default function Pet365AdminPage() {
           <div className="grid grid-cols-3 gap-3">
             <StatCard icon={<Hospital size={18} />} label="동물병원" value={stats.overview.totalHospitals} color="bg-blue-50 text-blue-600" />
             <StatCard icon={<PawPrint size={18} />} label="응급 병원" value={stats.overview.emergencyHospitals} color="bg-red-50 text-red-500" />
-            <StatCard icon={<MessageSquare size={18} />} label="펫 채팅방" value={stats.overview.totalBotRooms} color="bg-purple-50 text-purple-600" />
+            <StatCard icon={<MessageSquare size={18} />} label="펫 채팅방" value={stats.overview.totalBotRooms} color="bg-[#efe7ff] text-[#9c48ea]" />
           </div>
         </section>
 
@@ -188,7 +188,7 @@ export default function Pet365AdminPage() {
                 } catch { setSyncResult('❌ 서버 실행 실패'); } finally { setSyncing(false); }
               }}
               disabled={syncing}
-              className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold rounded-2xl py-3 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 mb-2"
+                className="w-full bg-gradient-to-r from-[#9c48ea] to-[#62fae3] text-white font-bold rounded-2xl py-3 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 mb-2"
             >
               {syncing ? <><Loader2 size={18} className="animate-spin" /> 요청 전송 중...</> : <><Terminal size={16} /> 🖥️ 서버에서 전국 동기화 실행</>}
             </button>

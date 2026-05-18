@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Heart, MessageCircle, Send, X, Loader2, Plus, Image as ImageIcon, Trash2, Camera } from "lucide-react";
+import { Heart, MessageCircle, Send, X, Loader2, Plus, Trash2, Camera } from "lucide-react";
 import { usePet365Auth } from "@/lib/pet365care/use-pet365-auth";
 
 type Author = { id: string; username: string; avatar_url: string | null };
@@ -80,7 +80,12 @@ export default function SocialPage() {
   }, []);
 
   useEffect(() => {
-    if (user) fetchPosts(category);
+    if (user) {
+      const timeoutId = window.setTimeout(() => {
+        void fetchPosts(category);
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
+    }
   }, [user, category, fetchPosts]);
 
   const handleLike = async (postId: string) => {
@@ -180,14 +185,14 @@ export default function SocialPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header */}
       <header className="flex items-center justify-between p-5 pt-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
             <span className="text-xl">🐱</span>
           </div>
-          <h1 className="text-[#FF7B6E] font-extrabold text-xl tracking-tight">Pet365Care</h1>
+          <h1 className="text-[#9c48ea] font-extrabold text-xl tracking-tight">Pet365Care</h1>
         </div>
       </header>
 
@@ -196,14 +201,14 @@ export default function SocialPage() {
         <section className="flex flex-col gap-3">
           <div className="flex flex-col gap-1 px-1">
             <h2 className="text-2xl font-bold text-gray-900 leading-tight">우리 동네 인기 모임</h2>
-            <p className="text-sm font-semibold text-[#FF7B6E]">지금 가장 핫한 펫 모임을 확인해보세요 🔥</p>
+            <p className="text-sm font-semibold text-[#9c48ea]">지금 가장 핫한 펫 모임을 확인해보세요 🔥</p>
           </div>
-          <div className="h-52 rounded-[32px] overflow-hidden relative shadow-md bg-gradient-to-br from-amber-400 via-orange-400 to-rose-500">
+          <div className="h-52 rounded-[32px] overflow-hidden relative shadow-md bg-gradient-to-br from-[#9c48ea] via-[#cc97ff] to-[#62fae3]">
             <div className="absolute inset-0 flex items-center justify-center opacity-20 text-[100px]">🐕‍🦺🐕</div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
             <div className="absolute bottom-5 left-5 right-5 flex flex-col gap-1.5">
               <div className="flex gap-2 mb-0.5">
-                <span className="bg-[#FF7B6E] text-white text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider">HOT</span>
+                <span className="bg-[#62fae3] text-[#09070d] text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider">HOT</span>
                 <span className="bg-white/30 backdrop-blur-md text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-full">망원 한강공원</span>
               </div>
               <h3 className="text-white text-lg font-bold leading-tight">토요일 아침 대형견 산책 모임</h3>
@@ -215,12 +220,12 @@ export default function SocialPage() {
         {/* Activity Categories */}
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-bold text-gray-900 px-1">어떤 활동을 찾으시나요?</h2>
-          <div className="bg-[#FDECE9] rounded-[28px] p-4 flex items-center justify-between cursor-pointer hover:bg-[#FAD8D2] transition-colors relative overflow-hidden h-24 shadow-sm">
+          <div className="bg-[#efe7ff] rounded-[28px] p-4 flex items-center justify-between cursor-pointer hover:bg-[#e6d8ff] transition-colors relative overflow-hidden h-24 shadow-sm">
             <div className="flex flex-col z-10 pl-1">
               <h3 className="text-base font-bold text-gray-900 mb-0.5">📸 일상 공유</h3>
               <p className="text-xs text-gray-600 font-medium">우리 아이의 귀여운 순간을<br/>자랑해보세요</p>
             </div>
-            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-[#FF7B6E] mr-1 z-10">
+            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-[#9c48ea] mr-1 z-10">
               <Camera size={18} />
             </div>
           </div>
@@ -249,7 +254,7 @@ export default function SocialPage() {
                 onClick={() => { setCategory(c.value); setNextCursor(null); }}
                 className={`flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 ${
                   category === c.value
-                    ? "bg-[#FF7B6E] text-white shadow-md shadow-[#FF7B6E]/30"
+                    ? "bg-[#9c48ea] text-white shadow-md shadow-[#9c48ea]/25"
                     : "bg-white text-gray-600"
                 }`}
               >
@@ -262,7 +267,7 @@ export default function SocialPage() {
         {/* Posts */}
         <div className="flex flex-col gap-4">
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 className="animate-spin text-[#FF7B6E]" size={28} /></div>
+          <div className="flex justify-center py-16"><Loader2 className="animate-spin text-[#9c48ea]" size={28} /></div>
         ) : posts.length === 0 ? (
           <div className="bg-white rounded-[32px] p-8 flex flex-col items-center text-center shadow-sm">
             <span className="text-5xl mb-3">📝</span>
@@ -274,7 +279,7 @@ export default function SocialPage() {
               <article key={post.id} className="bg-white rounded-[28px] overflow-hidden shadow-sm">
                 {/* Author */}
                 <div className="flex items-center gap-3 p-4 pb-2">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF7B6E] to-[#FF9A8B] flex items-center justify-center overflow-hidden shadow-sm">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#9c48ea] to-[#62fae3] flex items-center justify-center overflow-hidden shadow-sm">
                     {getAvatar(post.author)}
                   </div>
                   <div className="flex-1">
@@ -334,7 +339,7 @@ export default function SocialPage() {
             {hasMore && (
               <button
                 onClick={() => fetchPosts(category, nextCursor)}
-                className="py-3 text-sm font-bold text-[#FF7B6E] text-center"
+                className="py-3 text-sm font-bold text-[#9c48ea] text-center"
               >
                 더 보기
               </button>
@@ -347,14 +352,14 @@ export default function SocialPage() {
       {/* FAB — 글쓰기 */}
       <button
         onClick={() => setShowWrite(true)}
-        className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-br from-[#FF7B6E] to-[#FF9A8B] text-white rounded-full shadow-lg shadow-[#FF7B6E]/40 flex items-center justify-center active:scale-90 transition-transform z-50"
+        className="fixed bottom-24 right-5 w-14 h-14 bg-gradient-to-br from-[#9c48ea] to-[#62fae3] text-[#09070d] rounded-full shadow-lg shadow-[#9c48ea]/30 flex items-center justify-center active:scale-90 transition-transform z-50"
       >
         <Plus size={26} strokeWidth={2.5} />
       </button>
 
       {/* 글쓰기 모달 */}
       {showWrite && (
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+        <div className="fixed inset-0 z-[300] flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowWrite(false)} />
           <div className="bg-white rounded-t-[36px] px-6 py-6 relative z-10 shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom duration-300">
             <div className="flex items-center justify-between mb-5">
@@ -371,7 +376,7 @@ export default function SocialPage() {
                   key={c.value}
                   onClick={() => setWriteCategory(c.value)}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                    writeCategory === c.value ? "bg-[#FF7B6E] text-white" : "bg-gray-100 text-gray-500"
+                    writeCategory === c.value ? "bg-[#9c48ea] text-white" : "bg-gray-100 text-gray-500"
                   }`}
                 >
                   {c.emoji} {c.label}
@@ -383,7 +388,7 @@ export default function SocialPage() {
               value={writeContent}
               onChange={e => setWriteContent(e.target.value)}
               placeholder="반려동물과의 일상을 공유해보세요 ✨"
-              className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 text-[14px] text-gray-800 font-medium outline-none resize-none min-h-[120px] focus:ring-2 focus:ring-[#FF7B6E]/20 border border-transparent focus:border-[#FF7B6E]/20"
+              className="w-full bg-gray-50 rounded-2xl px-4 py-3.5 text-[14px] text-gray-800 font-medium outline-none resize-none min-h-[120px] focus:ring-2 focus:ring-[#9c48ea]/20 border border-transparent focus:border-[#9c48ea]/20"
               autoFocus
             />
 
@@ -420,7 +425,7 @@ export default function SocialPage() {
               <button
                 onClick={handlePost}
                 disabled={posting || !writeContent.trim()}
-                className="px-6 py-2.5 bg-gradient-to-r from-[#FF7B6E] to-[#FF9A8B] text-white rounded-2xl font-bold text-sm disabled:opacity-40 active:scale-95 transition-transform"
+                className="px-6 py-2.5 bg-gradient-to-r from-[#9c48ea] to-[#62fae3] text-[#09070d] rounded-2xl font-bold text-sm disabled:opacity-40 active:scale-95 transition-transform"
               >
                 {posting ? <Loader2 size={16} className="animate-spin" /> : "게시하기"}
               </button>
@@ -431,12 +436,12 @@ export default function SocialPage() {
 
       {/* 상세/댓글 모달 */}
       {detailPost && (
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+        <div className="fixed inset-0 z-[300] flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDetailPost(null)} />
           <div className="bg-white rounded-t-[36px] px-5 pt-5 pb-3 relative z-10 shadow-2xl flex flex-col max-h-[90vh] animate-in slide-in-from-bottom duration-300">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF7B6E] to-[#FF9A8B] flex items-center justify-center overflow-hidden">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#9c48ea] to-[#62fae3] flex items-center justify-center overflow-hidden">
                   {getAvatar(detailPost.author)}
                 </div>
                 <div>
@@ -510,7 +515,7 @@ export default function SocialPage() {
               <button
                 onClick={handleComment}
                 disabled={sendingComment || !commentText.trim()}
-                className="w-9 h-9 bg-[#FF7B6E] rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-transform"
+                className="w-9 h-9 bg-[#9c48ea] rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-transform"
               >
                 {sendingComment ? <Loader2 size={14} className="animate-spin text-white" /> : <Send size={14} className="text-white" />}
               </button>
@@ -521,7 +526,7 @@ export default function SocialPage() {
 
       {/* 이미지 뷰어 */}
       {viewImage && (
-        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center" onClick={() => setViewImage(null)}>
+        <div className="fixed inset-0 z-[400] bg-black flex items-center justify-center" onClick={() => setViewImage(null)}>
           <img src={viewImage} alt="" className="max-w-full max-h-full object-contain" />
           <button className="absolute top-6 right-6 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center" onClick={() => setViewImage(null)}>
             <X size={20} className="text-white" />

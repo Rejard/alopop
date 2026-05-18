@@ -2405,7 +2405,7 @@ export default function Home() {
 
   return (
     <div
-      className="fixed top-0 left-0 w-full bg-dark-bg flex justify-center items-center text-on-surface p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+      className="alo-app-shell fixed top-0 left-0 w-full bg-dark-bg flex justify-center items-center text-on-surface p-0 sm:p-4 overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       style={{ height: 'var(--vh, 100%)' }}
     >
       {activeGameUrl && (
@@ -2952,7 +2952,7 @@ export default function Home() {
           // 홈 화면 (LNB 탭 메뉴 방식으로 변경됨)
           <div className="flex-1 flex overflow-hidden">
             {/* 좌측 사이드바 LNB */}
-            <div className="w-[4.5rem] bg-surface-container-lowest flex flex-col items-center py-6 shrink-0 z-0 relative">
+            <div className="alo-side-rail w-[4.5rem] bg-surface-container-lowest flex flex-col items-center py-6 shrink-0 z-0 relative">
               <div className="flex flex-col gap-6 w-full items-center">
                 {/* 탭 전환 상태 인디케이터 배지 (동적 위치) */}
                 <div
@@ -3081,7 +3081,7 @@ export default function Home() {
             </div>
 
             {/* 오른쪽 주 컨텐츠 영역 */}
-            <div className="flex-1 flex flex-col bg-surface-container overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+            <div className="alo-content-panel flex-1 flex flex-col bg-surface-container overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
 
               {/* 글로벌 서버 점검 및 공지사항 배너 (항상 렌더링, 롤링) */}
               {serverAnnouncements.length > 0 && (
@@ -3894,7 +3894,7 @@ export default function Home() {
             })()}
 
             {/* 하단 입력 영역 */}
-            <div className="p-3 bg-surface-container-low shrink-0 pb-[calc(env(safe-area-inset-bottom)+12px)] relative z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+            <div className="alo-chat-composer p-3 bg-surface-container-low shrink-0 pb-[calc(env(safe-area-inset-bottom)+12px)] relative z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
               {isUploading && (
                 <div className="absolute inset-x-0 -top-12 z-10 flex justify-center pointer-events-none">
                   <div className="flex items-center gap-2 bg-surface-container-high/90 py-1.5 px-4 rounded-full border border-primary/30 text-secondary font-bold text-sm shadow-ambient shadow-inner-glow animate-in slide-in-from-bottom-2 fade-in">

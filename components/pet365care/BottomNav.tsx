@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, ShieldPlus, Home, Sprout, User } from "lucide-react";
+import { Home, ShieldPlus, Sprout, User, Users } from "lucide-react";
 
 export default function Pet365BottomNav() {
   const pathname = usePathname();
@@ -16,7 +16,7 @@ export default function Pet365BottomNav() {
   ];
 
   return (
-    <nav className="flex-shrink-0 w-full bg-white border-t border-gray-100 px-2 pt-2 pb-3 z-[200]">
+    <nav className="flex-shrink-0 w-full bg-[#09070d]/95 border-t border-white/10 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] z-[200] shadow-[0_-18px_42px_rgba(9,7,13,0.35)] relative">
       <div className="flex justify-between items-center gap-1">
         {navItems.map((item) => {
           const isActive = pathname === item.path;
@@ -30,15 +30,15 @@ export default function Pet365BottomNav() {
               <div
                 className={`flex flex-col items-center justify-center w-12 h-10 rounded-2xl transition-colors duration-200 ${
                   isActive
-                    ? "bg-[#FF7F6E] text-white"
-                    : "text-gray-400"
+                    ? "bg-gradient-to-br from-[#9c48ea] to-[#62fae3] text-[#09070d]"
+                    : "text-white/45"
                 }`}
               >
-                <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                <item.icon size={20} strokeWidth={isActive ? 2.7 : 2} />
               </div>
               <span
                 className={`text-[10px] font-bold tracking-tight mt-0.5 ${
-                  isActive ? "text-[#FF7F6E]" : "text-gray-400"
+                  isActive ? "text-[#62fae3]" : "text-white/45"
                 }`}
               >
                 {item.name}

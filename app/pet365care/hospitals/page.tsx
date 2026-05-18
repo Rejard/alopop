@@ -80,7 +80,10 @@ export default function HospitalsPage() {
 
   // GPS
   useEffect(() => {
-    if (!navigator.geolocation) { setGpsStatus("denied"); return; }
+    if (!navigator.geolocation) {
+      const timer = window.setTimeout(() => setGpsStatus("denied"), 0);
+      return () => window.clearTimeout(timer);
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => { setUserLat(pos.coords.latitude); setUserLng(pos.coords.longitude); setGpsStatus("granted"); },
       () => setGpsStatus("denied"),
@@ -116,7 +119,9 @@ export default function HospitalsPage() {
   }, [user?.id, dbCount, userLat, userLng, distanceFilter, emergencyOnly, searchQuery]);
 
   useEffect(() => {
-    if (gpsStatus !== "loading") doSearch();
+    if (gpsStatus === "loading") return;
+    const timer = window.setTimeout(doSearch, 0);
+    return () => window.clearTimeout(timer);
   }, [gpsStatus, doSearch]);
 
   // 동기화
@@ -173,7 +178,7 @@ export default function HospitalsPage() {
             <p style="font-size:11px;color:#888;margin:0 0 6px;">${h.address}</p>
             <div style="display:flex;gap:6px;align-items:center;">
               ${h.isEmergency ? '<span style="font-size:10px;font-weight:700;color:#ef4444;background:#fef2f2;padding:2px 8px;border-radius:99px;">24시 응급</span>' : ''}
-              <a href="tel:${h.phone}" style="font-size:11px;font-weight:700;color:#f43f5e;text-decoration:none;">📞 ${h.phone}</a>
+              <a href="tel:${h.phone}" style="font-size:11px;font-weight:700;color:#9c48ea;text-decoration:none;">📞 ${h.phone}</a>
             </div>
           </div>
         `;
@@ -225,7 +230,7 @@ export default function HospitalsPage() {
   const meta = getMeta();
 
   return (
-    <div className="flex flex-col min-h-full bg-[#F4F4F6] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
+    <div className="flex flex-col min-h-full bg-[#f7f5fb] pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {KAKAO_KEY && (
         <Script src={`//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`} strategy="afterInteractive" onLoad={() => setMapReady(true)} />
       )}
@@ -274,10 +279,10 @@ export default function HospitalsPage() {
         )}
 
         {dbCount === 0 && !syncing && (
-          <div className="bg-amber-50 rounded-2xl p-4 mb-4 border border-amber-100 text-center">
-            <p className="text-sm font-bold text-amber-800 mb-2">🏥 병원 데이터가 없습니다</p>
-            <p className="text-xs text-amber-600 mb-3">"동기화" 버튼을 눌러 전국 동물병원 데이터를 받아주세요.</p>
-            <button onClick={handleSync} className="bg-amber-500 text-white px-4 py-2.5 rounded-2xl text-sm font-bold active:scale-95">
+          <div className="bg-[#efe7ff] rounded-2xl p-4 mb-4 border border-[#9c48ea]/10 text-center">
+            <p className="text-sm font-bold text-[#9c48ea] mb-2">🏥 병원 데이터가 없습니다</p>
+            <p className="text-xs text-gray-600 mb-3">&quot;동기화&quot; 버튼을 눌러 전국 동물병원 데이터를 받아주세요.</p>
+            <button onClick={handleSync} className="bg-[#9c48ea] text-white px-4 py-2.5 rounded-2xl text-sm font-bold active:scale-95">
               <RefreshCw size={14} className="inline mr-1" /> 지금 동기화
             </button>
           </div>
@@ -292,13 +297,13 @@ export default function HospitalsPage() {
                 type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 placeholder="병원 이름으로 검색"
                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLElement).blur(); }}
-                className="w-full bg-gray-50 rounded-2xl pl-11 pr-4 py-3.5 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-rose-200 transition-all border border-transparent focus:border-rose-200"
+                className="w-full bg-gray-50 rounded-2xl pl-11 pr-4 py-3.5 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#9c48ea]/20 transition-all border border-transparent focus:border-[#9c48ea]/20"
               />
             </div>
             <div className="flex items-center gap-2">
               {DISTANCE_FILTERS.map(f => (
                 <button key={f.key} onClick={() => setDistanceFilter(f.key)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${distanceFilter === f.key ? "bg-rose-500 text-white shadow-sm" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${distanceFilter === f.key ? "bg-[#9c48ea] text-white shadow-sm" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
                   {f.label}
                 </button>
               ))}
@@ -326,10 +331,10 @@ export default function HospitalsPage() {
                   <h3 className="font-bold text-gray-900 text-[15px]">{selectedHospital.name}</h3>
                   {selectedHospital.isEmergency && <span className="text-[10px] font-bold bg-red-50 text-red-500 px-2 py-0.5 rounded-full">24시 응급</span>}
                 </div>
-                {selectedHospital.distance !== null && <span className="text-sm font-black text-rose-500">{selectedHospital.distance}km</span>}
+                {selectedHospital.distance !== null && <span className="text-sm font-black text-[#9c48ea]">{selectedHospital.distance}km</span>}
               </div>
               <p className="text-xs text-gray-500">{selectedHospital.address}</p>
-              <button onClick={() => handleCall(selectedHospital.phone)} className="w-full flex items-center justify-center gap-2 py-3 bg-rose-500 text-white font-bold text-sm rounded-2xl mt-1 active:scale-[0.98]">
+              <button onClick={() => handleCall(selectedHospital.phone)} className="w-full flex items-center justify-center gap-2 py-3 bg-[#9c48ea] text-white font-bold text-sm rounded-2xl mt-1 active:scale-[0.98]">
                 <Phone size={16} /> {selectedHospital.phone}
               </button>
             </div>
@@ -341,9 +346,9 @@ export default function HospitalsPage() {
       {viewMode === "list" && dbCount > 0 && (
         <main className="px-6 mt-5 flex flex-col gap-3" onTouchStart={() => { (document.activeElement as HTMLElement)?.blur(); }}>
           {gpsStatus === "denied" && (
-            <div className="bg-amber-50 rounded-2xl p-3 flex items-center gap-2 border border-amber-100">
-              <Navigation size={14} className="text-amber-500 shrink-0" />
-              <p className="text-xs font-medium text-amber-700">위치 권한이 없어 거리 정보를 제공할 수 없습니다.</p>
+            <div className="bg-[#e8fbf8] rounded-2xl p-3 flex items-center gap-2 border border-[#62fae3]/20">
+              <Navigation size={14} className="text-[#0f766e] shrink-0" />
+              <p className="text-xs font-medium text-[#0f766e]">위치 권한이 없어 거리 정보를 제공할 수 없습니다.</p>
             </div>
           )}
           {!loading && (
@@ -352,7 +357,7 @@ export default function HospitalsPage() {
             </p>
           )}
           {loading ? (
-            <div className="flex justify-center p-12"><Loader2 className="animate-spin text-rose-400" size={28} /></div>
+            <div className="flex justify-center p-12"><Loader2 className="animate-spin text-[#9c48ea]" size={28} /></div>
           ) : (
             hospitals.map(h => (
               <div key={h.id} className="bg-white rounded-[24px] p-5 shadow-sm flex flex-col gap-3">
@@ -368,9 +373,9 @@ export default function HospitalsPage() {
                     </div>
                   </div>
                   {h.distance !== null && (
-                    <div className="bg-rose-50 rounded-2xl px-3 py-1.5 text-center shrink-0 ml-3">
-                      <p className="text-lg font-black text-rose-500">{h.distance}</p>
-                      <p className="text-[9px] font-bold text-rose-400">km</p>
+                    <div className="bg-[#efe7ff] rounded-2xl px-3 py-1.5 text-center shrink-0 ml-3">
+                      <p className="text-lg font-black text-[#9c48ea]">{h.distance}</p>
+                      <p className="text-[9px] font-bold text-[#9c48ea]/70">km</p>
                     </div>
                   )}
                 </div>
@@ -379,7 +384,7 @@ export default function HospitalsPage() {
                   {h.specialties?.split(",").map(s => <span key={s.trim()} className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">{s.trim()}</span>)}
                 </div>
                 <div className="flex gap-2 mt-1">
-                  <button onClick={() => handleCall(h.phone)} className="flex-1 flex items-center justify-center gap-2 py-3 bg-rose-500 text-white font-bold text-sm rounded-2xl shadow-sm hover:bg-rose-600 transition-colors active:scale-[0.98]">
+                  <button onClick={() => handleCall(h.phone)} className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#9c48ea] text-white font-bold text-sm rounded-2xl shadow-sm hover:bg-[#8b39d8] transition-colors active:scale-[0.98]">
                     <Phone size={16} /> 전화하기
                   </button>
                   {h.website && (
