@@ -3,22 +3,51 @@
 import { useState, useSyncExternalStore } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, Copy, LogIn, UserPlus } from 'lucide-react';
-import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
-function GoogleButton({ onSuccess, onError, disabled }: { onSuccess: (res: { credential: string }) => void; onError: () => void; disabled?: boolean }) {
-  const login = useGoogleLogin({
-    onSuccess: (tokenResponse) => onSuccess({ credential: tokenResponse.access_token }),
-    onError,
-    flow: 'implicit',
+const GOOGLE_OAUTH_STATE_KEY = 'alo_google_oauth_state';
+const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_REDIRECT_URI = 'https://alopop.alonics.com/login';
+
+function createOAuthState() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getGoogleRedirectUri() {
+  return GOOGLE_REDIRECT_URI;
+}
+
+function startGoogleRedirect(clientId: string, inviteCode: string) {
+  const state = createOAuthState();
+  const redirectUri = getGoogleRedirectUri();
+  sessionStorage.setItem(GOOGLE_OAUTH_STATE_KEY, JSON.stringify({ state, redirectUri, inviteCode, createdAt: Date.now() }));
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    include_granted_scopes: 'true',
+    access_type: 'online',
   });
+
+  window.location.assign(`${GOOGLE_AUTH_ENDPOINT}?${params.toString()}`);
+}
+
+function GoogleButton({ clientId, inviteCode, disabled }: { clientId: string; inviteCode: string; disabled?: boolean }) {
+  const handleClick = () => {
+    if (!clientId || disabled) return;
+    startGoogleRedirect(clientId, inviteCode);
+  };
 
   return (
     <button
-      onClick={() => login()}
+      onClick={handleClick}
       disabled={disabled}
       className="alo-primary-action min-h-[56px] w-full gap-2 text-[15px] disabled:opacity-50"
     >
-      Google 계정으로 시작하기
+      {disabled ? 'Google 확인 중...' : 'Google 계정으로 시작하기'}
     </button>
   );
 }
@@ -111,39 +140,6 @@ export default function InvitePage() {
     }
   };
 
-  const handleGoogleJoinAndAdd = async (credentialResponse: { credential: string }) => {
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: credentialResponse.credential }),
-      });
-
-      if (!res.ok) throw new Error('Google 인증 또는 가입에 실패했습니다.');
-
-      const newUser = await res.json();
-      localStorage.setItem('alo_user', JSON.stringify(newUser));
-      window.dispatchEvent(new Event('alo-user-change'));
-
-      const friendRes = await fetch('/api/friends', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: newUser.id, targetFriendId: targetCode }),
-      });
-
-      if (friendRes.ok) {
-        alert('환영합니다. 초대한 사용자가 친구 목록에 등록되었습니다.');
-      } else {
-        alert('가입은 완료됐지만 친구 추가에 실패했습니다. 초대 코드가 만료되었을 수 있어요.');
-      }
-      router.push('/');
-    } catch (err: unknown) {
-      alert(getErrorMessage(err, '초대 처리 중 오류가 발생했습니다.'));
-      setIsLoading(false);
-    }
-  };
-
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
   return (
@@ -201,9 +197,7 @@ export default function InvitePage() {
                 {isLoading ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 py-4 text-center text-sm font-bold text-[var(--alo-accent-mint)]">처리 중...</div>
                 ) : clientId ? (
-                  <GoogleOAuthProvider clientId={clientId}>
-                    <GoogleButton onSuccess={handleGoogleJoinAndAdd} onError={() => alert('Google 로그인에 실패했습니다.')} disabled={isLoading} />
-                  </GoogleOAuthProvider>
+                  <GoogleButton clientId={clientId} inviteCode={targetCode} disabled={isLoading} />
                 ) : (
                   <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-center text-sm font-bold text-red-200">
                     Google Client ID가 설정되지 않았습니다.

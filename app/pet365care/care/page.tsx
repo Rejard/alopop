@@ -548,6 +548,8 @@ export default function CarePage() {
     }
   };
 
+  const isNormalCareMode = !recordFormType;
+
   return (
     <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Hidden File Input */}
@@ -654,6 +656,86 @@ export default function CarePage() {
 
       {/* Main Content */}
       <main className="px-6 flex flex-col gap-6">
+        {recordFormType ? (
+          <section className="pet365-medical-record-screen flex min-h-[calc(100dvh-120px)] flex-col">
+            <div className="pet365-card flex min-h-0 flex-1 flex-col gap-4 p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-black text-[var(--pet365-text)] flex items-center gap-2">
+                  {recordFormType === 'VAX' ? '💉 접종 기록' : recordFormType === 'PARASITE' ? '🐛 구충·사상충' : recordFormType === 'HOSPITAL' ? '🏥 병원 진료' : '🤢 이상 증상'} {editingRecordId ? '수정' : '추가'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => { setRecordFormType(null); setEditingRecordId(null); }}
+                  className="p-2 -mr-2 text-[var(--pet365-muted)] hover:text-white rounded-full hover:bg-white/10"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmitRecord} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto hide-scrollbar pb-2">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-bold text-[var(--pet365-muted)]">기록 제목 *</label>
+                  <input type="text" required value={recordForm.title} onChange={e => setRecordForm({...recordForm, title: e.target.value})} placeholder={recordFormType === 'VAX' ? '광견병, 종합백신 등' : '진단명이나 증상을 간단히 적어주세요'} className="w-full bg-white/10 rounded-xl px-4 py-3 font-medium text-[var(--pet365-text)] outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-[var(--pet365-muted)]">날짜 *</label>
+                    <input type="date" required value={recordForm.date} onChange={e => setRecordForm({...recordForm, date: e.target.value})} className="w-full bg-white/10 rounded-xl px-4 py-3 font-medium text-[var(--pet365-text)] outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                  </div>
+                  {(recordFormType === 'VAX' || recordFormType === 'PARASITE' || recordFormType === 'HOSPITAL') && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-bold text-[var(--pet365-muted)]">다음 {recordFormType === 'HOSPITAL' ? '재진' : '예정'}일</label>
+                      <input type="date" value={recordForm.nextDate} onChange={e => setRecordForm({...recordForm, nextDate: e.target.value})} className="w-full bg-white/10 rounded-xl px-4 py-3 font-medium text-[var(--pet365-text)] outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                    </div>
+                  )}
+                </div>
+
+                {(recordFormType === 'VAX' || recordFormType === 'HOSPITAL') && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-[var(--pet365-muted)]">병원명</label>
+                    <input type="text" value={recordForm.hospital} onChange={e => setRecordForm({...recordForm, hospital: e.target.value})} placeholder="방문하신 동물병원 이름" className="w-full bg-white/10 rounded-xl px-4 py-3 font-medium text-[var(--pet365-text)] outline-none focus:ring-2 focus:ring-[#9c48ea]/30" />
+                  </div>
+                )}
+
+                <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+                  <label className="text-sm font-bold text-[var(--pet365-muted)]">상세 메모</label>
+                  <textarea value={recordForm.memo} onChange={e => setRecordForm({...recordForm, memo: e.target.value})} placeholder="자세한 증상이나 의사 선생님의 소견을 메모해두세요." className="w-full flex-1 min-h-[34dvh] bg-white/10 rounded-xl px-4 py-3 font-medium text-[16px] text-[var(--pet365-text)] outline-none focus:ring-2 focus:ring-[#9c48ea]/30 resize-none" />
+                </div>
+
+                {recordFormType === 'HOSPITAL' && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-[var(--pet365-muted)] flex items-center justify-between">
+                      <span>사진 첨부</span>
+                      <span className="text-xs text-[var(--pet365-muted)] font-normal">{recordForm.attachments.length}/10</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {recordForm.attachments.map((img, idx) => (
+                        <div key={idx} className="relative w-16 h-16 rounded-xl border border-white/15 overflow-hidden group">
+                          <img src={img} alt="첨부" className="w-full h-full object-cover" />
+                          <button type="button" onClick={() => handleRemoveAttachment(idx)} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <X size={20} className="text-white" />
+                          </button>
+                        </div>
+                      ))}
+                      {recordForm.attachments.length < 10 && (
+                        <button type="button" onClick={() => attachmentInputRef.current?.click()} className="w-16 h-16 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center text-[var(--pet365-muted)] hover:text-white hover:border-white/40 hover:bg-white/10 transition-colors">
+                          <Camera size={24} />
+                        </button>
+                      )}
+                    </div>
+                    <input type="file" accept="image/*" multiple ref={attachmentInputRef} className="hidden" onChange={handleAddAttachment} />
+                  </div>
+                )}
+
+                <button type="submit" className="w-full pet365-primary-action font-bold rounded-xl py-3.5 mt-2 active:scale-[0.98] transition-transform">
+                  기록 저장하기
+                </button>
+              </form>
+            </div>
+          </section>
+        ) : isNormalCareMode ? (
+          <>
         
         {/* Main AI Camera Button */}
         <button 
@@ -1065,7 +1147,7 @@ export default function CarePage() {
             )}
 
             {/* Medical Record Form Modal */}
-            {recordFormType && (
+            {false && recordFormType && (
               <div className="fixed inset-0 z-[320] flex items-end sm:items-center justify-center sm:p-6 animate-in fade-in duration-200">
                 <div className="absolute inset-0 bg-black/50" onClick={() => { setRecordFormType(null); setEditingRecordId(null); }} />
                 <div className="bg-white w-full sm:max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 relative z-10 shadow-2xl max-h-[90vh] overflow-y-auto hide-scrollbar animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-10 duration-300">
@@ -1265,27 +1347,27 @@ export default function CarePage() {
                 const petRecordCount = history.filter(r => r.petId === p.id).length;
 
                 return (
-                  <div key={p.id} className="bg-gradient-to-r from-[#efe7ff] to-[#e8fbf8] rounded-[24px] p-5 border border-[#9c48ea]/10 shadow-sm relative overflow-hidden">
+                  <div key={p.id} className="pet365-card p-5 flex flex-col gap-4 border border-white/10">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#9c48ea]">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#62fae3]">
                         <Sparkles size={14} /> 
                         <span>[{p.name}] AI 분석 요약</span>
                       </div>
-                      <span className="text-xs font-semibold text-gray-400">총 {petRecordCount}회</span>
+                      <span className="text-xs font-semibold text-[var(--pet365-muted)]">총 {petRecordCount}회</span>
                     </div>
                     
                     <div className="min-h-[40px] mb-4">
                       {isSummarizing ? (
-                        <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                        <div className="flex items-center gap-2 text-sm font-medium text-[var(--pet365-muted)]">
                           <Loader2 className="animate-spin text-[#9c48ea]" size={16} />
                           AI 주치의가 기록을 종합하고 있습니다...
                         </div>
                       ) : summary ? (
-                        <p className="text-sm font-medium text-gray-700 leading-relaxed whitespace-pre-wrap">
+                        <p className="text-sm font-medium text-[var(--pet365-text)] leading-relaxed whitespace-pre-wrap">
                           {summary.text}
                         </p>
                       ) : (
-                        <p className="text-sm font-medium text-gray-500 leading-relaxed">
+                        <p className="text-sm font-medium text-[var(--pet365-muted)] leading-relaxed">
                           AI 분석을 통해 최근 건강 트렌드를 요약해 보세요!
                         </p>
                       )}
@@ -1294,7 +1376,7 @@ export default function CarePage() {
                     <button 
                       onClick={() => handleGenerateSummary(p.id)}
                       disabled={isSummarizing}
-                      className="w-full py-2.5 bg-white hover:bg-gray-50 text-gray-800 text-xs font-bold rounded-xl shadow-sm border border-gray-200 transition-colors disabled:opacity-50"
+                      className="w-full py-2.5 pet365-primary-action text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
                     >
                       {isSummarizing ? '분석 중...' : 'AI 분석'}
                     </button>
@@ -1396,6 +1478,8 @@ export default function CarePage() {
           );
         })()}
 
+          </>
+        ) : null}
       </main>
 
     </div>

@@ -292,7 +292,20 @@ model PetPost {
   authorId     String
   content      String
   images       String?        // JSON 배열: ["/uploads/pet_social_xxx.jpg", ...]
-  category     String   @default("daily")  // daily, walk, health, funny
+  category     String   @default("daily")  // daily, walk, health, funny, local, mate
+  meetupType   String?  // local | mate
+  verifiedRegionName String?
+  verifiedRegionLat  Float?
+  verifiedRegionLng  Float?
+  verifiedRegionAt   DateTime?
+  localTopic    String?
+  localJoinMode String?
+  localRadiusKm Int?
+  mateStartPlace       String?
+  mateStartTime        DateTime?
+  mateRouteSummary     String?
+  mateDurationMinutes  Int?
+  mateCapacity         Int?
   likeCount    Int      @default(0)
   commentCount Int      @default(0)
   createdAt    DateTime @default(now())
@@ -304,6 +317,9 @@ model PetPost {
   @@index([authorId])
   @@index([createdAt])
   @@index([category])
+  @@index([meetupType])
+  @@index([verifiedRegionName])
+  @@index([mateStartTime])
 }
 
 model PetComment {

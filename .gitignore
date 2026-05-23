@@ -44,6 +44,8 @@ next-env.d.ts
 vapid.json
 *.bat
 /public/uploads
+config/*key*.json
+config/*secret*.json
 
 # local database files
 .codex-backups/

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Terminal, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2, PawPrint } from 'lucide-react';
+import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Terminal, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2, PawPrint, Home as HomeIcon, ShieldPlus, Sprout } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ChatMessage } from '@/lib/db';
@@ -15,6 +15,14 @@ import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/cli
 // AI MODELS loaded dynamically
 
 // GAME_LIST is dynamically fetched from game portal
+
+const PET365CARE_LNB_ITEMS = [
+  { name: "홈", path: "/pet365care", icon: HomeIcon },
+  { name: "소셜", path: "/pet365care/social", icon: Users },
+  { name: "건강", path: "/pet365care/health", icon: ShieldPlus },
+  { name: "케어", path: "/pet365care/care", icon: Sprout },
+  { name: "프로필", path: "/pet365care/profile", icon: User },
+];
 
 function WalletTransactionList() {
   const [activeTxTab, setActiveTxTab] = useState<'USAGE' | 'TRANSFER'>('USAGE');
@@ -167,6 +175,7 @@ export default function Home() {
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
   const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
+  const [pet365Path, setPet365Path] = useState("/pet365care");
   // Pet365Care: 내부 라우트 /pet365care (iframe 임베딩)
 
   // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
@@ -2952,24 +2961,24 @@ export default function Home() {
           // 홈 화면 (LNB 탭 메뉴 방식으로 변경됨)
           <div className="flex-1 flex overflow-hidden">
             {/* 좌측 사이드바 LNB */}
-            <div className="alo-side-rail w-[4.5rem] bg-surface-container-lowest flex flex-col items-center py-6 shrink-0 z-0 relative">
-              <div className="flex flex-col gap-6 w-full items-center">
+            <div className="alo-side-rail w-[4.5rem] bg-surface-container-lowest flex flex-col items-center py-6 shrink-0 z-0 relative overflow-y-auto">
+              <div className={`flex flex-col ${currentTab === 'pet365care' ? 'gap-1' : 'gap-6'} w-full items-center transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]`}>
                 {/* 탭 전환 상태 인디케이터 배지 (동적 위치) */}
                 <div
                   className="absolute left-0 w-1 bg-gradient-to-b from-primary to-primary-dim shadow-[0_0_10px_rgba(204,151,255,0.8)] rounded-r-lg transition-all duration-300 ease-in-out"
                   style={{
                     height: '24px',
-                    top: currentTab === 'chats' ? '36px' : currentTab === 'friends' ? '108px' : currentTab === 'wallet' ? '180px' : currentTab === 'games' ? '252px' : currentTab === 'aistudio' ? '324px' : currentTab === 'pet365care' ? '396px' : '36px'
+                    top: currentTab === 'chats' ? '36px' : currentTab === 'friends' ? '108px' : currentTab === 'wallet' ? '180px' : currentTab === 'games' ? '252px' : currentTab === 'aistudio' ? '324px' : currentTab === 'pet365care' ? '229px' : '36px'
                   }}
                 />
 
                 {/* 채팅 목록 탭 */}
                 <button
                   onClick={() => setCurrentTab('chats')}
-                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'chats' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  className={`relative ${currentTab === 'pet365care' ? 'p-2' : 'p-3'} rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'chats' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="채팅 목록"
                 >
-                  <MessageSquare size={24} strokeWidth={currentTab === 'chats' ? 2.5 : 2} />
+                  <MessageSquare size={currentTab === 'pet365care' ? 21 : 24} strokeWidth={currentTab === 'chats' ? 2.5 : 2} />
                   {/* 새 메시지 알림용 배지(Red Dot) */}
                   {Object.values(unreadCounts).some(count => count > 0) && <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-zinc-900"></span>}
                 </button>
@@ -2977,19 +2986,19 @@ export default function Home() {
                 {/* 친구 목록 탭 */}
                 <button
                   onClick={() => setCurrentTab('friends')}
-                  className={`p-3 rounded-xl transition-all ${currentTab === 'friends' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  className={`${currentTab === 'pet365care' ? 'p-2' : 'p-3'} rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'friends' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="친구 목록"
                 >
-                  <Users size={24} strokeWidth={currentTab === 'friends' ? 2.5 : 2} />
+                  <Users size={currentTab === 'pet365care' ? 21 : 24} strokeWidth={currentTab === 'friends' ? 2.5 : 2} />
                 </button>
 
                 {/* 지갑 탭 */}
                 <button
                   onClick={() => setCurrentTab('wallet')}
-                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'wallet' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  className={`relative ${currentTab === 'pet365care' ? 'p-2' : 'p-3'} rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'wallet' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="내 지갑 / 로컬 장부"
                 >
-                  <Wallet size={24} strokeWidth={currentTab === 'wallet' ? 2.5 : 2} />
+                  <Wallet size={currentTab === 'pet365care' ? 21 : 24} strokeWidth={currentTab === 'wallet' ? 2.5 : 2} />
                 </button>
 
                 {/* 게임 탭 */}
@@ -2998,31 +3007,61 @@ export default function Home() {
                     setCurrentTab('games');
                     fetchGames();
                   }}
-                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'games' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  className={`relative ${currentTab === 'pet365care' ? 'p-2' : 'p-3'} rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'games' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="게임 구역"
                 >
-                  <Gamepad2 size={24} strokeWidth={currentTab === 'games' ? 2.5 : 2} />
+                  <Gamepad2 size={currentTab === 'pet365care' ? 21 : 24} strokeWidth={currentTab === 'games' ? 2.5 : 2} />
                 </button>
 
                 {/* AI 스튜디오 탭 */}
                 <button
                   onClick={() => setCurrentTab('aistudio')}
-                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'aistudio' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  className={`relative ${currentTab === 'pet365care' ? 'p-2' : 'p-3'} rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'aistudio' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="Alopop AI Studio"
                 >
-                  <Building2 size={24} strokeWidth={currentTab === 'aistudio' ? 2.5 : 2} />
+                  <Building2 size={currentTab === 'pet365care' ? 21 : 24} strokeWidth={currentTab === 'aistudio' ? 2.5 : 2} />
                 </button>
 
 
 
                 {/* Pet365Care 내부 서비스 */}
                 <button
-                  onClick={() => setCurrentTab('pet365care')}
-                  className={`relative p-3 rounded-xl transition-all ${currentTab === 'pet365care' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
+                  onClick={() => {
+                    setCurrentTab('pet365care');
+                    setPet365Path('/pet365care');
+                  }}
+                  className={`relative ${currentTab === 'pet365care' ? 'p-2' : 'p-3'} rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'pet365care' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="Pet365Care"
                 >
-                  <PawPrint size={24} strokeWidth={currentTab === 'pet365care' ? 2.5 : 2} />
+                  <PawPrint size={currentTab === 'pet365care' ? 21 : 24} strokeWidth={currentTab === 'pet365care' ? 2.5 : 2} />
                 </button>
+
+                {currentTab === 'pet365care' && (
+                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-primary/20 bg-surface-container/70 px-1.5 py-2 shadow-inner">
+                    {PET365CARE_LNB_ITEMS.map((item) => {
+                      const isPet365Active = pet365Path === item.path;
+                      const Icon = item.icon;
+
+                      return (
+                        <button
+                          key={item.path}
+                          onClick={() => {
+                            setCurrentTab('pet365care');
+                            setPet365Path(item.path);
+                          }}
+                          className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+                            isPet365Active
+                              ? 'bg-gradient-to-br from-primary to-secondary text-[#09070d] shadow-[0_8px_20px_rgba(98,250,227,0.18)]'
+                              : 'text-on-surface-variant hover:bg-surface-container-low hover:text-white'
+                          }`}
+                          title={`Pet365Care ${item.name}`}
+                        >
+                          <Icon size={19} strokeWidth={isPet365Active ? 2.6 : 2} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* 👑 관리자 대시보드 버튼 (isAdmin이 true일 때만 렌더링) */}
                 {myProfile?.isAdmin && (
@@ -3081,7 +3120,7 @@ export default function Home() {
             </div>
 
             {/* 오른쪽 주 컨텐츠 영역 */}
-            <div className="alo-content-panel flex-1 flex flex-col bg-surface-container overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+            <div className={`alo-content-panel ${currentTab === 'pet365care' || currentTab === 'aistudio' ? 'alo-content-panel-plain' : ''} flex-1 flex flex-col bg-surface-container overflow-y-auto`} style={{ scrollbarWidth: 'none' }}>
 
               {/* 글로벌 서버 점검 및 공지사항 배너 (항상 렌더링, 롤링) */}
               {serverAnnouncements.length > 0 && (
@@ -3506,7 +3545,7 @@ export default function Home() {
 
               {/* 게임(Games) 탭 */}
               {currentTab === 'aistudio' && (
-                <div className="flex-1 w-full h-full flex flex-col relative bg-black">
+                <div className="flex-1 w-full h-full flex flex-col relative bg-transparent">
                   <iframe src="https://aistudio.alonics.com/" className="absolute inset-0 w-full h-full border-none" allowFullScreen />
                 </div>
               )}
@@ -3564,7 +3603,7 @@ export default function Home() {
 
               {currentTab === 'pet365care' && (
                 <div className="flex-1 w-full h-full flex flex-col relative bg-[#F4F4F6]">
-                  <iframe src="/pet365care" className="absolute inset-0 w-full h-full border-none" allowFullScreen allow="geolocation" />
+                  <iframe src={pet365Path} className="absolute inset-0 w-full h-full border-none" allowFullScreen allow="geolocation" />
                 </div>
               )}
 

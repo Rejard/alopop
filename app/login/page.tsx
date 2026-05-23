@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import { reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
+
+const GOOGLE_OAUTH_STATE_KEY = 'alo_google_oauth_state';
+const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_REDIRECT_URI = 'https://alopop.alonics.com/login';
 
 function GoogleMark() {
   return (
@@ -15,20 +19,47 @@ function GoogleMark() {
   );
 }
 
-function CustomGoogleButton({ onSuccess, onError }: { onSuccess: (res: { credential: string }) => void; onError: () => void }) {
-  const login = useGoogleLogin({
-    onSuccess: (tokenResponse) => onSuccess({ credential: tokenResponse.access_token }),
-    onError,
-    flow: 'implicit',
+function createOAuthState() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getGoogleRedirectUri() {
+  return GOOGLE_REDIRECT_URI;
+}
+
+function startGoogleRedirect(clientId: string) {
+  const state = createOAuthState();
+  const redirectUri = getGoogleRedirectUri();
+  sessionStorage.setItem(GOOGLE_OAUTH_STATE_KEY, JSON.stringify({ state, redirectUri, createdAt: Date.now() }));
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    include_granted_scopes: 'true',
+    access_type: 'online',
   });
+
+  window.location.assign(`${GOOGLE_AUTH_ENDPOINT}?${params.toString()}`);
+}
+
+function CustomGoogleButton({ clientId, disabled }: { clientId: string; disabled?: boolean }) {
+  const handleClick = () => {
+    if (!clientId) return;
+    startGoogleRedirect(clientId);
+  };
 
   return (
     <button
-      onClick={() => login()}
-      className="alo-primary-action w-full min-h-[58px] gap-3 text-[16px]"
+      onClick={handleClick}
+      disabled={disabled}
+      className="alo-primary-action w-full min-h-[58px] gap-3 text-[16px] disabled:opacity-50"
     >
       <GoogleMark />
-      Google 계정으로 계속하기
+      {disabled ? 'Google 확인 중...' : 'Google 계정으로 계속하기'}
     </button>
   );
 }
@@ -47,32 +78,99 @@ function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc:
 
 export default function LoginPage() {
   const router = useRouter();
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const handledAuthCodeRef = useRef(false);
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get('code');
+    const returnedState = searchParams.get('state');
+    const oauthError = searchParams.get('error');
+
+    if (oauthError) {
+      reportDiagnostic({
+        area: 'login_google',
+        code: 'LOGIN_GOOGLE_FAILED',
+        severity: 'warning',
+        safeMessage: oauthError,
+        fingerprint: `google_redirect:${oauthError}`,
+        metadata: { stage: 'redirect_return' },
+      });
+      sessionStorage.removeItem(GOOGLE_OAUTH_STATE_KEY);
+      window.history.replaceState(null, '', window.location.pathname);
+      alert('Google 로그인에 실패했습니다. 다시 시도해주세요.');
+      return;
+    }
+
+    if (code && !handledAuthCodeRef.current) {
+      handledAuthCodeRef.current = true;
+      setIsAuthorizing(true);
+
+      const exchangeCode = async () => {
+        try {
+          const storedState = sessionStorage.getItem(GOOGLE_OAUTH_STATE_KEY);
+          const parsedState = storedState ? JSON.parse(storedState) as { state?: string; redirectUri?: string; inviteCode?: string } : null;
+          if (!parsedState?.state || parsedState.state !== returnedState || !parsedState.redirectUri) {
+            throw new Error('Google OAuth state mismatch');
+          }
+
+          const response = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, redirectUri: parsedState.redirectUri }),
+          });
+
+          if (!response.ok) throw new Error('Google Auth Failed');
+
+          const user = await response.json();
+          localStorage.setItem('alo_user', JSON.stringify(user));
+
+          if (parsedState.inviteCode) {
+            const friendRes = await fetch('/api/friends', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user.id, targetFriendId: parsedState.inviteCode }),
+            });
+
+            if (!friendRes.ok) {
+              reportDiagnostic({
+                area: 'login_google',
+                code: 'UNKNOWN_API_ERROR',
+                severity: 'warning',
+                status: friendRes.status,
+                fingerprint: `invite_after_google:${friendRes.status}`,
+                metadata: { stage: 'invite_after_login' },
+              });
+              alert('로그인은 완료됐지만 친구 추가에 실패했습니다. 초대 코드가 만료되었을 수 있어요.');
+            }
+          }
+
+          sessionStorage.removeItem(GOOGLE_OAUTH_STATE_KEY);
+          window.history.replaceState(null, '', window.location.pathname);
+          router.push('/');
+        } catch (error) {
+          reportCaughtError({
+            area: 'login_google',
+            error,
+            code: 'LOGIN_GOOGLE_FAILED',
+            metadata: { stage: 'code_exchange' },
+          });
+          sessionStorage.removeItem(GOOGLE_OAUTH_STATE_KEY);
+          window.history.replaceState(null, '', window.location.pathname);
+          alert('로그인 처리 중 오류가 발생했습니다.');
+          setIsAuthorizing(false);
+        }
+      };
+
+      void exchangeCode();
+      return;
+    }
+
     const stored = localStorage.getItem('alo_user');
     if (stored) {
       router.push('/');
     }
   }, [router]);
-
-  const handleGoogleSuccess = async (credentialResponse: { credential: string }) => {
-    try {
-      const response = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: credentialResponse.credential }),
-      });
-
-      if (!response.ok) throw new Error('Google Auth Failed');
-
-      const user = await response.json();
-      localStorage.setItem('alo_user', JSON.stringify(user));
-      router.push('/');
-    } catch (error) {
-      console.error('Login error:', error);
-      alert('로그인 처리 중 오류가 발생했습니다.');
-    }
-  };
 
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
@@ -107,12 +205,7 @@ export default function LoginPage() {
               NEXT_PUBLIC_GOOGLE_CLIENT_ID가 설정되지 않았습니다.
             </div>
           ) : (
-            <GoogleOAuthProvider clientId={clientId}>
-              <CustomGoogleButton
-                onSuccess={handleGoogleSuccess}
-                onError={() => alert('Google 로그인에 실패했습니다. Chrome/Safari에서 다시 시도해주세요.')}
-              />
-            </GoogleOAuthProvider>
+            <CustomGoogleButton clientId={clientId} disabled={isAuthorizing} />
           )}
           <p className="mt-3 text-center text-[11px] text-[var(--alo-text-soft)]">Google 로그인으로 바로 시작합니다.</p>
         </section>

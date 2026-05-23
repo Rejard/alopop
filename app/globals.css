@@ -27,6 +27,7 @@
 
   --alo-bg-night: #09070d;
   --alo-bg-deep: #130b1a;
+  --alo-bg-lit-base: #150f1d;
   --alo-surface: rgba(255, 255, 255, 0.07);
   --alo-surface-strong: rgba(255, 255, 255, 0.11);
   --alo-line: rgba(255, 255, 255, 0.12);
@@ -80,29 +81,52 @@ body {
   width: 100%;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at 86% 0%, rgba(156, 72, 234, 0.6), transparent 32%),
-    radial-gradient(circle at 0% 46%, rgba(98, 250, 227, 0.14), transparent 26%),
-    linear-gradient(180deg, var(--alo-bg-deep) 0%, var(--alo-bg-night) 58%, #060409 100%);
+    radial-gradient(circle at calc(50% - 190px) 170px, rgba(156, 72, 234, 0.3), transparent 230px),
+    radial-gradient(circle at calc(50% + 210px) 300px, rgba(98, 250, 227, 0.12), transparent 210px),
+    var(--alo-bg-lit-base);
   color: var(--alo-text);
 }
 
+.alo-mobile-shell-flat {
+  background: var(--alo-bg-lit-base);
+}
+
 .alo-app-shell {
-  background:
-    radial-gradient(circle at 92% 0%, rgba(156, 72, 234, 0.34), transparent 28%),
-    radial-gradient(circle at 0% 62%, rgba(98, 250, 227, 0.09), transparent 28%),
-    linear-gradient(180deg, var(--alo-bg-deep) 0%, var(--alo-bg-night) 48%, #050408 100%);
+  background: var(--alo-bg-lit-base);
 }
 
 .alo-side-rail {
   background: linear-gradient(180deg, rgba(18, 13, 24, 0.96), rgba(5, 4, 8, 0.98));
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: inset -1px 0 0 rgba(98, 250, 227, 0.04);
+  z-index: 30;
 }
 
 .alo-content-panel {
+  position: relative;
+  isolation: isolate;
+  background: var(--alo-bg-lit-base);
+  backdrop-filter: blur(10px);
+}
+
+.alo-content-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(27, 20, 34, 0.94), rgba(11, 8, 14, 0.98)),
-    var(--color-surface-container);
+    radial-gradient(circle at 58px 154px, rgba(156, 72, 234, 0.3), transparent 230px),
+    radial-gradient(circle at calc(100% - 64px) 300px, rgba(98, 250, 227, 0.12), transparent 210px);
+}
+
+.alo-content-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.alo-content-panel-plain::after {
+  display: none;
 }
 
 .alo-chat-composer {

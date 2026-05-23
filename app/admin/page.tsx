@@ -367,9 +367,9 @@ export default function AdminDashboard() {
   if (!user) return <div className="min-h-screen bg-background flex justify-center items-center">Loading...</div>;
 
   return (
-    <div className="h-[100dvh] bg-background flex flex-col md:flex-row text-on-surface">
+    <div className="alo-mobile-shell alo-mobile-shell-flat h-[100dvh] flex flex-col md:flex-row text-on-surface">
       {/* Sidebar for Desktop / Header for Mobile */}
-      <div className="w-full md:w-64 bg-surface-container border-b md:border-b-0 md:border-r border-outline-variant/30 flex flex-col pt-6 px-4">
+      <div className="relative z-30 w-full md:w-64 bg-surface-container border-b md:border-b-0 md:border-r border-outline-variant/30 flex flex-col pt-6 px-4">
         <button onClick={() => router.push('/')} className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface mb-8 font-medium">
           <ChevronLeft size={20} /> 앱으로 돌아가기
         </button>
@@ -408,7 +408,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 p-6 md:p-10 overflow-y-auto">
+      <div className="alo-content-panel flex-1 p-6 md:p-10 overflow-y-auto">
         {activeTab === 'MEMBERS' && <AdminMembersPanel />}
 
         {activeTab === 'ANNOUNCEMENT' && (

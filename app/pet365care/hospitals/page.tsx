@@ -144,6 +144,10 @@ export default function HospitalsPage() {
     overlayRefs.current = [];
   }, []);
 
+  useEffect(() => {
+    if (window.kakao?.maps) setMapReady(true);
+  }, []);
+
   const relayoutMap = useCallback(() => {
     const map = mapInstanceRef.current;
     if (!map || !window.kakao?.maps) return;
@@ -232,7 +236,7 @@ export default function HospitalsPage() {
   return (
     <div className="pet365-page flex flex-col min-h-full pb-6 font-['Plus_Jakarta_Sans',sans-serif]">
       {KAKAO_KEY && (
-        <Script src={`//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`} strategy="afterInteractive" onLoad={() => setMapReady(true)} />
+        <Script src={`//dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`} strategy="afterInteractive" onLoad={() => setMapReady(true)} onReady={() => setMapReady(true)} />
       )}
 
       {/* Header */}
