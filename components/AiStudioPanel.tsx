@@ -43,8 +43,7 @@ const OFFICE_STYLE = `
 `;
 
 // ==========================================
-// 💬 로컬 대기 상태용 요원 대화 말풍선 정의
-// ==========================================
+// 💬 로컬 대기 상태용 요원 대화
 const CHATTER: Record<string, string[]> = {
   Alice: ['구조 구상 중...', '기획서 작성...', '시나리오 고민...', '유저 플로우 짜는 중', '아, 이 기능은 뺄까?', '와이어프레임 뼈대 잡기', '일정 산출 중...', 'WBS 점검하기', '스프린트 백로그 정리', 'Jira 티켓 생성 중...', '이거 우선순위 낮출게요', '레퍼런스 찾는 중', '경쟁사 앱 확인 중', 'A/B 테스트 기획...', '사용성 테스트 일정 잡기', '개발팀에 물어봐야겠다', '디자인팀이랑 싱크 맞추기', '이거 스펙 픽스 맞죠?', '비즈니스 로직 정리', 'API 명세서 확인 중', '이 기능 꼭 들어가야 하나요?', '런칭 목표일 계산 중...', 'MVP 스펙 줄이기', '회의 자료 준비 중...'],
   Carol: ['디자인 픽싱 중...', '컬러 매칭...', 'UI 위치 조정...', '여긴 여백이 더 필요해', '이 폰트는 좀 깨지네...', '애니메이션 효과 생각 중', '로고 시안 작업...', '피그마 컴포넌트 묶기', '디자인 시스템 수정 중', '여기에 그라데이션 넣을까?', 'CSS 값 추출 중', '다크모드 컬러 잡기', '버튼 크기가 좀 작나?', '이 아이콘이 더 직관적이네', '벡터 이미지 따는 중', '개발 리소스 내보내기', '마진 몇으로 했더라?', '폰트 자간 조절...', '타이포그래피 테스트', '모바일 화면에서 어떨지 상상 중', '이 레이아웃 깔끔하네', '와이어프레임 바탕으로 시안 그리기', '핸드오프 준비', '이펙트는 은은하게...'],
@@ -58,7 +57,7 @@ const CHATTER: Record<string, string[]> = {
     '손해배상 청구 취지를 더 명확히 정돈해야 해요.',
     '의뢰인 보호를 위한 법적 안전장치 확보!',
     '법리와 사실관계를 대조하는 중입니다.',
-    '헌법 정신과 법률 규정에 따른 철저한 변론 전략.',
+    '헌법 정신 and 법률 규정에 따른 철저한 변론 전략.',
     '이 사건은 형사보다는 민사 조정을 먼저 타진하죠.',
     '상고 이유서 초안 구성 중...',
     '가처분 신청서 요건 세부 검토 중',
@@ -134,7 +133,7 @@ const CHATTER: Record<string, string[]> = {
     '카카오톡 플러스친구 타겟 메시지 카피 라이팅',
     '구글 애널리틱스 연령별 유입 분석 차트 점검'
   ],
-  // 법률 및 공연 한국식 이름 CHATTER 바인딩 추가
+  // 법률 및 공연 전용 한국식 이름 CHATTER 바인딩 추가
   '임변호': [
     '이 대법원 판례 인용하면 승소율 올라가겠네.',
     '의뢰인의 정당한 권리를 변호하겠습니다.',
@@ -171,7 +170,7 @@ const CHATTER: Record<string, string[]> = {
     '속기 키보드의 압력 센서를 체크하는 중.',
     '공판 자료 번역본을 대조하여 교정하고 있어요.',
     '대표변호사님 변론 요지 속기 준비 완료!',
-    '재판 기록의 보관 시한과 법적 보안 규정 검토.',
+    '재판 기록의 보관 시한 and 법적 보안 규정 검토.',
     '속기 오타 하나가 판결을 바꿀 수도 있습니다. 신중하게...',
     '공판 속기 단축키 데이터베이스 갱신 중',
     '사건 접수 번호별 디지털 카탈로깅 작업',
@@ -288,6 +287,119 @@ const CHATTER: Record<string, string[]> = {
     '배당금 지급 한도 및 절세 플랜 최종 검토',
     '운전자본 회전율 극대화 시나리오 도출',
     'CFO 재무 실무 지침 가이드 배포 완료'
+  ],
+  // 🏢 신규 일반 사무직 회사(office) 8인 K-직장인 대화셋 96종 추가
+  '최인사': [
+    '이번 채용 공고 서류 필터링 중...',
+    '앗, 올해 연차 촉진제 결재 올려야지.',
+    '인재 풀 뒤적뒤적... 좋은 분 없나?',
+    '어우, 이번 면접 스케줄 장난 아니네.',
+    '평가 시즌이 다가온다... 벌써 두렵다.',
+    '신규 입사자 온보딩 키트 세팅 완료!',
+    '대표님, 인사 평가 보고서 컨펌 부탁드립니다.',
+    '커피 수혈 시급... 탕비실로 런!',
+    '이번 채용 트렌드는 블라인드인가.',
+    '역량 평가 지표 다시 만지는 중',
+    '경력직 처우 협의 메일 송신 완료',
+    '연차 반려하면 퇴사각인가 ㄷㄷ'
+  ],
+  '정기획': [
+    '차년도 경영 계획 장표 그리는 중...',
+    '비즈니스 모델 피벗 해야 하나?',
+    '이 기획안, 부장님 결재 반려각인가 ㄷㄷ',
+    '지표 모니터링 중... 대시보드 깨짐 ㅠ',
+    '차주 주간 보고 장표 깎는 노인...',
+    '경쟁사 동향 파악 보고서 작성',
+    '이 사업은 ROI가 안 맞을 것 같은데.',
+    '스프린트 회의 준비 완료!',
+    '대표님 결재 대기 중... 심장이 쫄깃',
+    '브레인스토밍 아이디어 쥐어짜기',
+    '일정 딜레이 방지책 수립 중',
+    '기획서 폰트 나눔스퀘어로 통일하자'
+  ],
+  '홍홍보': [
+    '보도자료 배포 시점 타이밍 재는 중',
+    '인스타 릴스 조회수 대박 났네!',
+    '브랜드 캐릭터 굿즈 시안 검토 중',
+    '어휴, 악성 바이럴 댓글 대응 중...',
+    '보도자료 엠바고 걸려 있습니다!',
+    '이번 캠페인 ROAS 400% 존버!',
+    '유튜브 쇼츠 편집 피드백 작성 중',
+    '인플루언서 섭외 메일 회신 대기',
+    '신제품 카피 문구 쥐어짜는 중',
+    '탕비실 다과 먹으면서 뇌 비우기',
+    '브랜드 인지도 설문조사 통계 돌리기',
+    '트렌드 리포트 분석 완료!'
+  ],
+  '윤재무': [
+    'CFO 최종 예산 통제 승인 대기',
+    '이번 달 판관비가 왜 이렇게 튀었지?',
+    '자금 흐름표 일일 마감 중...',
+    '회사 통장 잔액 맞춰보기',
+    '투자사 미팅 준비 완료',
+    '세무 조사 대비 예비비 확보!',
+    '법인카드 사적 사용 필터링 중 ㄷㄷ',
+    '비용 승인 결재... 일단 보류!',
+    '내년도 예산안 대폭 삭감 분위기...',
+    '재무 건전성 지표 시뮬레이션',
+    '외화 환율 변동 추이 모니터링',
+    '월급날 잔고 확보 완료!'
+  ],
+  '김영업': [
+    '중요 바이어 미팅 제안서 송신!',
+    '이번 딜 성사되면 인센티브 얼마지? 흐뭇',
+    '제안 미팅 가는 길... 차 막힌다 ㅠ',
+    '신규 판로 개척 파트너십 제안 중',
+    '매출 목표 달성률 95%! 5% 남았다',
+    '고객사 불만 사항 긴급 대응 중',
+    '영업 세일즈 피치 맹연습 중',
+    '계약서 법무 검토 완료 대기',
+    '오늘 저녁 바이어 접대 회식인가...',
+    '경쟁사 견적서 몰래 입수 완료!',
+    '영업망 지도 그리는 중',
+    '월말 실적 마감 압박 ㄷㄷ'
+  ],
+  '이회계': [
+    '세금계산서 발행 내역 전수 조사',
+    '매출 매입 전표 입력 마감 중...',
+    '영수증 풀칠하던 시절이 그리운가',
+    '부가세 신고용 증빙 누락 발견 ㅠ',
+    '가지급금 명세서 정돈하는 중',
+    '원천세 납부 영수증 철 파일링',
+    '계정과목이 이게 맞나? 고민 중',
+    '감사법인 수임료 전표 처리 완료',
+    '법인세 공제 감면 항목 더 없나?',
+    '숫자 하나 틀리면 밤샘이다 ㄷㄷ',
+    '엑셀 수식 에러 발생... 아 멘붕',
+    '재무제표 계정 대조 완료!'
+  ],
+  '박비서': [
+    '대표님 일일 스케줄 최종 싱크',
+    '오후 3시 외부 미팅 동선 체크!',
+    '대표님 차 안 막히게 우회 경로 확인',
+    '회의실 다과 세팅 완료했습니다',
+    '대표님 결재 안건 사전 스크리닝',
+    '임원 회의 일정 조율 완료',
+    '대표님 휴가 가시면 나도 연차각?',
+    '비서실 행정 문서 보안 철저!',
+    '외부 VIP 영전 축하 화환 송부',
+    '전화 응대... 네, 비서실입니다',
+    '대표님 메일함 대리 정돈 중',
+    '오후 회의록 작성 대기 중'
+  ],
+  '강지원': [
+    '사무실 형광등 교체 민원 접수',
+    '탕비실 믹스커피 대량 구매 완료!',
+    '사무용품 신청 내역 최종 발주',
+    '회사 통근버스 노선 개편안 검토',
+    '복리후생 명절 선물 세트 조사',
+    '소방 안전 점검 대행 업체 계약',
+    '비품 창고 먼지 털기 대작전',
+    '워크숍 펜션 예약 현황 체크',
+    '인프라 서버실 에어컨 가동 확인',
+    '쓰레기 분리배출 안내문 부착 완료',
+    '사우회 경조사비 집행 전표 결재',
+    '어휴, 회사 복지 예산 쪼들리네'
   ]
 };
 
@@ -554,6 +666,111 @@ const svg최재무 = `
   <text x="47" y="94.5" font-family="sans-serif" font-size="6.5" font-weight="bold" fill="#7c3aed">$</text>
 </svg>`;
 
+// 🏢 신규 일반 사무직 회사(office) 8인 SVG 에셋 정의
+const svg최인사 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#fee2e2"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#f87171"/>
+  <circle cx="50" cy="40" r="30" fill="#fef2f2"/>
+  <circle cx="40" cy="40" r="3" fill="#333"/>
+  <circle cx="60" cy="40" r="3" fill="#333"/>
+  <path d="M 45 50 Q 50 54 55 50" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 22 30 Q 50 -10 78 30 L 82 50 Q 50 15 18 50 Z" fill="#991b1b"/>
+  <rect x="42" y="86" width="16" height="12" rx="1" fill="#fff" stroke="#f87171" stroke-width="1.5"/>
+  <text x="46" y="94.5" font-family="sans-serif" font-size="7" font-weight="bold" fill="#f87171">HR</text>
+</svg>`;
+
+const svg정기획 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#ffedd5"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#fb923c"/>
+  <circle cx="50" cy="40" r="30" fill="#fff7ed"/>
+  <circle cx="40" cy="40" r="3" fill="#333"/>
+  <circle cx="60" cy="40" r="3" fill="#333"/>
+  <path d="M 45 50 Q 50 53 55 50" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 20 45 Q 50 5 80 45 Q 70 20 60 30 Q 50 15 40 30 Q 30 20 20 45 Z" fill="#c2410c"/>
+  <rect x="42" y="86" width="16" height="12" rx="1" fill="#fff" stroke="#fb923c" stroke-width="1.5"/>
+  <line x1="46" y1="90" x2="54" y2="90" stroke="#fb923c" stroke-width="1"/>
+  <line x1="46" y1="93" x2="52" y2="93" stroke="#fb923c" stroke-width="1"/>
+</svg>`;
+
+const svg홍홍보 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#fdf2f8"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#f472b6"/>
+  <circle cx="50" cy="40" r="30" fill="#fff1f2"/>
+  <circle cx="40" cy="40" r="3" fill="#333"/>
+  <circle cx="60" cy="40" r="3" fill="#333"/>
+  <path d="M 46 50 Q 50 55 54 50" stroke="#333" stroke-width="2.5" fill="transparent"/>
+  <path d="M 18 35 Q 50 -5 82 35 L 85 65 Q 50 25 15 65 Z" fill="#be185d"/>
+  <path d="M 44 85 L 56 85 L 56 97 L 44 97 Z" fill="#ffe4e6" stroke="#f472b6" stroke-width="1"/>
+  <circle cx="50" cy="91" r="2.5" fill="#be185d"/>
+</svg>`;
+
+const svg윤재무 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#faf5ff"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#a78bfa"/>
+  <circle cx="50" cy="40" r="30" fill="#f3e8ff"/>
+  <circle cx="39" cy="40" r="3" fill="#111"/>
+  <circle cx="61" cy="40" r="3" fill="#111"/>
+  <path d="M 45 52 Q 50 55 55 52" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 15 42 L 32.5 25 L 50 42 L 67.5 25 L 85 42 L 80 60 L 20 60 Z" fill="#6d28d9"/>
+  <circle cx="50" cy="90" r="6" fill="#fbbf24"/>
+  <text x="47" y="94.5" font-family="sans-serif" font-size="6.5" font-weight="bold" fill="#7c3aed">$</text>
+</svg>`;
+
+const svg김영업 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#eff6ff"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#60a5fa"/>
+  <circle cx="50" cy="40" r="30" fill="#f0f9ff"/>
+  <circle cx="40" cy="38" r="3" fill="#333"/>
+  <circle cx="60" cy="38" r="3" fill="#333"/>
+  <path d="M 44 49 Q 50 53 56 49" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 15 35 Q 50 -15 85 35 Z" fill="#1d4ed8"/>
+  <rect x="42" y="86" width="16" height="12" rx="1" fill="#fff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="45.5" y="94.5" font-family="sans-serif" font-size="6" font-weight="bold" fill="#1d4ed8">BIZ</text>
+</svg>`;
+
+const svg이회계 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#ecfdf5"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#34d399"/>
+  <circle cx="50" cy="40" r="30" fill="#f0fdf4"/>
+  <circle cx="39" cy="38" r="3.5" fill="#111"/>
+  <circle cx="61" cy="38" r="3.5" fill="#111"/>
+  <rect x="34" y="33" width="12" height="9" rx="1" stroke="#34d399" stroke-width="1.8" fill="transparent"/>
+  <rect x="54" y="33" width="12" height="9" rx="1" stroke="#34d399" stroke-width="1.8" fill="transparent"/>
+  <line x1="46" y1="37" x2="54" y2="37" stroke="#34d399" stroke-width="1.8"/>
+  <path d="M 45 49 Q 50 52 55 49" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 20 30 Q 50 -15 80 30 Z" fill="#047857"/>
+</svg>`;
+
+const svg박비서 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#e0f2fe"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#2dd4bf"/>
+  <circle cx="50" cy="40" r="30" fill="#f0fdfa"/>
+  <circle cx="39" cy="41" r="3" fill="#333"/>
+  <circle cx="61" cy="41" r="3" fill="#333"/>
+  <path d="M 44 51 Q 50 54 56 51" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 18 35 Q 50 -5 82 35 L 85 65 Q 50 25 15 65 Z" fill="#0f766e"/>
+  <circle cx="50" cy="12" rx="12" ry="6" fill="#2dd4bf"/>
+</svg>`;
+
+const svg강지원 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#f5f5f4"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#a8a29e"/>
+  <circle cx="50" cy="40" r="30" fill="#fafaf9"/>
+  <circle cx="41" cy="40" r="3.5" fill="#333"/>
+  <circle cx="59" cy="40" r="3.5" fill="#333"/>
+  <path d="M 45 52 Q 50 49 55 52" stroke="#333" stroke-width="2.5" fill="transparent"/>
+  <path d="M 25 28 Q 50 -5 75 28 Z" fill="#44403c"/>
+  <path d="M 15 25 L 85 25 L 80 10 L 20 10 Z" fill="#78716c"/>
+</svg>`;
+
 const SVG_ASSETS: Record<string, string> = {
   svgAlice, svgCarol, svgBob, svgDave,
   svgEve, svgFrank, svgGrace, svgHank,
@@ -562,7 +779,9 @@ const SVG_ASSETS: Record<string, string> = {
   // 법률 및 공연 전용 한국식 매핑 보강
   svg임변호: svgJustice, svg지분석: svgSolomon, svg서기록: svgScribe,
   svg오기획: svgBeat, svg한재무: svgBudget, svg윤홍보: svgTrend,
-  svg김장부, svg이절세, svg박감사, svg정신고, svg최재무
+  svg김장부, svg이절세, svg박감사, svg정신고, svg최재무,
+  // 🏢 일반 사무직 회사(office) 8인 매핑 보강
+  svg최인사, svg정기획, svg홍홍보, svg윤재무, svg김영업, svg이회계, svg박비서, svg강지원
 };
 
 // ==========================================
@@ -586,14 +805,18 @@ function Agent({ name, svgContent, showDesk = false, isAbsent = false, status, l
     Eve: '#ec4899', Frank: '#10b981', Grace: '#8b5cf6', Hank: '#f59e0b',
     Justice: '#fbbf24', Solomon: '#a855f7', Scribe: '#0891b2',
     Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899',
-    '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2', '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899', '김장부': '#38bdf8', '이절세': '#22c55e', '박감사': '#eab308', '정신고': '#f97316', '최재무': '#a855f7'
+    '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2', '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899', '김장부': '#38bdf8', '이절세': '#22c55e', '박감사': '#eab308', '정신고': '#f97316', '최재무': '#a855f7',
+    // 🏢 일반 사무직 HSL tailoring color palette
+    '최인사': '#f87171', '정기획': '#fb923c', '홍홍보': '#f472b6', '윤재무': '#a78bfa', '김영업': '#60a5fa', '이회계': '#34d399', '박비서': '#2dd4bf', '강지원': '#a8a29e'
   };
   const roles: Record<string, string> = {
     Alice: '기획', Carol: '디자인', Bob: '개발', Dave: 'QA',
     Eve: '마케팅', Frank: '보안', Grace: 'CS', Hank: '테스터',
     Justice: '변호사', Solomon: '분석관', Scribe: '기록관',
     Beat: '총괄', Budget: '재무', Trend: '마케팅',
-    '임변호': '변호사', '지분석': '분석관', '서기록': '기록관', '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅', '김장부': '기장', '이절세': '세무', '박감사': '감사', '정신고': '신고', '최재무': 'CFO'
+    '임변호': '변호사', '지분석': '분석관', '서기록': '기록관', '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅', '김장부': '기장', '이절세': '세무', '박감사': '감사', '정신고': '신고', '최재무': 'CFO',
+    // 🏢 일반 사무직 디폴트 부서
+    '최인사': '인사', '정기획': '기획', '홍홍보': '홍보', '윤재무': '재무', '김영업': '영업', '이회계': '회계', '박비서': '비서', '강지원': '총무'
   };
   const color = colors[name] || '#a855f7';
   const role = customRole || roles[name] || '요원';
@@ -690,6 +913,8 @@ function Agent({ name, svgContent, showDesk = false, isAbsent = false, status, l
   );
 }
 
+
+
 interface AiStudioPanelProps {
   user: any;
   markRoomAsRead: (roomId: string) => Promise<void>;
@@ -774,19 +999,20 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
   // 새 스튜디오 개설 폼
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newStudioName, setNewStudioName] = useState('');
-  const [newStudioType, setNewStudioType] = useState('game');
+  const [newStudioType, setNewStudioType] = useState('office');
   const [newStudioDesc, setNewStudioDesc] = useState('');
   const [newStudioAgentCount, setNewStudioAgentCount] = useState(4);
   const [newStudioAgentsConfig, setNewStudioAgentsConfig] = useState<any[]>([
-    { name: 'Alice', role: '기획', expertise: '레트로 게임 디렉터 및 시나리오 라이터' },
-    { name: 'Carol', role: '디자인', expertise: '네온 스타일 전문 화려한 그래픽 디자이너' },
-    { name: 'Bob', role: '개발', expertise: 'HTML5 기반 물리 엔진 특화 풀스택 엔지니어' },
-    { name: 'Dave', role: 'QA', expertise: '칼 같은 엄격함을 가진 버그 헌터 QA 마스터' },
-    { name: 'Eve', role: '마케팅', expertise: '트렌디한 바이럴 카피라이팅 마케팅 스페셜리스트' },
-    { name: 'Frank', role: '보안', expertise: '서버 보안 및 철통 인프라 가드 아키텍트' },
-    { name: 'Grace', role: 'CS', expertise: '친절하고 활발한 유저 소통 CS 매니저' },
-    { name: 'Hank', role: '테스터', expertise: '일반 유저 관점 예외처리 검증 베타 테스터' }
+    { name: '최인사', role: '인사', expertise: '인사 고과 및 핵심 인재 영입 담당 시니어 인사관' },
+    { name: '정기획', role: '기획', expertise: '차년도 사업 전략 및 경영 혁신 기획 파트장' },
+    { name: '홍홍보', role: '홍보', expertise: '바이럴 마케팅 및 브랜드 커뮤니케이션 스페셜리스트' },
+    { name: '윤재무', role: '재무', expertise: '자금 포트폴리오 자본 배분 및 예산 통제 CFO' },
+    { name: '김영업', role: '영업', expertise: '신규 매출 판로 개척 및 파트너십 구축 영업 팀장' },
+    { name: '이회계', role: '회계', expertise: '매출/매입 세부 장부 기장 및 결산 전표 검산 기장사' },
+    { name: '박비서', role: '비서', expertise: '스케줄 동선 조율 및 CEO 전담 행정 업무 비서실장' },
+    { name: '강지원', role: '총무', expertise: '사무 자산 관리 및 복리후생 인프라 총무 담당관' }
   ]);
+
 
   // 모바일/태블릿 반응형 대응 상태 추가
   const [isMobile, setIsMobile] = useState(false);
@@ -1050,7 +1276,7 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
       return;
     }
     try {
-      const activeConfig = newStudioType === 'game' 
+      const activeConfig = (newStudioType === 'game' || newStudioType === 'office')
         ? newStudioAgentsConfig.slice(0, newStudioAgentCount)
         : (newStudioType === 'law' 
             ? [
@@ -2103,131 +2329,102 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
             {/* 입력 폼 */}
             <div className="flex flex-col gap-4">
               
-              {/* 스튜디오 타입 선택 */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">전문 업무 영역 선택</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { id: 'game', label: '🎮 게임 개발', color: 'border-purple-600 bg-purple-950/20 text-purple-200' },
-                    { id: 'law', label: '⚖️ 법무법인', color: 'border-yellow-600 bg-yellow-950/20 text-yellow-200' },
-                    { id: 'concert', label: '✨ 기획/행사', color: 'border-rose-600 bg-rose-950/20 text-rose-200' },
-                    { id: 'tax', label: '📊 세무회계', color: 'border-sky-600 bg-sky-950/20 text-sky-200' }
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => {
-                        setNewStudioType(t.id);
-                        if (t.id === 'tax') {
-                          setNewStudioAgentCount(5);
-                        } else if (t.id !== 'game') {
-                          setNewStudioAgentCount(3);
-                        } else {
-                          setNewStudioAgentCount(4);
-                        }
-                      }}
-                      className={`py-2 px-3 rounded-xl border text-[10px] font-extrabold transition-all text-center ${newStudioType === t.id ? t.color + ' border-[2px]' : 'border-purple-800/10 bg-[#0b0512] text-zinc-500 hover:border-purple-800/30 hover:text-zinc-300'}`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* 스튜디오 이름 */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">스튜디오 이름</label>
+                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">회사 (스튜디오) 이름</label>
                 <input 
                   type="text" 
                   value={newStudioName}
                   onChange={(e) => setNewStudioName(e.target.value)}
-                  placeholder="예: 알로팝 게임 개발센터, 법무법인 솔로몬"
+                  placeholder="예: 알로팝 종합 상사, 주식회사 에이전트 연합"
                   className="bg-[#0b0512] border border-purple-800/30 text-white rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600/40"
                 />
               </div>
 
               {/* 업무 세부 범위 내용 */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">수행할 전문 업무 및 지시 개요 (기획안)</label>
+                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">설립 목적 및 업무 지시 개요</label>
                 <textarea 
                   value={newStudioDesc}
                   onChange={(e) => setNewStudioDesc(e.target.value)}
-                  placeholder={newStudioType === 'game' ? "개발할 게임의 장르, 규칙, 플레이 방식 등을 디테일하게 지시해주세요..." : (newStudioType === 'law' ? "자문이 필요한 법률 쟁점이나 사안, 계약서 형태 등을 입력해주세요..." : "페스티벌의 테마, 라인업 예산, 개최 일자 범위 등을 작성해주세요...")}
+                  placeholder="새로 설립할 일반 사무직 회사의 주요 사업 목적이나 초기 업무를 적어주세요... (예: 2026년 마케팅 전략 수립 및 채용 기획)"
                   className="bg-[#0b0512] border border-purple-800/30 text-white rounded-xl px-3.5 py-2 text-xs h-20 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600/40 resize-none scrollbar-thin scrollbar-thumb-purple-950/40"
                 />
               </div>
 
-              {/* 기용할 에이전트 직원수 (게임스튜디오 한정) */}
-              {newStudioType === 'game' && (
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">기용할 AI 에이전트 직원 수</label>
-                    <span className="text-[10px] font-extrabold text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/40">{newStudioAgentCount}명 기용</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="2"
-                    max="8"
-                    step="1"
-                    value={newStudioAgentCount}
-                    onChange={(e) => setNewStudioAgentCount(parseInt(e.target.value))}
-                    className="w-full accent-purple-600 bg-purple-950/30 h-1.5 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <span className="text-[8px] text-zinc-500 tracking-tight">직원 수에 맞춰 가상 오피스 개발실의 책상 수와 렌더링이 자동으로 확장됩니다. (2인~8인)</span>
+              {/* 기용할 에이전트 직원수 (사무직 상시 노출) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">기용할 AI 에이전트 직원 수</label>
+                  <span className="text-[10px] font-extrabold text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/40">{newStudioAgentCount}명 기용</span>
                 </div>
-              )}
+                <input
+                  type="range"
+                  min="2"
+                  max="8"
+                  step="1"
+                  value={newStudioAgentCount}
+                  onChange={(e) => setNewStudioAgentCount(parseInt(e.target.value))}
+                  className="w-full accent-purple-600 bg-purple-950/30 h-1.5 rounded-lg appearance-none cursor-pointer"
+                />
+                <span className="text-[8px] text-zinc-500 tracking-tight">직원 수에 맞춰 가상 오피스 개발실의 책상 수와 렌더링이 자동으로 확장됩니다. (2인~8인)</span>
+              </div>
 
-              {/* 에이전트 개별 맞춤 설정 (게임스튜디오 한정) */}
-              {newStudioType === 'game' && (
-                <div className="flex flex-col gap-2 border-t border-[#3b2d52]/30 pt-3">
-                  <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">부서 배치 및 전문 분야 (성격) 설정</label>
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-purple-950/40">
-                    {Array.from({ length: newStudioAgentCount }).map((_, idx) => {
-                      const baseAgents = ['Alice', 'Carol', 'Bob', 'Dave', 'Eve', 'Frank', 'Grace', 'Hank'];
-                      const name = baseAgents[idx];
-                      const config = newStudioAgentsConfig.find(a => a.name === name) || { name, role: '기획', expertise: '' };
-                      
-                      const roleOptions = ['기획', '디자인', '개발', 'QA', '마케팅', '보안', 'CS', '테스터'];
+              {/* 에이전트 개별 맞춤 설정 (사무직 상시 노출) */}
+              <div className="flex flex-col gap-2 border-t border-[#3b2d52]/30 pt-3">
+                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">부서 배치 및 전문 분야 (성격) 설정</label>
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-purple-950/40">
+                  {Array.from({ length: newStudioAgentCount }).map((_, idx) => {
+                    const baseAgents = ['최인사', '정기획', '홍홍보', '윤재무', '김영업', '이회계', '박비서', '강지원'];
+                    const name = baseAgents[idx];
+                    const config = newStudioAgentsConfig.find(a => a.name === name) || { name, role: '기획', expertise: '' };
+                    
+                    const roleOptions = ['인사', '기획', '홍보', '재무', '영업', '회계', '비서', '총무'];
+                    const agentColors: Record<string, string> = {
+                      '최인사': '#f87171', '정기획': '#fb923c', '홍홍보': '#f472b6', '윤재무': '#a78bfa',
+                      '김영업': '#60a5fa', '이회계': '#34d399', '박비서': '#2dd4bf', '강지원': '#a8a29e'
+                    };
 
-                      return (
-                        <div key={name} className="bg-[#0b0512]/60 p-3 rounded-xl border border-purple-950 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-extrabold text-white flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: name === 'Alice' ? '#ff4d4d' : (name === 'Carol' ? '#ffb3ff' : (name === 'Bob' ? '#4da6ff' : (name === 'Dave' ? '#33cc33' : (name === 'Eve' ? '#ec4899' : (name === 'Frank' ? '#10b981' : (name === 'Grace' ? '#8b5cf6' : '#f59e0b')))))) }} />
-                              {name} 요원
-                            </span>
-                            
-                            <select
-                              value={config.role}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, role: val } : a));
-                              }}
-                              className="bg-[#12071d] border border-purple-900/30 text-purple-300 text-[9px] font-bold rounded px-1.5 py-0.5 focus:outline-none"
-                            >
-                              {roleOptions.map(r => (
-                                <option key={r} value={r}>{r} 부서</option>
-                              ))}
-                            </select>
-                          </div>
+                    return (
+                      <div key={name} className="bg-[#0b0512]/60 p-3 rounded-xl border border-purple-950 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-extrabold text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: agentColors[name] || '#a855f7' }} />
+                            {name} 요원
+                          </span>
                           
-                          <input
-                            type="text"
-                            value={config.expertise}
+                          <select
+                            value={config.role}
                             onChange={(e) => {
                               const val = e.target.value;
-                              setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, expertise: val } : a));
+                              setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, role: val } : a));
                             }}
-                            placeholder={`${name} 요원의 세부 전문성/페르소나 (예: 시니어 3D 물리엔진 마스터)`}
-                            className="bg-[#0c0615] border border-purple-950 text-zinc-300 rounded-lg px-2.5 py-1 text-[9px] focus:outline-none focus:border-purple-800"
-                          />
+                            className="bg-[#12071d] border border-purple-900/30 text-purple-300 text-[9px] font-bold rounded px-1.5 py-0.5 focus:outline-none"
+                          >
+                            {roleOptions.map(r => (
+                              <option key={r} value={r}>{r} 부서</option>
+                            ))}
+                          </select>
                         </div>
-                      );
-                    })}
-                  </div>
+                        
+                        <input
+                          type="text"
+                          value={config.expertise}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, expertise: val } : a));
+                          }}
+                          placeholder={`${name} 요원의 세부 전문성/페르소나 (예: 10년차 베테랑 ${config.role} 스페셜리스트)`}
+                          className="bg-[#0c0615] border border-purple-950 text-zinc-300 rounded-lg px-2.5 py-1 text-[9px] focus:outline-none focus:border-purple-800"
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
 
             </div>
+
 
             {/* 하단 제어 */}
             <div className="flex gap-2 justify-end pt-2 border-t border-[#3b2d52]/50">
