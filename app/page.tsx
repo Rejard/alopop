@@ -19,7 +19,7 @@ import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/cli
 // GAME_LIST is dynamically fetched from game portal
 
 const PET365CARE_LNB_ITEMS = [
-  { name: "홈", path: "/pet365care", icon: HomeIcon },
+  { name: "홈", path: "/pet365care?view=home", icon: HomeIcon },
   { name: "소셜", path: "/pet365care/social", icon: Users },
   { name: "건강", path: "/pet365care/health", icon: ShieldPlus },
   { name: "케어", path: "/pet365care/care", icon: Sprout },
@@ -177,7 +177,7 @@ export default function Home() {
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
   const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
-  const [pet365Path, setPet365Path] = useState("/pet365care");
+  const [pet365Path, setPet365Path] = useState("/pet365care?view=home");
   // Pet365Care: 내부 라우트 /pet365care (iframe 임베딩)
 
   // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
@@ -3057,7 +3057,7 @@ export default function Home() {
                 <button
                   onClick={() => {
                     setCurrentTab('pet365care');
-                    setPet365Path('/pet365care');
+                    setPet365Path('/pet365care?view=home');
                   }}
                   className={`relative ${currentTab === 'pet365care' ? 'p-2' : 'p-3'} rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'pet365care' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
                   title="Pet365Care"
