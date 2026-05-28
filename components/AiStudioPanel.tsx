@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, LayoutGroup } from 'framer-motion';
 import { useChatStore } from '@/store/useChatStore';
 import { 
   Bot, Gamepad2, Scale, Music, Trash2, Plus, 
@@ -301,12 +301,23 @@ function Agent({ name, svgContent, showDesk = false, isAbsent = false, status, l
       )}
 
       {/* 캐릭터 본체, 말풍선, 상태, 이름표 */}
-      {!isAbsent && (
+      {name && (
         <motion.div
           layout
           layoutId={`glide-${name}`}
           transition={{ type: 'tween', ease: 'easeInOut', duration: 1.5 }}
-          style={{ position: 'absolute', bottom: showDesk ? '16px' : '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100 }}
+          style={{ 
+            position: 'absolute', 
+            bottom: showDesk ? '16px' : '8px', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            zIndex: isAbsent ? 10 : 100,
+            opacity: isAbsent ? 0 : 1,
+            scale: isAbsent ? 0.8 : 1,
+            pointerEvents: isAbsent ? 'none' : 'auto',
+            transition: 'opacity 0.5s ease-out, scale 0.5s ease-out'
+          }}
         >
           {/* 💬 말풍선 */}
           {log && (
@@ -392,9 +403,53 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
     
     setDeskAssignments(prev => {
       const next = { ...prev };
-      const devRoomAgents = Object.entries(agentState)
-        .filter(([_, info]) => info.room === 'DevRoom')
-        .map(([name]) => name);
+      const totalAgentCount = Object.keys(agentState).length;
+
+      // 역할별 정렬 가중치 계산 헬퍼 함수
+      const getAgentWeight = (agentName: string) => {
+        const info = agentState[agentName] as any;
+        const role = info?.role || '';
+        
+        const ROLE_ORDER: Record<string, number> = {
+          '기획': 1, '디자인': 2, '개발': 3, 'QA': 4,
+          '변호사': 1, '분석관': 2, '기록관': 3,
+          '총괄': 1, '재무': 2, '마케팅': 3,
+          '기장': 1, '세무': 2, '감사': 3, '신고': 4, 'CFO': 5,
+          '마케터': 5, '보안': 6, 'CS': 7, '테스터': 8
+        };
+        
+        if (ROLE_ORDER[role] !== undefined) {
+          return ROLE_ORDER[role];
+        }
+
+        // 이름 기반 백업 (agentState에 일시적으로 role이 없을 때 대비)
+        const AGENT_NAME_ORDER: Record<string, number> = {
+          Alice: 1, Carol: 2, Bob: 3, Dave: 4,
+          Eve: 5, Frank: 6, Grace: 7, Hank: 8,
+          Justice: 1, Solomon: 2, Scribe: 3,
+          Beat: 1, Budget: 2, Trend: 3,
+          '김장부': 1, '이절세': 2, '박감사': 3, '정신고': 4, '최재무': 5
+        };
+
+        return AGENT_NAME_ORDER[agentName] || 999;
+      };
+
+      // 4인 이하 스튜디오의 경우: 모든 상주 요원을 좌석 배정 대상으로 삼아 영구 박제!
+      // 5인 이상 스튜디오의 경우: 오직 메인 작업실(DevRoom)에 있는 요원만 배정 대상으로 삼음
+      const targetAgents = Object.keys(agentState);
+      const devRoomAgents = (totalAgentCount <= 4 ? targetAgents : targetAgents.filter(name => agentState[name]?.room === 'DevRoom'))
+        .sort((a, b) => getAgentWeight(a) - getAgentWeight(b));
+
+      // 4인 이하 스튜디오는 좌석을 절대 해제하지 않음. 5인 이상 스튜디오는 이탈 시 해제
+      if (totalAgentCount > 4) {
+        // 메인 작업실을 떠난 요원의 책상 시트는 빈자리로 전환
+        Object.keys(next).forEach(name => {
+          const info = agentState[name];
+          if (info && info.room !== 'DevRoom') {
+            delete next[name];
+          }
+        });
+      }
 
       const occupiedSeats = new Set<number>();
       devRoomAgents.forEach(name => {
@@ -405,15 +460,7 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
         }
       });
 
-      // 개발실을 떠난 요원의 책상 시트는 빈자리로 전환
-      Object.keys(next).forEach(name => {
-        const info = agentState[name];
-        if (!info || info.room !== 'DevRoom') {
-          delete next[name];
-        }
-      });
-
-      // 새로 개발실에 진입한 요원에게 비어있는 책상(0~3) 순차 할당
+      // 비어있는 책상(0~3) 순차 할당
       devRoomAgents.forEach(name => {
         if (next[name] === undefined) {
           let emptySeat = -1;
@@ -914,12 +961,23 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
         )}
 
         {/* 캐릭터 본체, 말풍선, 상태, 이름표 */}
-        {!isAbsent && (
+        {name && (
           <motion.div
             layout
             layoutId={`glide-${name}`}
             transition={{ type: 'tween', ease: 'easeInOut', duration: 1.5 }}
-            style={{ position: 'absolute', bottom: showDesk ? '16px' : '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100 }}
+            style={{ 
+              position: 'absolute', 
+              bottom: showDesk ? '16px' : '8px', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              zIndex: isAbsent ? 10 : 100,
+              opacity: isAbsent ? 0 : 1,
+              scale: isAbsent ? 0.8 : 1,
+              pointerEvents: isAbsent ? 'none' : 'auto',
+              transition: 'opacity 0.5s ease-out, scale 0.5s ease-out'
+            }}
           >
             {/* 💬 말풍선 */}
             {info.log && (
@@ -1147,7 +1205,8 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                 }
 
                 return (
-                  <div className="flex-1 flex flex-col gap-[15px] relative mt-1 overflow-hidden z-10">
+                  <LayoutGroup id="office-layout">
+                    <div className="flex-1 flex flex-col gap-[15px] relative mt-1 overflow-hidden z-10">
                     {/* 동적 CSS 키프레임 애니메이션 삽입 */}
                     <style dangerouslySetInnerHTML={{ __html: OFFICE_STYLE }} />
 
@@ -1280,9 +1339,9 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                       </div>
                     </div>
 
-                    {/* 하단 2단: 메인 개발실 가로 전체 배치 */}
+                    {/* 하단 2단: 메인 작업실 가로 전체 배치 */}
                     <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid #2d2d3a', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', minHeight: '130px', overflow: 'visible' }}>
-                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: 'auto', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>💻 메인 개발실</span>
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: 'auto', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>💻 메인 작업실</span>
                       
                       {/* 가로 책상 및 에이전트 캐릭터 렌더링 (원래 책상 배치 간격을 100% 유지하며 스크롤바 제거 + overflow: visible 및 zIndex 상향) */}
                       <div style={{ 
@@ -1341,7 +1400,8 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                       </div>
                     </div>
                   </div>
-                );
+                </LayoutGroup>
+              );
               })()}
             </div>
 
