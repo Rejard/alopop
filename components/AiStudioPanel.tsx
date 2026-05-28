@@ -1,0 +1,1946 @@
+'use client';
+
+import { useEffect, useState, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { useChatStore } from '@/store/useChatStore';
+import { 
+  Bot, Gamepad2, Scale, Music, Trash2, Plus, 
+  Send, Paperclip, X, Copy, Download, RefreshCw, 
+  ExternalLink, Play, Server, ShieldCheck, HelpCircle, 
+  ChevronRight, Building2, User, Sparkles, AlertCircle,
+  ChevronLeft, FolderOpen, ArrowLeft
+} from 'lucide-react';
+
+// ==========================================
+// 🏢 가상 오피스 맵 전용 CSS keyframes 및 클래스 정의
+// ==========================================
+const OFFICE_STYLE = `
+  @keyframes coffeeDrip {
+    0% { transform: translateY(0); opacity: 0; }
+    20% { opacity: 1; }
+    80% { transform: translateY(8px); opacity: 1; }
+    100% { transform: translateY(8px); opacity: 0; }
+  }
+  @keyframes steamRise {
+    0% { transform: translateY(0) rotate(10deg); opacity: 0; scale: 1; }
+    50% { opacity: 0.8; }
+    100% { transform: translateY(-10px) rotate(10deg); opacity: 0; scale: 1.5; }
+  }
+  @keyframes neonTableGlow {
+    0% { box-shadow: 0 8px 15px rgba(0,0,0,0.6); border-color: #581c87; }
+    50% { box-shadow: 0 0 15px rgba(168,85,247,0.8); border-color: #a855f7; }
+    100% { box-shadow: 0 8px 15px rgba(0,0,0,0.6); border-color: #581c87; }
+  }
+  .coffee-drip-flow-active {
+    animation: coffeeDrip 1.5s infinite linear;
+  }
+  .coffee-cup-steam-active {
+    animation: steamRise 2s infinite ease-out;
+  }
+  .meeting-table-neon-active {
+    animation: neonTableGlow 2s infinite ease-in-out;
+  }
+`;
+
+// ==========================================
+// 💬 로컬 대기 상태용 요원 대화 말풍선 정의
+// ==========================================
+const CHATTER: Record<string, string[]> = {
+  Alice: ['구조 구상 중...', '기획서 작성...', '시나리오 고민...', '유저 플로우 짜는 중', '아, 이 기능은 뺄까?', '와이어프레임 뼈대 잡기', '일정 산출 중...', 'WBS 점검하기', '스프린트 백로그 정리', 'Jira 티켓 생성 중...', '이거 우선순위 낮출게요', '레퍼런스 찾는 중', '경쟁사 앱 확인 중', 'A/B 테스트 기획...', '사용성 테스트 일정 잡기', '개발팀에 물어봐야겠다', '디자인팀이랑 싱크 맞추기', '이거 스펙 픽스 맞죠?', '비즈니스 로직 정리', 'API 명세서 확인 중', '이 기능 꼭 들어가야 하나요?', '런칭 목표일 계산 중...', 'MVP 스펙 줄이기', '회의 자료 준비 중...'],
+  Carol: ['디자인 픽싱 중...', '컬러 매칭...', 'UI 위치 조정...', '여긴 여백이 더 필요해', '이 폰트는 좀 깨지네...', '애니메이션 효과 생각 중', '로고 시안 작업...', '피그마 컴포넌트 묶기', '디자인 시스템 수정 중', '여기에 그라데이션 넣을까?', 'CSS 값 추출 중', '다크모드 컬러 잡기', '버튼 크기가 좀 작나?', '이 아이콘이 더 직관적이네', '벡터 이미지 따는 중', '개발 리소스 내보내기', '마진 몇으로 했더라?', '폰트 자간 조절...', '타이포그래피 테스트', '모바일 화면에서 어떨지 상상 중', '이 레이아웃 깔끔하네', '와이어프레임 바탕으로 시안 그리기', '핸드오프 준비', '이펙트는 은은하게...'],
+  Bob: ['코드 작성 중...', '디버깅 진행...', '빌드 컴파일링...', '아, 오타 잡았다!', '왜 여기서 랜더링이 안 되지?', '스택오버플로우 검색 중...', '의존성 패키지 설치...', 'NPM 인스톨 중', '아 깃 충돌 났네 ㅠㅠ', '코드 포맷터 돌리는 중', '메모리 누수 잡는 중', 'Vite 빌드는 빠르네', '이거 레거시 코드 같은데...', '리팩토링 각 섰다', '아, API 아직 안 나왔구나', '이 변수명 뭐로 짓지?', '클린 코드 책 좀 봐야겠다', '비동기 처리 버그 잡는 중', '콘솔창이 빨갛네요', '무한 루프 돌았네 ㄷㄷ', '앗, 오타... 세미콜론!', '깃허브에 푸시 중...', 'PR 리뷰 남기는 중', '코드 한 줄 짰는데 1시간 지남...'],
+  Dave: ['테스트 케이스 작성...', '로그 확인 중...', 'QA 검수 중...', '이 버튼 왜 두 번 눌리죠?', '이거 예외 처리 안 됐네요.', '오, 여긴 완벽하네.', '모바일에서 텍스트 잘려요', '재현 경로 캡처 중', '버그 리포트 작성', '이거 기획 버그인가요?', '엣지 케이스 테스트', '여기서 뒤로가기 누르면 뻗네요', '오류 팝업이 안 떠요', '네트워크 끊고 테스트해볼게요', '앱이 크래시납니다', '다크모드에서 흰 글씨가 안 보여요', '반응형인데 모바일에서 깨져요', '퍼포먼스 테스트 중...', '메모리 점유율이 너무 높아요', '로딩 스피너가 무한정 돕니다', '화면 렌더링이 느려요', '캐시 지우고 다시 해볼게요', '이거 기수정 버그 아닌가요?', '이 기능 스펙 아웃됐나요?'],
+  Justice: ['법률 판례 검색 중...', '소장 초안 작성...', '리서치 진행...', '계약 조건 검토 중', '아, 이 조항은 뺄까요?', '법적 쟁점 요약', '변론 전략 구상...', '판결문 분석 중', '의뢰인 면담 준비', '법률 문서 작성 중...', '변론 요지서 점검', '유사 소송 리포트 조사'],
+  Solomon: ['솔로몬 지혜 동원 중...', '분석 리포트 초안...', '사실 관계 확인 중', '쟁점 요약 정리', '이 판결이 맞을까?', '증거 자료 취합 중', '핵심 논쟁 분석', '승소 확률 시뮬레이션', '최종 판결 제안서 구성', '조정 안 작성 중...'],
+  Scribe: ['사건 기록 속기 중...', '조서 타이핑 중...', '공판 서류 정리...', '아, 속기 오타 수정', '기록 백업 보강', '속기 키보드 점검', '녹취록 대조 중', '문서 번역 진행', '이 발언 기록할게요', '회의록 작성 완료 중'],
+  Beat: ['비트 및 음악 구상 중...', '곡 콘셉트 기획...', '장르 방향성 타진', '무대 동선 체크', '여긴 코러스를 넣자', '가사 아이디어 메모', '믹싱 밸런스 잡기', '싱크 테스트 중', '뮤지션 매칭 일정 점검', '공연 WBS 작성', '무대 시퀀서 세팅'],
+  Budget: ['예산 비율 조율 중...', '지출 리포트 작성...', '손익분기점 시뮬레이션', '아, 여긴 삭감할게요', '세금 공제 조건 체크', '영수증 정산 처리', '제작비 원가 계산', '협찬금 배분 비중 분석', '티켓 매출 추정 중', '정산서 세부 점검'],
+  Trend: ['시장 트렌드 분석 중...', 'SNS 챌린지 기획...', '마케팅 카피 작문', '여기에 포인트를 주자', '인플루언서 섭외', '광고 효율 계산 중', '해시태그 발굴 중', '보도자료 배포 대기', '팬덤 피드백 점검', '바이럴 영상 기획']
+};
+
+const SIM_CHATTER: Record<string, string[]> = {
+  desk: ['집중해서 작업 중...', '타이핑 중...', '(모니터를 뚫어져라 보는 중)', '자세 고쳐 앉기...', '아이고 목 뻐근해', '이번 스프린트 빡세네...', '오늘 퇴근하고 뭐 하지?', '눈물 좀 넣고...', '(인공눈물 톡톡)', '키보드 타건감 좋네', '마우스 배터리 없나?', '아, 멍때렸다', '다들 엄청 열심히 하네', '점심에 많이 먹어서 졸려', '이번 릴리즈 잘 돼야 할텐데', '메일 알람이 계속 우네', '슬랙에 누가 태그했네', '노래 들으면서 일해야지', '휴가 며칠 남았더라?', '(허리 스트레칭 쭈욱)', '오늘따라 시간이 잘 가네', '코드 리뷰 해줘야겠다', '이건 내일 할까...', '일단 커밋부터 해두자', '(물 홀짝)'],
+  pantry: ['아 역시 아아가 최고야.', '당 충전 중...', '오늘 점심 뭐 먹죠?', '(스트레칭) 으쌰!', '커피 내리는 소리.. 쪼르륵', '잠깐 머리 좀 식히고...', '얼음 많이 주세요', '냉장고에 내 빵 어디갔어?', '오늘 날씨 좋네요', '다들 바쁘시네', '창밖 구경 중...', '탕비실 간식 채워졌나?', '이 초콜릿 맛있네', '원두 갈아야겠다', '아 믹스커피 먹을까', '물 많이 마셔야지', '어휴, 한숨 돌리네', '회의 너무 길었어...', '여기서 5분만 눈 붙이고 싶다', '(스마트폰 알림 확인 중)', '유튜브 잠깐 볼까', '주말에 뭐 하세요?', '다이어트 해야 하는데...', '(기지개 쭈욱)', '팀장님 안 계시나요?'],
+  conference: ['그래서 결론이 뭔가요?', '일정 조율이 필요합니다.', '그건 다음 버전에 넣죠.', '저번 회의록 어디 갔지?', '좋은 아이디어 없을까요?', '다들 어떻게 생각하세요?', '화면 공유 보이시나요?', '제 말 들리시나요?', '아, 마이크가 꺼져있었네요', '이 안건은 빠르게 넘어갈게요', '이거 기획 의도가 뭔가요?', '보수적으로 일정 잡겠습니다', '그건 기술적으로 조금 어렵습니다', '일단 MVP로 쳐내죠', '다른 부서랑 협의가 필요해요', '오늘 회의는 여기까지 하시죠', '이 내용 누가 정리하실래요?', '이거 우선순위가 어떻게 되나요?', '그 이슈, 트래커에 있나요?', '레퍼런스 띄워볼게요', '자, 집중합시다', '이건 논외니까 나중에 얘기하죠', '추가 의견 없으신가요?', '(격렬한 프레젠테이션 진행 중)']
+};
+
+// ==========================================
+// 🧑‍💻 에이전트들의 고품질 SVG 아셋 사전 정의
+// ==========================================
+const svgAlice = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#fff"/>
+  <path d="M 35 70 L 65 70 L 50 90 Z" fill="#ffcccc"/> 
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#333"/>
+  <circle cx="50" cy="40" r="30" fill="#ffe6e6"/>
+  <circle cx="40" cy="40" r="3" fill="#333"/>
+  <circle cx="60" cy="40" r="3" fill="#333"/>
+  <path d="M 45 50 Q 50 55 55 50" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 20 40 Q 50 0 80 40 L 80 60 Q 50 20 20 60 Z" fill="#b34700"/>
+  <rect x="33" y="35" width="14" height="10" rx="2" stroke="#ff4d4d" stroke-width="2" fill="transparent"/>
+  <rect x="53" y="35" width="14" height="10" rx="2" stroke="#ff4d4d" stroke-width="2" fill="transparent"/>
+  <line x1="47" y1="40" x2="53" y2="40" stroke="#ff4d4d" stroke-width="2"/>
+</svg>`;
+
+const svgCarol = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#ffe6f2"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#ff80df"/>
+  <circle cx="40" cy="95" r="5" fill="#fff"/>
+  <circle cx="50" cy="40" r="30" fill="#fff0f5"/>
+  <ellipse cx="40" cy="40" rx="4" ry="5" fill="#333"/><circle cx="41" cy="39" r="1.5" fill="#fff"/>
+  <ellipse cx="60" cy="40" rx="4" ry="5" fill="#333"/><circle cx="61" cy="39" r="1.5" fill="#fff"/>
+  <path d="M 47 52 Q 50 50 53 52" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 20 30 Q 50 -10 80 30 L 85 80 Q 80 60 75 50 Q 50 10 25 50 M 15 80 Q 20 60 20 30" fill="#ffb3ff"/>
+  <ellipse cx="40" cy="15" rx="25" ry="10" fill="#ff4da6"/>
+</svg>`;
+
+const svgBob = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#4da6ff"/>
+  <line x1="35" y1="80" x2="65" y2="80" stroke="#003366" stroke-width="3"/>
+  <line x1="35" y1="90" x2="65" y2="90" stroke="#003366" stroke-width="3"/>
+  <line x1="45" y1="70" x2="45" y2="110" stroke="#003366" stroke-width="3"/>
+  <line x1="55" y1="70" x2="55" y2="110" stroke="#003366" stroke-width="3"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#1a1a1a"/>
+  <circle cx="50" cy="40" r="30" fill="#f2e6d9"/>
+  <line x1="35" y1="38" x2="45" y2="40" stroke="#333" stroke-width="2"/>
+  <line x1="65" y1="38" x2="55" y2="40" stroke="#333" stroke-width="2"/>
+  <ellipse cx="40" cy="42" rx="2" ry="2" fill="#333"/>
+  <ellipse cx="60" cy="42" rx="2" ry="2" fill="#333"/>
+  <path d="M 37 46 Q 40 48 43 46" stroke="#999" stroke-width="1" fill="transparent"/>
+  <path d="M 57 46 Q 60 48 63 46" stroke="#999" stroke-width="1" fill="transparent"/>
+  <line x1="48" y1="52" x2="52" y2="52" stroke="#333" stroke-width="2"/>
+  <path d="M 15 45 Q 50 -20 85 45 Q 70 20 60 30 Q 50 15 40 30 Q 30 20 15 45 Z" fill="#4d3319"/>
+</svg>`;
+
+const svgDave = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#33cc33"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#111"/>
+  <rect x="45" y="70" width="10" height="40" fill="#fff"/>
+  <path d="M 47 70 L 53 70 L 50 100 Z" fill="#b30000"/>
+  <circle cx="50" cy="40" r="30" fill="#e6ffe6"/>
+  <rect x="32" y="35" width="16" height="12" rx="2" stroke="#111" stroke-width="3" fill="transparent"/>
+  <rect x="52" y="35" width="16" height="12" rx="2" stroke="#111" stroke-width="3" fill="transparent"/>
+  <line x1="48" y1="41" x2="52" y2="41" stroke="#111" stroke-width="3"/>
+  <circle cx="40" cy="41" r="2" fill="#111"/>
+  <circle cx="60" cy="41" r="2" fill="#111"/>
+  <path d="M 45 52 Q 50 55 55 52" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 20 40 Q 50 -10 80 40 L 75 25 Q 50 0 25 25 Z" fill="#111"/>
+</svg>`;
+
+const svgEve = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#fff5f5"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#ec4899"/>
+  <circle cx="50" cy="40" r="30" fill="#ffe3e3"/>
+  <circle cx="40" cy="40" r="3.5" fill="#333"/>
+  <circle cx="60" cy="40" r="3.5" fill="#333"/>
+  <path d="M 46 50 Q 50 55 54 50" stroke="#333" stroke-width="2.5" fill="transparent"/>
+  <path d="M 20 40 Q 50 5 80 40 L 80 70 Q 50 30 20 70 Z" fill="#ec4899"/>
+  <circle cx="35" cy="15" r="8" fill="#f43f5e"/>
+  <circle cx="65" cy="15" r="8" fill="#f43f5e"/>
+</svg>`;
+
+const svgFrank = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#f0fdf4"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#10b981"/>
+  <circle cx="50" cy="40" r="30" fill="#dcfce7"/>
+  <circle cx="40" cy="40" r="3" fill="#333"/>
+  <circle cx="60" cy="40" r="3" fill="#333"/>
+  <path d="M 45 49 Q 50 51 55 49" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 22 25 Q 50 -10 78 25 L 82 50 Q 50 15 18 50 Z" fill="#047857"/>
+  <rect x="32" y="34" width="16" height="12" rx="2" stroke="#10b981" stroke-width="2" fill="rgba(16,185,129,0.1)"/>
+  <rect x="52" y="34" width="16" height="12" rx="2" stroke="#10b981" stroke-width="2" fill="rgba(16,185,129,0.1)"/>
+  <line x1="48" y1="40" x2="52" y2="40" stroke="#10b981" stroke-width="2"/>
+</svg>`;
+
+const svgGrace = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#faf5ff"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#8b5cf6"/>
+  <circle cx="50" cy="40" r="30" fill="#f3e8ff"/>
+  <circle cx="39" cy="41" r="3" fill="#333"/>
+  <circle cx="61" cy="41" r="3" fill="#333"/>
+  <path d="M 44 51 Q 50 54 56 51" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 18 35 Q 50 -5 82 35 L 85 65 Q 50 25 15 65 Z" fill="#6d28d9"/>
+  <ellipse cx="50" cy="12" rx="14" ry="7" fill="#a78bfa"/>
+</svg>`;
+
+const svgHank = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#fffbeb"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#f59e0b"/>
+  <circle cx="50" cy="40" r="30" fill="#fef3c7"/>
+  <circle cx="41" cy="40" r="3.5" fill="#333"/>
+  <circle cx="59" cy="40" r="3.5" fill="#333"/>
+  <path d="M 45 52 Q 50 49 55 52" stroke="#333" stroke-width="2.5" fill="transparent"/>
+  <path d="M 25 28 Q 50 -5 75 28 Z" fill="#b45309"/>
+  <path d="M 15 25 L 85 25 L 80 10 L 20 10 Z" fill="#d97706"/>
+</svg>`;
+
+// 법률 / 공연 기획용 SVG 에셋
+const svgJustice = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#d97706"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#1e293b"/>
+  <circle cx="50" cy="40" r="30" fill="#fef3c7"/>
+  <circle cx="40" cy="40" r="3.5" fill="#111"/>
+  <circle cx="60" cy="40" r="3.5" fill="#111"/>
+  <path d="M 42 52 Q 50 48 58 52" stroke="#111" stroke-width="2.5" fill="transparent"/>
+  <path d="M 15 35 Q 50 -15 85 35 L 75 80 Z" fill="#1e1b4b"/>
+  <rect x="47" y="10" width="6" height="12" fill="#fbbf24"/>
+</svg>`;
+
+const svgSolomon = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#7c3aed"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#1e1b4b"/>
+  <circle cx="50" cy="40" r="30" fill="#faf5ff"/>
+  <circle cx="40" cy="38" r="3" fill="#333"/>
+  <circle cx="60" cy="38" r="3" fill="#333"/>
+  <path d="M 45 49 Q 50 53 55 49" stroke="#333" stroke-width="2" fill="transparent"/>
+  <path d="M 10 40 Q 50 -25 90 40 L 80 80 Z" fill="#4c1d95"/>
+  <path d="M 40 70 L 60 70 L 50 82 Z" fill="#fbbf24"/>
+</svg>`;
+
+const svgScribe = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#0891b2"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#0f172a"/>
+  <circle cx="50" cy="40" r="30" fill="#ecfeff"/>
+  <circle cx="41" cy="42" r="2.5" fill="#334155"/>
+  <circle cx="59" cy="42" r="2.5" fill="#334155"/>
+  <path d="M 45 52 Q 50 55 55 52" stroke="#334155" stroke-width="2" fill="transparent"/>
+  <path d="M 20 30 Q 50 -10 80 30 Z" fill="#0369a1"/>
+</svg>`;
+
+const svgBeat = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#e11d48"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#2d0612"/>
+  <circle cx="50" cy="40" r="30" fill="#fff5f5"/>
+  <circle cx="38" cy="40" r="3" fill="#111"/>
+  <circle cx="62" cy="40" r="3" fill="#111"/>
+  <path d="M 43 51 Q 50 56 57 51" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 15 42 Q 50 -15 85 42 L 75 75 Z" fill="#9013fe"/>
+  <circle cx="50" cy="18" r="7" fill="#ff007f"/>
+</svg>`;
+
+const svgBudget = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#059669"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#064e3b"/>
+  <circle cx="50" cy="40" r="30" fill="#ecfdf5"/>
+  <circle cx="40" cy="40" r="3" fill="#111"/>
+  <circle cx="60" cy="40" r="3" fill="#111"/>
+  <path d="M 46 51 L 54 51" stroke="#111" stroke-width="2"/>
+  <path d="M 20 35 Q 50 -15 80 35 Z" fill="#10b981"/>
+</svg>`;
+
+const svgTrend = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#db2777"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#4d052e"/>
+  <circle cx="50" cy="40" r="30" fill="#fdf2f8"/>
+  <ellipse cx="40" cy="41" rx="3.5" ry="4.5" fill="#111"/>
+  <ellipse cx="60" cy="41" rx="3.5" ry="4.5" fill="#111"/>
+  <path d="M 45 52 Q 50 49 55 52" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 15 28 Q 50 -15 85 28 Z" fill="#f472b6"/>
+</svg>`;
+
+const SVG_ASSETS: Record<string, string> = {
+  svgAlice, svgCarol, svgBob, svgDave,
+  svgEve, svgFrank, svgGrace, svgHank,
+  svgJustice, svgSolomon, svgScribe,
+  svgBeat, svgBudget, svgTrend
+};
+
+// ==========================================
+// 🧑‍💻 가상 오피스 에이전트 렌더링 컴포넌트 (Shared Layout Animation 보장)
+// ==========================================
+interface AgentProps {
+  name: string;
+  svgContent: string;
+  showDesk?: boolean;
+  isAbsent?: boolean;
+  status: string;
+  log: string;
+  selectedStudioType: string;
+  customRole?: string;
+  customExpertise?: string;
+}
+
+function Agent({ name, svgContent, showDesk = false, isAbsent = false, status, log, selectedStudioType, customRole, customExpertise }: AgentProps) {
+  const colors: Record<string, string> = {
+    Alice: '#ff4d4d', Carol: '#ffb3ff', Bob: '#4da6ff', Dave: '#33cc33',
+    Eve: '#ec4899', Frank: '#10b981', Grace: '#8b5cf6', Hank: '#f59e0b',
+    Justice: '#fbbf24', Solomon: '#a855f7', Scribe: '#0891b2',
+    Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899'
+  };
+  const roles: Record<string, string> = {
+    Alice: '기획', Carol: '디자인', Bob: '개발', Dave: 'QA',
+    Eve: '마케팅', Frank: '보안', Grace: 'CS', Hank: '테스터',
+    Justice: '변호사', Solomon: '분석관', Scribe: '기록관',
+    Beat: '총괄', Budget: '재무', Trend: '마케팅'
+  };
+  const color = colors[name] || '#a855f7';
+  const role = customRole || roles[name] || '요원';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', width: '55px', height: showDesk ? '80px' : '65px', flexShrink: 0 }}>
+      {/* (항상 고정되는) 배경: 💻 개인 책상 및 부재중 이름표 */}
+      {showDesk && (
+        <div style={{ position: 'absolute', bottom: '0px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ width: '52px', height: '16px', backgroundColor: '#1e1e2d', borderTop: '2px solid #3b3b54', borderRadius: '4px', zIndex: 10, boxShadow: '0 3px 5px rgba(0,0,0,0.4)' }}>
+            <div style={{ position: 'absolute', top: '2px', left: '19px', width: '14px', height: '9px', backgroundColor: isAbsent ? '#0f0f16' : '#1a1a24', border: '1px solid ' + (isAbsent ? '#4b5563' : color), borderRadius: '2px', boxShadow: isAbsent ? 'none' : '0 0 6px ' + color + ', inset 0 0 4px ' + color, transition: 'all 0.3s' }} />
+          </div>
+        </div>
+      )}
+
+      {/* 캐릭터 본체, 말풍선, 상태, 이름표 */}
+      {!isAbsent && (
+        <motion.div
+          layout
+          layoutId={`glide-${name}`}
+          transition={{ type: 'tween', ease: 'easeInOut', duration: 1.5 }}
+          style={{ position: 'absolute', bottom: showDesk ? '16px' : '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100 }}
+        >
+          {/* 💬 말풍선 */}
+          {log && (
+            <div style={{
+              position: 'absolute',
+              bottom: '53px',
+              backgroundColor: 'rgba(20, 20, 30, 0.95)',
+              color: '#f8fafc',
+              padding: '3px 6px',
+              borderRadius: '5px',
+              fontSize: '0.6rem',
+              whiteSpace: 'nowrap',
+              border: '1px solid ' + color + '66',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.6)',
+              zIndex: 110,
+              pointerEvents: 'none'
+            }}>
+              {log}
+              <div style={{
+                position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)',
+                width: '0', height: '0', borderLeft: '4px solid transparent', borderRight: '4px solid transparent',
+                borderTop: '4px solid rgba(20, 20, 30, 0.95)'
+              }} />
+            </div>
+          )}
+
+          {/* 🧑‍💻 캐릭터 일러스트 & 상태 배지 */}
+          <div style={{ position: 'relative', height: '40px', width: '35px', zIndex: 105 }}>
+            {status !== 'idle' && (
+              <div style={{
+                position: 'absolute', top: '-5px', right: '-8px',
+                backgroundColor: color,
+                borderRadius: '50%', width: '16px', height: '16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.45rem', fontWeight: 'bold', color: '#fff',
+                boxShadow: '0 0 3px rgba(0,0,0,0.5)', zIndex: 120
+              }}>
+                {status === 'thinking' ? '생각' : (status === 'meeting' ? '회의' : '작업')}
+              </div>
+            )}
+            <div 
+              style={{
+                width: '35px', height: '40px',
+                filter: status !== 'idle' ? 'drop-shadow(0 0 4px ' + color + '88)' : 'none',
+                transition: 'filter 0.3s'
+              }} 
+              dangerouslySetInnerHTML={{ __html: SVG_ASSETS[selectedStudioType === 'game' ? `svg${name}` : (selectedStudioType === 'law' ? `svg${name}` : `svg${name}`)] || svgContent }} 
+            />
+          </div>
+
+          {/* 🏷️ 이름표 */}
+          <span 
+            title={customExpertise || `${name} 요원`}
+            style={{ fontSize: '0.55rem', color: '#cbd5e1', marginTop: '-2px', fontWeight: 'bold', whiteSpace: 'nowrap', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000', zIndex: 125, cursor: 'help' }}
+          >
+            {name} ({role})
+          </span>
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
+interface AiStudioPanelProps {
+  user: any;
+  markRoomAsRead: (roomId: string) => Promise<void>;
+}
+
+export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
+  const { socket } = useChatStore();
+
+  const [studios, setStudios] = useState<any[]>([]);
+  const [selectedStudio, setSelectedStudio] = useState<any | null>(null);
+  
+  // 현재 가상 에이전트 사무실 상태 및 말풍선 로그
+  const [agentState, setAgentState] = useState<Record<string, { status: string; room: string; log: string }>>({});
+  const [deskAssignments, setDeskAssignments] = useState<Record<string, number>>({});
+  const [isWorking, setIsWorking] = useState(false);
+
+  // 💻 5인 이상 스튜디오를 위한 동적 책상 배정 및 위치 고정(재정렬 금지) 세션 엔진
+  useEffect(() => {
+    if (!selectedStudio) return;
+    
+    setDeskAssignments(prev => {
+      const next = { ...prev };
+      const devRoomAgents = Object.entries(agentState)
+        .filter(([_, info]) => info.room === 'DevRoom')
+        .map(([name]) => name);
+
+      const occupiedSeats = new Set<number>();
+      devRoomAgents.forEach(name => {
+        if (next[name] !== undefined && next[name] >= 0 && next[name] < 4) {
+          occupiedSeats.add(next[name]);
+        } else {
+          delete next[name];
+        }
+      });
+
+      // 개발실을 떠난 요원의 책상 시트는 빈자리로 전환
+      Object.keys(next).forEach(name => {
+        const info = agentState[name];
+        if (!info || info.room !== 'DevRoom') {
+          delete next[name];
+        }
+      });
+
+      // 새로 개발실에 진입한 요원에게 비어있는 책상(0~3) 순차 할당
+      devRoomAgents.forEach(name => {
+        if (next[name] === undefined) {
+          let emptySeat = -1;
+          for (let i = 0; i < 4; i++) {
+            const isOccupied = Object.values(next).some(seat => seat === i);
+            if (!isOccupied) {
+              emptySeat = i;
+              break;
+            }
+          }
+          if (emptySeat !== -1) {
+            next[name] = emptySeat;
+          } else {
+            next[name] = -1; // 만약 자리가 없다면 서서 근무 분위기
+          }
+        }
+      });
+
+      return next;
+    });
+  }, [agentState, selectedStudio?.id]);
+  
+  // 터미널 및 인풋
+  const [logs, setLogs] = useState<any[]>([]);
+  const [taskInput, setTaskInput] = useState('');
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [artifacts, setArtifacts] = useState<any[]>([]);
+  
+  // 에디터 & 뷰어 모달
+  const [viewDoc, setViewDoc] = useState<any | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editorCode, setEditorCode] = useState('');
+  const [isDeploying, setIsDeploying] = useState<string | null>(null);
+
+  // 새 스튜디오 개설 폼
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newStudioName, setNewStudioName] = useState('');
+  const [newStudioType, setNewStudioType] = useState('game');
+  const [newStudioDesc, setNewStudioDesc] = useState('');
+  const [newStudioAgentCount, setNewStudioAgentCount] = useState(4);
+  const [newStudioAgentsConfig, setNewStudioAgentsConfig] = useState<any[]>([
+    { name: 'Alice', role: '기획', expertise: '레트로 게임 디렉터 및 시나리오 라이터' },
+    { name: 'Carol', role: '디자인', expertise: '네온 스타일 전문 화려한 그래픽 디자이너' },
+    { name: 'Bob', role: '개발', expertise: 'HTML5 기반 물리 엔진 특화 풀스택 엔지니어' },
+    { name: 'Dave', role: 'QA', expertise: '칼 같은 엄격함을 가진 버그 헌터 QA 마스터' },
+    { name: 'Eve', role: '마케팅', expertise: '트렌디한 바이럴 카피라이팅 마케팅 스페셜리스트' },
+    { name: 'Frank', role: '보안', expertise: '서버 보안 및 철통 인프라 가드 아키텍트' },
+    { name: 'Grace', role: 'CS', expertise: '친절하고 활발한 유저 소통 CS 매니저' },
+    { name: 'Hank', role: '테스터', expertise: '일반 유저 관점 예외처리 검증 베타 테스터' }
+  ]);
+
+  // 모바일/태블릿 반응형 대응 상태 추가
+  const [isMobile, setIsMobile] = useState(false);
+  const [activeMobileView, setActiveMobileView] = useState<'list' | 'detail' | 'archive'>('list');
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // 요원들의 생동감 넘치는 랜덤 장소 이동 및 말풍선 로컬 시뮬레이션 (작업 중에도 idle 요원들은 자유 행동 보장)
+  useEffect(() => {
+    if (!selectedStudio?.type) return;
+
+    const updateAgents = () => {
+      setAgentState(prev => {
+        let changed = false;
+        const next = { ...prev };
+
+        // 현재 선택한 스튜디오에 귀속된 요원 명단을 구함
+        const currentAgents = Object.keys(prev);
+
+        for (const name of currentAgents) {
+          const info = next[name] || { status: 'idle', room: 'DevRoom', log: '' };
+
+          // 작업 중인 주체 에이전트들은 로컬 시뮬레이션이 장소를 강제로 옮기지 않도록 가드
+          if (info.status === 'thinking' || info.status === 'coding') {
+            const phrases = CHATTER[name] || CHATTER['Alice'];
+            const msg = phrases[Math.floor(Math.random() * phrases.length)];
+            next[name] = { ...info, log: msg };
+            changed = true;
+          } else if (info.status === 'idle') {
+            // 50% 확률로 장소 및 말풍선 변경
+            if (Math.random() < 0.5) {
+              const r = Math.random();
+              let targetLocation = 'desk';
+              if (r > 0.8) targetLocation = 'pantry';
+              else if (r > 0.6) targetLocation = 'conference';
+
+              let newRoom = 'DevRoom';
+              if (targetLocation === 'pantry') newRoom = 'Pantry';
+              if (targetLocation === 'conference') newRoom = 'Conference';
+
+              const phrases = SIM_CHATTER[targetLocation];
+              const msg = phrases[Math.floor(Math.random() * phrases.length)];
+
+              next[name] = { ...info, log: msg, room: newRoom };
+              changed = true;
+            } else {
+              if (info.log !== '') {
+                next[name] = { ...info, log: '' };
+                changed = true;
+              }
+            }
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
+
+    updateAgents();
+    const interval = setInterval(updateAgents, 3500);
+    return () => clearInterval(interval);
+  }, [selectedStudio?.type]);
+
+  // 1. 스튜디오 목록 로드
+  const fetchStudios = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/aistudio/studios?userId=${user.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStudios(data);
+        if (data.length > 0 && !selectedStudio && window.innerWidth >= 1024) {
+          handleSelectStudio(data[0]);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchStudios();
+  }, [user?.id]);
+
+  // 2. 특정 스튜디오 진입 및 활성화
+  const handleSelectStudio = (studio: any) => {
+    if (selectedStudio?.id === studio.id) return;
+    
+    if (selectedStudio?.id && socket) {
+      socket.emit('leave_studio_room', selectedStudio.id);
+    }
+    
+    setSelectedStudio(studio);
+    setLogs([]);
+    setAgentState({});
+    setIsWorking(false);
+    
+    if (socket) {
+      socket.emit('join_studio_room', studio.id);
+    }
+    
+    fetchArtifacts(studio.id);
+    setActiveMobileView('detail');
+  };
+
+  // 3. 스튜디오별 산출물 목록 로드
+  const fetchArtifacts = async (studioId: string) => {
+    try {
+      const res = await fetch(`/api/aistudio/history/${studioId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setArtifacts(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // 4. 소켓 리스너 통합 연동
+  useEffect(() => {
+    if (!socket || !selectedStudio) return;
+
+    socket.on('syncStudioState', (data: any) => {
+      if (data.studioId !== selectedStudio.id) return;
+      setIsWorking(data.isWorking);
+      setAgentState(data.agentState || {});
+      setLogs(data.logs || []);
+    });
+
+    socket.on('logStudio', (logObj: any) => {
+      setLogs(prev => [...prev, logObj]);
+      if (logObj.agent && logObj.msg) {
+        setAgentState(prev => ({
+          ...prev,
+          [logObj.agent]: {
+            ...(prev[logObj.agent] || { status: 'idle', room: 'DevRoom' }),
+            log: logObj.msg.substring(0, 30) + (logObj.msg.length > 30 ? '...' : '')
+          }
+        }));
+      }
+    });
+
+    socket.on('agentStudioStatus', (data: any) => {
+      const { agent, status } = data;
+      setAgentState(prev => {
+        const info = prev[agent] || { status: 'idle', room: 'DevRoom', log: '' };
+        let newRoom = 'DevRoom';
+        if (status === 'meeting') newRoom = 'Conference';
+        else if (status === 'pantry') newRoom = 'Pantry';
+        return {
+          ...prev,
+          [agent]: { ...info, status, room: newRoom }
+        };
+      });
+    });
+
+    socket.on('syncStudioAgentState', (state: any) => {
+      setAgentState(state || {});
+    });
+
+    socket.on('studioWorkingStatus', (data: any) => {
+      if (data.studioId === selectedStudio.id) {
+        setIsWorking(data.isWorking);
+      }
+    });
+
+    socket.on('studioTaskFinished', (data: any) => {
+      if (data.studioId === selectedStudio.id) {
+        setIsWorking(false);
+        fetchArtifacts(selectedStudio.id);
+      }
+    });
+
+    return () => {
+      socket.off('syncStudioState');
+      socket.off('logStudio');
+      socket.off('agentStudioStatus');
+      socket.off('syncStudioAgentState');
+      socket.off('studioWorkingStatus');
+      socket.off('studioTaskFinished');
+    };
+  }, [socket, selectedStudio?.id]);
+
+  // 자동 스크롤
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs.length]);
+
+  // 5. 새 스튜디오 생성
+  const handleCreateStudio = async () => {
+    console.log('handleCreateStudio called. newStudioName:', newStudioName, 'user.id:', user?.id, 'newStudioType:', newStudioType);
+    if (!newStudioName.trim()) {
+      alert('스튜디오 이름을 입력해주세요.');
+      return;
+    }
+    if (!user?.id) {
+      alert('로그인 세션이 만료되었거나 사용자 정보가 없습니다. 다시 로그인해 주세요.');
+      return;
+    }
+    try {
+      const activeConfig = newStudioType === 'game' 
+        ? newStudioAgentsConfig.slice(0, newStudioAgentCount)
+        : (newStudioType === 'law' 
+            ? [
+                { name: 'Justice', role: '변호사', expertise: '종합 법률 자문 총괄 변호사' },
+                { name: 'Solomon', role: '분석관', expertise: '사례 및 정밀 대조 판례 분석관' },
+                { name: 'Scribe', role: '기록관', expertise: '무결한 기록 및 자문서 초안 작성 서기' }
+              ]
+            : [
+                { name: 'Beat', role: '총괄', expertise: '콘서트 페스티벌 기획 총괄 디렉터' },
+                { name: 'Budget', role: '재무', expertise: '수지타산 및 티켓 가격 산정 재무관' },
+                { name: 'Trend', role: '마케팅', expertise: '온오프라인 바이럴 광고 마케팅 분석관' }
+              ]
+          );
+
+      const res = await fetch('/api/aistudio/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          name: newStudioName,
+          type: newStudioType || 'game',
+          description: newStudioDesc,
+          agentCount: newStudioAgentCount,
+          agentsConfig: activeConfig
+        })
+      });
+      console.log('API Response status:', res.status);
+      if (res.ok) {
+        const created = await res.json();
+        console.log('Studio created successfully:', created);
+        setNewStudioName('');
+        setNewStudioDesc('');
+        setNewStudioAgentCount(4);
+        setShowCreateModal(false);
+        fetchStudios();
+        handleSelectStudio(created);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error('API Error Response:', errData);
+        alert(`스튜디오 개설 실패: ${errData.error || '서버 내부 오류가 발생했습니다. (HTTP ' + res.status + ')'}`);
+      }
+    } catch (e: any) {
+      console.error('handleCreateStudio Catch Block:', e);
+      alert(`네트워크 또는 요청 전송 에러: ${e.message || e}`);
+    }
+  };
+
+  // 6. 스튜디오 삭제
+  const handleDeleteStudio = async (studioId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('정말로 이 AI 스튜디오 방을 삭제하시겠습니까? 관련 로그와 산출물이 모두 삭제됩니다.')) return;
+    try {
+      const res = await fetch(`/api/aistudio/delete/${studioId}?userId=${user.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setStudios(prev => prev.filter(s => s.id !== studioId));
+        if (selectedStudio?.id === studioId) {
+          setSelectedStudio(null);
+          setAgentState({});
+          setLogs([]);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // 7. 업무 지시 발송
+  const handleSendTask = () => {
+    if (isWorking || !selectedStudio?.id || !socket) return;
+    if (!taskInput.trim() && attachments.length === 0) return;
+
+    socket.emit('start_studio_task', {
+      studioId: selectedStudio.id,
+      task: taskInput,
+      isRevision: artifacts.length > 0,
+      files: attachments
+    });
+
+    setTaskInput('');
+    setAttachments([]);
+  };
+
+  // 8. 파일 첨부 핸들러
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAttachments(prev => [...prev, {
+          name: file.name,
+          mimeType: file.type,
+          base64: (reader.result as string).split(',')[1],
+          url: reader.result
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  // 9. 문서 다운로드
+  const handleDownloadDoc = (artifact: any) => {
+    const element = document.createElement("a");
+    const file = new Blob([artifact.content || ''], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = `${artifact.name.replace(/\s+/g, '_')}.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  // 10. 소스 코드 에디터 오픈
+  const handleOpenEditor = async (artifact: any) => {
+    try {
+      const res = await fetch(`/api/aistudio/history/content/${artifact.id}`);
+      if (res.ok) {
+        const code = await res.text();
+        setEditorCode(code);
+        setViewDoc(artifact);
+        setShowEditor(true);
+      }
+    } catch (e) {
+      alert('소스를 가져오는 데 실패했습니다.');
+    }
+  };
+
+  // 11. 소스 세이브
+  const handleSaveEditor = async () => {
+    if (!viewDoc?.id) return;
+    try {
+      const res = await fetch(`/api/aistudio/history/content/${viewDoc.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: editorCode
+      });
+      if (res.ok) {
+        alert('성공적으로 저장되었습니다!');
+        setShowEditor(false);
+        fetchArtifacts(selectedStudio.id);
+      } else {
+        alert('저장에 실패했습니다.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // 12. 게임 런칭 (PM2 배포)
+  const handleDeployGame = async (artifact: any) => {
+    setIsDeploying(artifact.id);
+    try {
+      const res = await fetch(`/api/aistudio/deploy/${artifact.id}`, { method: 'POST' });
+      if (res.ok) {
+        alert('PM2 서버에 성공적으로 자동 런칭 및 배포되었습니다!');
+        fetchArtifacts(selectedStudio.id);
+      } else {
+        const err = await res.json();
+        alert(`배포 실패: ${err.error || '알 수 없는 서버 오류'}`);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDeploying(null);
+    }
+  };
+
+  // 13. 게임 배포 해제
+  const handleUndeployGame = async (artifact: any) => {
+    if (!confirm('정말로 이 게임의 포트 배포를 중지하고 PM2에서 제거하시겠습니까?')) return;
+    setIsDeploying(artifact.id);
+    try {
+      const res = await fetch(`/api/aistudio/undeploy/${artifact.id}`, { method: 'POST' });
+      if (res.ok) {
+        alert('배포가 중지 및 회수되었습니다.');
+        fetchArtifacts(selectedStudio.id);
+      } else {
+        alert('배포 회수에 실패했습니다.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDeploying(null);
+    }
+  };
+
+  // 14. 수동 QA 호출
+  const handleRunManualQA = (artifact: any) => {
+    if (isWorking || !socket) return;
+    socket.emit('run_studio_manual_qa', {
+      studioId: selectedStudio.id,
+      url: artifact.fileUrl,
+      label: artifact.name
+    });
+  };
+
+  // 15. 산출물 삭제
+  const handleDeleteArtifact = async (artifactId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('정말로 이 산출물 기록을 아카이브에서 영구 삭제하시겠습니까? 물리 파일도 함께 지워집니다.')) return;
+    try {
+      const res = await fetch(`/api/aistudio/history/delete/${artifactId}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchArtifacts(selectedStudio.id);
+        if (viewDoc?.id === artifactId) setViewDoc(null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // 가상 요원 개별 렌더링 함수 (인라인 스타일 및 transition)
+  const renderAgent = (name: string, svgContent: string, showDesk = false, isAbsent = false) => {
+    const info = (agentState[name] || { status: 'idle', room: 'DevRoom', log: '' }) as any;
+    const colors: Record<string, string> = {
+      Alice: '#ff4d4d', Carol: '#ffb3ff', Bob: '#4da6ff', Dave: '#33cc33',
+      Justice: '#fbbf24', Solomon: '#a855f7', Scribe: '#0891b2',
+      Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899'
+    };
+    const roles: Record<string, string> = {
+      Alice: '기획', Carol: '디자인', Bob: '개발', Dave: 'QA',
+      Justice: '변호사', Solomon: '분석관', Scribe: '기록관',
+      Beat: '총괄', Budget: '재무', Trend: '마케팅'
+    };
+    const color = colors[name] || '#a855f7';
+    const role = roles[name] || '요원';
+
+    return (
+      <div key={name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', width: '55px', height: showDesk ? '80px' : '65px', flexShrink: 0 }}>
+        {/* (항상 고정되는) 배경: 💻 개인 책상 및 부재중 이름표 */}
+        {showDesk && (
+          <div style={{ position: 'absolute', bottom: '0px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ width: '52px', height: '16px', backgroundColor: '#1e1e2d', borderTop: '2px solid #3b3b54', borderRadius: '4px', zIndex: 10, boxShadow: '0 3px 5px rgba(0,0,0,0.4)' }}>
+              <div style={{ position: 'absolute', top: '2px', left: '19px', width: '14px', height: '9px', backgroundColor: isAbsent ? '#0f0f16' : '#1a1a24', border: '1px solid ' + (isAbsent ? '#4b5563' : color), borderRadius: '2px', boxShadow: isAbsent ? 'none' : '0 0 6px ' + color + ', inset 0 0 4px ' + color, transition: 'all 0.3s' }} />
+            </div>
+          </div>
+        )}
+
+        {/* 캐릭터 본체, 말풍선, 상태, 이름표 */}
+        {!isAbsent && (
+          <motion.div
+            layout
+            layoutId={`glide-${name}`}
+            transition={{ type: 'tween', ease: 'easeInOut', duration: 1.5 }}
+            style={{ position: 'absolute', bottom: showDesk ? '16px' : '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100 }}
+          >
+            {/* 💬 말풍선 */}
+            {info.log && (
+              <div style={{
+                position: 'absolute',
+                bottom: '53px',
+                backgroundColor: 'rgba(20, 20, 30, 0.95)',
+                color: '#f8fafc',
+                padding: '3px 6px',
+                borderRadius: '5px',
+                fontSize: '0.6rem',
+                whiteSpace: 'nowrap',
+                border: '1px solid ' + color + '66',
+                boxShadow: '0 4px 6px rgba(0,0,0,0.6)',
+                zIndex: 110,
+                pointerEvents: 'none'
+              }}>
+                {info.log}
+                <div style={{
+                  position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)',
+                  width: '0', height: '0', borderLeft: '4px solid transparent', borderRight: '4px solid transparent',
+                  borderTop: '4px solid rgba(20, 20, 30, 0.95)'
+                }} />
+              </div>
+            )}
+
+            {/* 🧑‍💻 캐릭터 일러스트 & 상태 배지 */}
+            <div style={{ position: 'relative', height: '40px', width: '35px', zIndex: 105 }}>
+              {info.status !== 'idle' && (
+                <div style={{
+                  position: 'absolute', top: '-5px', right: '-8px',
+                  backgroundColor: color,
+                  borderRadius: '50%', width: '16px', height: '16px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.45rem', fontWeight: 'bold', color: '#fff',
+                  boxShadow: '0 0 3px rgba(0,0,0,0.5)', zIndex: 120
+                }}>
+                  {info.status === 'thinking' ? '생각' : (info.status === 'meeting' ? '회의' : '작업')}
+                </div>
+              )}
+              <div 
+                style={{
+                  width: '35px', height: '40px',
+                  filter: info.status !== 'idle' ? 'drop-shadow(0 0 4px ' + color + '88)' : 'none',
+                  transition: 'filter 0.3s'
+                }} 
+                dangerouslySetInnerHTML={{ __html: SVG_ASSETS[selectedStudio.type === 'game' ? `svg${name}` : (selectedStudio.type === 'law' ? `svg${name}` : `svg${name}`)] || svgContent }} 
+              />
+            </div>
+
+            {/* 🏷️ 이름표 */}
+            <span style={{ fontSize: '0.55rem', color: '#cbd5e1', marginTop: '-2px', fontWeight: 'bold', whiteSpace: 'nowrap', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000', zIndex: 125 }}>
+              {name} ({role})
+            </span>
+          </motion.div>
+        )}
+      </div>
+    );
+  };
+
+
+  return (
+    <div className="w-full h-full flex bg-[#130d1a] text-[#e2e8f0] font-sans overflow-hidden">
+      
+      {(!isMobile || activeMobileView === 'list') && (
+        <div className={`${isMobile ? 'w-full' : 'w-64 border-r'} border-[#2d223c] bg-[#171021] flex flex-col flex-shrink-0 h-full`}>
+        {/* 헤더 */}
+        <div className="p-4 border-b border-[#2d223c] flex items-center">
+          <div className="flex items-center gap-2">
+            <Building2 size={18} className="text-purple-400 animate-pulse" />
+            <span className="font-bold text-sm text-purple-200 tracking-wider">AI 스튜디오 리스트</span>
+          </div>
+        </div>
+
+        {/* 리스트 */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin scrollbar-thumb-purple-900/20">
+          {studios.map(studio => {
+            const isSelected = selectedStudio?.id === studio.id;
+            const IconComponent = studio.type === 'game' ? Gamepad2 : (studio.type === 'law' ? Scale : Music);
+            const typeLabel = studio.type === 'game' ? '게임' : (studio.type === 'law' ? '법률' : '공연');
+            
+            return (
+              <div 
+                key={studio.id}
+                onClick={() => handleSelectStudio(studio)}
+                className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border duration-300 ${isSelected ? 'bg-purple-950/40 border-purple-800/60 shadow-lg text-purple-100' : 'bg-transparent border-transparent text-[#cbd5e1] hover:bg-purple-950/15 hover:text-white'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`p-2 rounded-lg ${isSelected ? 'bg-purple-800 text-white' : 'bg-[#21182c] text-purple-400 group-hover:text-purple-300'} transition-all`}>
+                    <IconComponent size={16} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold truncate leading-snug">{studio.name}</span>
+                    <span className="text-[9px] text-purple-400/80 font-medium tracking-tight mt-0.5">{typeLabel} 스튜디오</span>
+                  </div>
+                </div>
+                
+                {/* 본인 스튜디오일 때만 삭제 버튼 활성화 */}
+                {!studio.isSystem && (
+                  <button 
+                    onClick={(e) => handleDeleteStudio(studio.id, e)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-zinc-500 hover:text-red-400 rounded transition-all hover:bg-red-950/20"
+                    title="스튜디오 삭제"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          {/* 리스트바와 완벽히 일관성 있는 디자인의 '새 스튜디오 개설' 버튼 */}
+          <div 
+            onClick={() => setShowCreateModal(true)}
+            className="group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border border-dashed border-purple-900/30 hover:border-purple-600/40 hover:bg-purple-950/15 text-purple-400 hover:text-purple-300 duration-300 mt-2.5"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-purple-950/30 text-purple-400 transition-all border border-purple-900/20 group-hover:bg-purple-900/30">
+                <Plus size={16} />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-extrabold truncate leading-snug">새 스튜디오 개설</span>
+                <span className="text-[9px] text-purple-500/80 font-medium tracking-tight mt-0.5">커스텀 협업 공간 추가</span>
+              </div>
+            </div>
+          </div>
+
+          {studios.length === 0 && (
+            <div className="text-center py-12 px-4">
+              <Bot size={28} className="mx-auto text-purple-800 mb-3" />
+              <p className="text-[11px] text-zinc-500">생성된 AI 스튜디오가 없습니다.</p>
+            </div>
+          )}
+        </div>
+        
+        {/* 하단 내 프로필 */}
+        <div className="p-3 border-t border-[#2d223c] bg-[#110b19] flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-purple-900 flex items-center justify-center text-xs font-bold text-purple-300 border border-purple-800/50">
+            {user?.username?.[0] || 'U'}
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-bold text-purple-200 truncate">{user?.username || '사용자'}</span>
+            <span className="text-[9px] text-zinc-500 font-mono tracking-tighter truncate">{user?.id?.substring(0, 13)}...</span>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* ==========================================
+          [우측 컬럼] 메인 스튜디오 영역
+         ========================================== */}
+      {selectedStudio ? (
+        (!isMobile || activeMobileView !== 'list') && (
+          <div className="flex-1 flex overflow-hidden">
+            
+            {/* 가상 사무실 + 터미널 로그 + 전송 패널 */}
+            {(!isMobile || activeMobileView === 'detail') && (
+              <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0 bg-[#0f0a15] border-r border-[#2d223c]">
+            
+            {/* 가상 사무실 시뮬레이션 (상단) - 원래 2단 오피스 맵 디자인 완벽 복원 */}
+            <div className="h-[405px] border-b border-[#2d223c] bg-[#110b17] relative p-3.5 flex flex-col gap-3 flex-shrink-0 select-none overflow-hidden">
+              
+              {/* 타이틀HUD */}
+              <div className="flex justify-between items-center z-20 w-full flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  {isMobile && (
+                    <button
+                      onClick={() => setActiveMobileView('list')}
+                      className="p-1.5 rounded-lg bg-purple-900/30 text-purple-300 border border-purple-800/40 hover:bg-purple-800/60 hover:text-white transition-all shadow-sm flex items-center gap-1 text-[10px] font-bold"
+                    >
+                      <ChevronLeft size={12} />
+                      목록
+                    </button>
+                  )}
+                  <div className="flex items-center gap-2 bg-[#1b1227]/90 px-3 py-1.5 rounded-full border border-purple-800/30 shadow-md">
+                    <Sparkles size={12} className="text-purple-400 animate-spin" style={{ animationDuration: '4s' }} />
+                    <span className="text-[10px] font-extrabold text-purple-300 tracking-widest">{selectedStudio.name} 시뮬레이터</span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-1.5">
+                  {isMobile && (
+                    <button
+                      onClick={() => setActiveMobileView('archive')}
+                      className="relative p-1.5 rounded-lg bg-purple-900/30 text-purple-300 border border-purple-800/40 hover:bg-purple-800/60 hover:text-white transition-all shadow-sm flex items-center gap-1 text-[10px] font-bold"
+                    >
+                      <FolderOpen size={12} />
+                      산출물
+                      {artifacts.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-[#1b1227]">
+                          {artifacts.length}
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 🏢 원래 디자인 2단 가상 룸 배치 (깃허브 디자인 100% 완벽 복원) */}
+              {(() => {
+                const agentsInConference = Object.values(agentState).some((info: any) => info.room === 'Conference');
+                const agentsInPantry = Object.values(agentState).some((info: any) => info.room === 'Pantry');
+                
+                const config: Record<string, string> = {};
+                if (selectedStudio.type === 'game') {
+                  Object.keys(agentState).forEach(name => {
+                    if (SVG_ASSETS['svg' + name]) {
+                      config[name] = SVG_ASSETS['svg' + name];
+                    }
+                  });
+                  if (Object.keys(config).length === 0) {
+                    config['Alice'] = svgAlice;
+                    config['Carol'] = svgCarol;
+                    config['Bob'] = svgBob;
+                    config['Dave'] = svgDave;
+                  }
+                } else if (selectedStudio.type === 'law') {
+                  config['Justice'] = svgJustice;
+                  config['Solomon'] = svgSolomon;
+                  config['Scribe'] = svgScribe;
+                } else {
+                  config['Beat'] = svgBeat;
+                  config['Budget'] = svgBudget;
+                  config['Trend'] = svgTrend;
+                }
+
+                return (
+                  <div className="flex-1 flex flex-col gap-[15px] relative mt-1 overflow-hidden z-10">
+                    {/* 동적 CSS 키프레임 애니메이션 삽입 */}
+                    <style dangerouslySetInnerHTML={{ __html: OFFICE_STYLE }} />
+
+                    {/* 상단 1단: 회의실과 탕비실 나란히 50:50 배치 */}
+                    <div style={{ display: 'flex', gap: '15px', height: '170px', flexShrink: 0 }}>
+                      
+                      {/* 1. 회의실 (Conference Room) */}
+                      <div style={{ flex: 1, backgroundColor: 'rgba(168,85,247,0.05)', border: '1px dashed #581c87', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'visible' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#c084fc', fontWeight: 'bold', marginBottom: 'auto', position: 'relative', zIndex: 20, textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>📢 회의실</span>
+
+                        {/* 배경 소품: 화이트보드 */}
+                        <div style={{ position: 'absolute', top: '15px', right: '15px', width: '50px', height: '30px', backgroundColor: '#e2e8f0', borderRadius: '4px', border: '2px solid #64748b', zIndex: 1, boxShadow: 'inset 0 0 5px rgba(0,0,0,0.1)' }}>
+                          {agentsInConference ? (
+                            <svg width="50" height="30" style={{ position: 'absolute', top: 0, left: 0 }}>
+                              <polyline points="5,25 15,15 25,20 40,5" fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="50" strokeDashoffset="0">
+                                <animate attributeName="stroke-dashoffset" from="50" to="0" dur="1s" fill="freeze" />
+                              </polyline>
+                            </svg>
+                          ) : (
+                            <div style={{ position: 'absolute', bottom: '4px', left: '6px', width: '25px', height: '2px', backgroundColor: '#ef4444' }} />
+                          )}
+                        </div>
+
+                        {/* 배경 소품: 회의용 중앙 테이블 */}
+                        <div style={{ position: 'absolute', top: '55%', left: '50%', transform: 'translate(-50%, -50%)', width: '80px', height: '50px', backgroundColor: '#2d2d3a', border: `3px solid ${agentsInConference ? '#a855f7' : '#581c87'}`, borderRadius: '40px', zIndex: 5, boxShadow: agentsInConference ? '0 0 15px rgba(168,85,247,0.8)' : '0 8px 15px rgba(0,0,0,0.6)', transition: 'all 0.5s' }}>
+                          {agentsInConference && (
+                            <motion.div animate={{ opacity: [0.3, 0.8, 0.3], scale: [1, 1.2, 1] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} style={{ position: 'absolute', top: '50%', left: '50%', x: '-50%', y: '-50%', width: '30px', height: '15px', borderRadius: '50%', backgroundColor: 'rgba(168,85,247,0.5)', filter: 'blur(3px)' }} />
+                          )}
+                        </div>
+
+                        {/* 회의실 내 에이전트 캐릭터 렌더링 (원래의 50:50 Grid를 유지하며 스크롤바 영구 제거 + overflow: visible 및 zIndex 상향) */}
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: Object.keys(config).length > 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', 
+                          gap: '5px 2px', 
+                          justifyItems: 'center', 
+                          alignItems: 'end', 
+                          marginTop: '0px', 
+                          position: 'relative', 
+                          zIndex: 50,
+                          overflow: 'visible'
+                        }}>
+                          {Object.entries(config)
+                            .filter(([name]) => {
+                              const info = (agentState[name] || { room: 'DevRoom' }) as any;
+                              return info.room === 'Conference';
+                            })
+                            .map(([name, svgContent]) => {
+                              const info = (agentState[name] || { status: 'idle', room: 'DevRoom', log: '' }) as any;
+                              return (
+                                <Agent 
+                                  key={name}
+                                  name={name}
+                                  svgContent={svgContent}
+                                  showDesk={false}
+                                  isAbsent={false}
+                                  customRole={(info as any).role}
+                                  customExpertise={(info as any).expertise}
+                                  status={info.status}
+                                  log={info.log}
+                                  selectedStudioType={selectedStudio.type}
+                                />
+                              );
+                            })}
+                        </div>
+                      </div>
+
+                      {/* 2. Pantry 탕비실 (Pantry Room) */}
+                      <div style={{ flex: 1, backgroundColor: 'rgba(56,189,248,0.05)', border: '1px dashed #0c4a6e', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'visible' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#7dd3fc', fontWeight: 'bold', marginBottom: 'auto', position: 'relative', zIndex: 20, textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>☕ 휴게실</span>
+
+                        {/* 배경 소품: 커피 카운터 및 머신 */}
+                        <div style={{ position: 'absolute', top: '40px', right: '15px', width: '55px', height: '20px', backgroundColor: '#1e293b', borderRadius: '4px', borderBottom: '3px solid #0f172a', zIndex: 1 }}>
+                          <div style={{ position: 'absolute', bottom: '100%', right: '8px', width: '18px', height: '24px', backgroundColor: '#334155', borderRadius: '4px 4px 0 0', border: `1px solid ${agentsInPantry ? '#38bdf8' : '#475569'}`, transition: 'all 0.5s' }}>
+                            <div style={{ position: 'absolute', top: '5px', left: '3px', width: '10px', height: '5px', backgroundColor: '#0f172a', borderRadius: '2px' }} />
+                            <div style={{ position: 'absolute', top: '3px', right: '3px', width: '4px', height: '4px', backgroundColor: agentsInPantry ? '#4ade80' : '#38bdf8', borderRadius: '50%', boxShadow: agentsInPantry ? '0 0 8px 1px #4ade80, 0 0 15px 3px #22c55e, 0 0 25px 4px #16a34a, 0 0 40px 6px #15803d' : '0 0 5px #38bdf8', transition: 'all 0.3s' }} />
+                            {agentsInPantry && (
+                              <motion.div animate={{ y: [0, 8, 8], opacity: [0, 1, 0] }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }} style={{ position: 'absolute', top: '10px', left: '7px', width: '2px', height: '4px', backgroundColor: '#451a03' }} />
+                            )}
+                          </div>
+                          <div style={{ position: 'absolute', bottom: '100%', right: '32px', width: '8px', height: '10px', backgroundColor: '#e2e8f0', borderRadius: '1px 1px 4px 4px' }}>
+                            {agentsInPantry && (
+                              <motion.div animate={{ y: [0, -10], opacity: [0, 0.8, 0], scale: [1, 1.5] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }} style={{ position: 'absolute', top: '-8px', left: '2px', width: '3px', height: '8px', borderLeft: '2px solid rgba(255,255,255,0.6)', filter: 'blur(1px)', borderRadius: '50%', transform: 'rotate(10deg)' }} />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 배경 소품: 화분 */}
+                        <div style={{ position: 'absolute', bottom: '15px', left: '20px', zIndex: 5 }}>
+                          <div style={{ position: 'absolute', bottom: '14px', left: '-6px', width: '18px', height: '18px', backgroundColor: '#22c55e', borderRadius: '50% 0 50% 50%', transform: 'rotate(15deg)' }} />
+                          <div style={{ position: 'absolute', bottom: '12px', left: '4px', width: '20px', height: '20px', backgroundColor: '#16a34a', borderRadius: '50% 50% 50% 0', transform: 'rotate(-10deg)' }} />
+                          <div style={{ position: 'absolute', bottom: '0', left: '0', width: '16px', height: '14px', backgroundColor: '#854d0e', borderRadius: '2px', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }} />
+                        </div>
+
+                        {/* 탕비실 내 에이전트 캐릭터 렌더링 (원래의 50:50 Grid를 유지하며 스크롤바 영구 제거 + overflow: visible 및 zIndex 상향) */}
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: Object.keys(config).length > 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', 
+                          gap: '5px 2px', 
+                          justifyItems: 'center', 
+                          alignItems: 'end', 
+                          marginTop: '0px', 
+                          position: 'relative', 
+                          zIndex: 50,
+                          overflow: 'visible'
+                        }}>
+                          {Object.entries(config)
+                            .filter(([name]) => {
+                              const info = (agentState[name] || { room: 'DevRoom' }) as any;
+                              return info.room === 'Pantry';
+                            })
+                            .map(([name, svgContent]) => {
+                              const info = (agentState[name] || { status: 'idle', room: 'DevRoom', log: '' }) as any;
+                              return (
+                                <Agent 
+                                  key={name}
+                                  name={name}
+                                  svgContent={svgContent}
+                                  showDesk={false}
+                                  isAbsent={false}
+                                  status={info.status}
+                                  log={info.log}
+                                  selectedStudioType={selectedStudio.type}
+                                  customRole={info.role}
+                                  customExpertise={info.expertise}
+                                />
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 하단 2단: 메인 개발실 가로 전체 배치 */}
+                    <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid #2d2d3a', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', minHeight: '130px', overflow: 'visible' }}>
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: 'auto', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>💻 메인 개발실</span>
+                      
+                      {/* 가로 책상 및 에이전트 캐릭터 렌더링 (원래 책상 배치 간격을 100% 유지하며 스크롤바 제거 + overflow: visible 및 zIndex 상향) */}
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(4, 1fr)', 
+                        gap: '15px 5px', 
+                        justifyItems: 'center', 
+                        alignItems: 'end', 
+                        marginTop: '10px',
+                        position: 'relative',
+                        zIndex: 50,
+                        overflow: 'visible',
+                        paddingBottom: '5px'
+                      }}>
+                        {/* 💻 요원별 순차 루프 대신, 고정된 4개의 책상 시트(0~3)를 기준으로 렌더링 */}
+                        {Array.from({ length: 4 }).map((_, seatIdx) => {
+                          // 현재 이 책상 자리에 배정된 요원 찾기
+                          const assignedAgentName = Object.keys(deskAssignments).find(
+                            name => deskAssignments[name] === seatIdx
+                          );
+
+                          if (assignedAgentName) {
+                            // 배정된 요원이 있다면 해당 요원의 캐릭터와 책상을 함께 렌더링!
+                            const svgContent = config[assignedAgentName] || svgAlice;
+                            const info = (agentState[assignedAgentName] || { status: 'idle', room: 'DevRoom', log: '' }) as any;
+                            return (
+                              <Agent 
+                                key={assignedAgentName}
+                                name={assignedAgentName}
+                                svgContent={svgContent}
+                                showDesk={true}
+                                isAbsent={info.room !== 'DevRoom'}
+                                status={info.status}
+                                log={info.log}
+                                selectedStudioType={selectedStudio.type}
+                                customRole={info.role}
+                                customExpertise={info.expertise}
+                              />
+                            );
+                          } else {
+                            // 이 책상 자리가 비어 있다면, '빈 책상'을 렌더링!
+                            return (
+                              <Agent 
+                                key={`empty-seat-${seatIdx}`}
+                                name=""
+                                svgContent=""
+                                showDesk={true}
+                                isAbsent={true}
+                                status="idle"
+                                log=""
+                                selectedStudioType={selectedStudio.type}
+                              />
+                            );
+                          }
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* 터미널 로그 목록 (가운데) */}
+            <div className="flex-1 overflow-y-auto p-4 bg-[#09060c] font-mono text-xs flex flex-col gap-2 scrollbar-thin scrollbar-thumb-purple-950/30">
+              {logs.map((log, index) => {
+                const colorMap: Record<string, string> = {
+                  Alice: 'text-red-400', Carol: 'text-pink-400', Bob: 'text-sky-400', Dave: 'text-emerald-400',
+                  Justice: 'text-amber-400', Solomon: 'text-purple-400', Scribe: 'text-cyan-400',
+                  Beat: 'text-rose-400', Budget: 'text-teal-400', Trend: 'text-fuchsia-400',
+                  '대표님': 'text-yellow-400'
+                };
+                const colorClass = colorMap[log.agent] || 'text-[#cbd5e1]';
+                
+                return (
+                  <div key={index} className="leading-relaxed hover:bg-purple-950/5 p-1 rounded transition-colors flex items-start gap-1">
+                    <span className={`font-bold font-mono flex-shrink-0 ${colorClass}`}>[{log.agent}]</span>
+                    <span className={`font-mono ${log.error ? 'text-red-400 font-bold' : 'text-zinc-300'}`}>
+                      {log.msg}
+                    </span>
+                  </div>
+                );
+              })}
+              
+              {logs.length === 0 && (
+                <div className="flex-1 flex items-center justify-center flex-col gap-2 opacity-30 select-none">
+                  <Bot size={32} className="text-purple-900" />
+                  <span className="text-[10px] text-zinc-500 font-mono">시뮬레이션 로그가 이곳에 표시됩니다.</span>
+                </div>
+              )}
+              
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* 업무 지시 패널 (하단) */}
+            <div className="p-3 bg-[#110b19] border-t border-[#2d223c] flex-shrink-0 flex flex-col gap-2">
+              
+              {/* 동적 지시 성격 구분 라벨 및 초기화 단추 */}
+              <div className="flex justify-between items-center px-1 py-0.5 select-none">
+                <div className="flex items-center">
+                  <span className={`text-[10px] font-extrabold px-4 py-1.5 rounded-md ${artifacts.length > 0 ? 'bg-purple-950/60 text-purple-300 border border-purple-800/40' : 'bg-blue-950/60 text-blue-300 border border-blue-800/40'}`}>
+                    {artifacts.length > 0 ? '✍️ 수정 작업 지시 상태' : '🌠 신규 업무 지시 상태'}
+                  </span>
+                </div>
+                
+                {artifacts.length > 0 && (
+                  <button 
+                    disabled={isWorking}
+                    onClick={() => {
+                      if (confirm('정말로 이 스튜디오의 아카이브 기록을 모두 초기화하고 완전히 처음부터 신규 업무 지시를 내리시겠습니까?')) {
+                        socket?.emit('reset_studio_state', selectedStudio.id);
+                        setTaskInput('');
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 text-[10px] font-extrabold px-4 py-1.5 rounded-lg border transition-all ${isWorking ? 'bg-zinc-800 text-zinc-500 border-zinc-700/50 cursor-not-allowed' : 'bg-purple-600 text-white border-purple-500 hover:bg-purple-500 shadow-sm'}`}
+                  >
+                    <RefreshCw size={10} />
+                    <span>🌠 새 작업지시</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 파일 첨부 미리보기 */}
+              {attachments.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-1 max-w-full">
+                  {attachments.map((file, idx) => (
+                    <div key={idx} className="relative w-11 h-11 border border-purple-800/40 rounded-lg overflow-hidden bg-purple-950/20 flex-shrink-0 group">
+                      {file.mimeType.startsWith('image/') ? (
+                        <img src={file.url} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[8px] font-bold text-purple-300 font-mono">DOC</div>
+                      )}
+                      <button 
+                        onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
+                        className="absolute inset-0 bg-black/60 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 인풋 영역 */}
+              <div className="flex items-center gap-2">
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  multiple 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                />
+                
+                {/* 첨부단추 */}
+                <button 
+                  disabled={isWorking}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-2.5 rounded-lg border transition-all ${isWorking ? 'text-zinc-600 border-zinc-900 cursor-not-allowed' : 'text-purple-400 border-purple-800/40 hover:bg-purple-950/20 hover:text-white'}`}
+                  title="파일 첨부"
+                >
+                  <Paperclip size={15} />
+                </button>
+
+                {/* 텍스트 인풋 */}
+                <textarea 
+                  disabled={isWorking}
+                  value={taskInput}
+                  onChange={(e) => setTaskInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendTask();
+                    }
+                  }}
+                  placeholder={isWorking ? "🤖 AI 에이전트들이 작업 지시를 받아 열일하는 중입니다..." : (artifacts.length > 0 ? "스튜디오에 피드백(수정 작업 지시)을 남겨주세요... (엔터 전송)" : "스튜디오에 지시할 신규 개발/자문 업무 내용을 상세히 입력해주세요... (엔터 전송)")}
+                  className={`flex-1 px-3 py-2 rounded-xl border text-xs focus:outline-none resize-none font-sans leading-relaxed h-24 overflow-y-auto scrollbar-thin transition-all ${isWorking ? 'bg-[#1a1226]/50 border-purple-900/20 text-zinc-500 cursor-not-allowed' : 'bg-[#0a050f] border-purple-800/40 text-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600/40'}`}
+                />
+
+                {/* 전송단추 */}
+                <button 
+                  disabled={isWorking || (!taskInput.trim() && attachments.length === 0)}
+                  onClick={handleSendTask}
+                  className={`px-4 py-2 h-10 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 flex-shrink-0 ${isWorking || (!taskInput.trim() && attachments.length === 0) ? 'bg-zinc-800 text-zinc-500 border border-zinc-700/50 cursor-not-allowed' : 'bg-purple-600 text-white border border-purple-500 hover:bg-purple-500'}`}
+                >
+                  <Send size={12} />
+                  <span>전송</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+          {/* ==========================================
+              [우측 서브 사이드바] 스튜디오 산출물 아카이브
+             ========================================== */}
+          {(!isMobile || activeMobileView === 'archive') && (
+            <div className={`${isMobile ? 'w-full' : 'w-80'} flex flex-col h-full bg-[#150e1e] flex-shrink-0 select-none`}>
+              
+              {/* 헤더 */}
+              <div className="p-4 border-b border-[#2d223c] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {isMobile && (
+                    <button
+                      onClick={() => setActiveMobileView('detail')}
+                      className="p-1 rounded-lg bg-[#2b1f3c] text-purple-300 hover:text-white transition-all mr-1"
+                    >
+                      <ArrowLeft size={14} />
+                    </button>
+                  )}
+                  <Server size={15} className="text-purple-400 animate-pulse" />
+                  <span className="text-xs font-extrabold text-purple-200 tracking-wider font-sans uppercase">아카이브</span>
+                </div>
+                {isMobile && (
+                  <span className="text-[10px] font-mono text-purple-400 bg-purple-950/30 px-2 py-0.5 rounded-full border border-purple-900/20">
+                    총 {artifacts.length}개
+                  </span>
+                )}
+              </div>
+
+            {/* 아카이브 목록 */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-purple-950/20">
+              {artifacts.map((art, index) => {
+                const gradients = [
+                  'from-[#1e1b4b] to-[#312e81]',
+                  'from-[#2e1065] to-[#4c1d95]',
+                  'from-[#0f172a] to-[#1e3a8a]',
+                  'from-[#064e3b] to-[#065f46]'
+                ];
+                const bgGradient = gradients[index % gradients.length];
+                const isGame = selectedStudio.type === 'game';
+
+                return (
+                  <div 
+                    key={art.id}
+                    className={`p-3.5 rounded-xl border border-purple-800/20 bg-gradient-to-br ${bgGradient} shadow-md flex flex-col gap-3 transition-transform hover:scale-[1.01]`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[11px] font-extrabold text-zinc-100 truncate tracking-tight">{art.name}</span>
+                        <span className="text-[8px] text-purple-300/80 font-mono tracking-tighter mt-1">{new Date(art.createdAt).toLocaleString('ko-KR')}</span>
+                      </div>
+                      
+                      <button 
+                        onClick={(e) => handleDeleteArtifact(art.id, e)}
+                        className="p-1 text-zinc-400 hover:text-red-400 hover:bg-black/20 rounded-md transition-colors flex-shrink-0"
+                        title="산출물 삭제"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+
+                    {/* 인터랙티브 제어 버튼 파트 */}
+                    <div className="flex gap-1.5 flex-wrap">
+                      {isGame ? (
+                        <>
+                          {/* 게임 실행 */}
+                          <button 
+                            onClick={() => window.open(art.fileUrl, '_blank')}
+                            className="flex-1 min-w-[50px] py-1.5 rounded-lg bg-blue-600/90 text-white font-extrabold text-[10px] shadow hover:bg-blue-500 flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <Play size={10} fill="currentColor" />
+                            실행
+                          </button>
+                          
+                          {/* 소스 수정 */}
+                          <button 
+                            onClick={() => handleOpenEditor(art)}
+                            className="flex-1 min-w-[50px] py-1.5 rounded-lg bg-zinc-800 text-zinc-200 font-extrabold text-[10px] border border-zinc-700/50 hover:bg-zinc-700 hover:text-white flex items-center justify-center gap-1 transition-colors"
+                          >
+                            소스
+                          </button>
+
+                          {/* PM2 런칭 */}
+                          {art.isDeployed ? (
+                            <button 
+                              disabled={isDeploying === art.id}
+                              onClick={() => handleUndeployGame(art)}
+                              className="flex-1 min-w-[50px] py-1.5 rounded-lg bg-red-900/80 text-white font-extrabold text-[10px] hover:bg-red-800 flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                            >
+                              회수
+                            </button>
+                          ) : (
+                            <button 
+                              disabled={isDeploying === art.id}
+                              onClick={() => handleDeployGame(art)}
+                              className="flex-1 min-w-[50px] py-1.5 rounded-lg bg-purple-600 text-white font-extrabold text-[10px] hover:bg-purple-500 flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                            >
+                              런칭
+                            </button>
+                          )}
+
+                          {/* 품질 검수 */}
+                          <button 
+                            disabled={isWorking}
+                            onClick={() => handleRunManualQA(art)}
+                            className="p-1.5 rounded-lg bg-emerald-600/90 text-white font-extrabold text-[10px] hover:bg-emerald-500 flex items-center justify-center gap-1 transition-colors disabled:opacity-40"
+                            title="Dave 수동 정밀 검수"
+                          >
+                            <ShieldCheck size={12} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* 문서 뷰어 팝업 */}
+                          <button 
+                            onClick={() => setViewDoc(art)}
+                            className="flex-1 py-1.5 rounded-lg bg-blue-600 text-white font-extrabold text-[10px] shadow hover:bg-blue-500 flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <Play size={10} fill="currentColor" />
+                            문서 보기
+                          </button>
+                          
+                          {/* 클립보드 복사 */}
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(art.content || '');
+                              alert('문서 본문이 클립보드에 복사되었습니다!');
+                            }}
+                            className="flex-1 py-1.5 rounded-lg bg-[#2c1d3c] text-purple-300 font-extrabold text-[10px] border border-purple-800/30 hover:bg-[#3d2c52] hover:text-white flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <Copy size={10} />
+                            복사
+                          </button>
+
+                          {/* 다운로드 */}
+                          <button 
+                            onClick={() => handleDownloadDoc(art)}
+                            className="flex-1 py-1.5 rounded-lg bg-zinc-800 text-zinc-200 font-extrabold text-[10px] border border-zinc-700/50 hover:bg-zinc-700 hover:text-white flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <Download size={10} />
+                            다운
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {artifacts.length === 0 && (
+                <div className="text-center py-24 opacity-30 select-none">
+                  <Bot size={32} className="mx-auto text-purple-900 mb-3" />
+                  <p className="text-[10px] text-zinc-500 font-mono">생성된 아카이브가 없습니다.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  )
+      : (
+        /* 개설된 스튜디오가 전혀 없거나 선택하지 않았을 때의 웰컴 스크린 */
+        (!isMobile || activeMobileView !== 'list') && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 select-none p-8 text-center bg-[#0a050f]">
+            <div className="w-16 h-16 rounded-2xl bg-purple-950/20 border border-purple-850/40 flex items-center justify-center text-purple-400 shadow-xl animate-bounce" style={{ animationDuration: '3s' }}>
+              <Building2 size={32} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <h2 className="text-sm font-extrabold text-purple-200 tracking-wider">알로팝 다중 분야 AI 스튜디오</h2>
+              <p className="text-[11px] text-zinc-500 leading-relaxed max-w-sm">좌측 목록에서 기존 개설된 AI 스튜디오 방에 입장하시거나, <br />새로운 전문 영역(게임, 법률, 공연 등)의 스튜디오를 직접 만들어 보세요!</p>
+            </div>
+            <button 
+              onClick={() => setShowCreateModal(true)}
+              className="mt-2 px-5 py-2.5 rounded-xl bg-purple-600 text-white border border-purple-500 text-xs font-bold shadow-lg hover:bg-purple-500 hover:scale-105 transition-all flex items-center gap-2"
+            >
+              <Plus size={14} />
+              새 스튜디오 생성
+            </button>
+          </div>
+        )
+      )}
+
+      {/* ==========================================
+          [신규 생성 모달창] (새 스튜디오 개설 팝업)
+         ========================================== */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-[1000] bg-black/75 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl max-h-[85vh] overflow-y-auto bg-[#1d142b] border border-[#3b2d52] rounded-2xl p-6 shadow-2xl flex flex-col gap-4 font-sans animate-fade-in select-none scrollbar-thin scrollbar-thumb-purple-950/40">
+            <div className="flex items-center justify-between border-b border-[#3b2d52] pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-purple-400" />
+                <span className="font-extrabold text-xs tracking-wider text-purple-200">새 AI 협업 스튜디오 생성</span>
+              </div>
+              <button 
+                onClick={() => setShowCreateModal(false)}
+                className="text-zinc-500 hover:text-white p-1 hover:bg-[#2b1f3c] rounded-md transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* 입력 폼 */}
+            <div className="flex flex-col gap-4">
+              
+              {/* 스튜디오 타입 선택 */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">전문 업무 영역 선택</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'game', label: '🎮 게임 개발', color: 'border-purple-600 bg-purple-950/20 text-purple-200' },
+                    { id: 'law', label: '⚖️ 법무법인', color: 'border-yellow-600 bg-yellow-950/20 text-yellow-200' },
+                    { id: 'concert', label: '✨ 기획/행사', color: 'border-rose-600 bg-rose-950/20 text-rose-200' }
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setNewStudioType(t.id);
+                        if (t.id !== 'game') {
+                          setNewStudioAgentCount(3);
+                        } else {
+                          setNewStudioAgentCount(4);
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-xl border text-[10px] font-extrabold transition-all text-center ${newStudioType === t.id ? t.color + ' border-[2px]' : 'border-purple-800/10 bg-[#0b0512] text-zinc-500 hover:border-purple-800/30 hover:text-zinc-300'}`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 스튜디오 이름 */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">스튜디오 이름</label>
+                <input 
+                  type="text" 
+                  value={newStudioName}
+                  onChange={(e) => setNewStudioName(e.target.value)}
+                  placeholder="예: 알로팝 게임 개발센터, 법무법인 솔로몬"
+                  className="bg-[#0b0512] border border-purple-800/30 text-white rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600/40"
+                />
+              </div>
+
+              {/* 업무 세부 범위 내용 */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">수행할 전문 업무 및 지시 개요 (기획안)</label>
+                <textarea 
+                  value={newStudioDesc}
+                  onChange={(e) => setNewStudioDesc(e.target.value)}
+                  placeholder={newStudioType === 'game' ? "개발할 게임의 장르, 규칙, 플레이 방식 등을 디테일하게 지시해주세요..." : (newStudioType === 'law' ? "자문이 필요한 법률 쟁점이나 사안, 계약서 형태 등을 입력해주세요..." : "페스티벌의 테마, 라인업 예산, 개최 일자 범위 등을 작성해주세요...")}
+                  className="bg-[#0b0512] border border-purple-800/30 text-white rounded-xl px-3.5 py-2 text-xs h-20 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600/40 resize-none scrollbar-thin scrollbar-thumb-purple-950/40"
+                />
+              </div>
+
+              {/* 기용할 에이전트 직원수 (게임스튜디오 한정) */}
+              {newStudioType === 'game' && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">기용할 AI 에이전트 직원 수</label>
+                    <span className="text-[10px] font-extrabold text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/40">{newStudioAgentCount}명 기용</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="2"
+                    max="8"
+                    step="1"
+                    value={newStudioAgentCount}
+                    onChange={(e) => setNewStudioAgentCount(parseInt(e.target.value))}
+                    className="w-full accent-purple-600 bg-purple-950/30 h-1.5 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span className="text-[8px] text-zinc-500 tracking-tight">직원 수에 맞춰 가상 오피스 개발실의 책상 수와 렌더링이 자동으로 확장됩니다. (2인~8인)</span>
+                </div>
+              )}
+
+              {/* 에이전트 개별 맞춤 설정 (게임스튜디오 한정) */}
+              {newStudioType === 'game' && (
+                <div className="flex flex-col gap-2 border-t border-[#3b2d52]/30 pt-3">
+                  <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">부서 배치 및 전문 분야 (성격) 설정</label>
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-purple-950/40">
+                    {Array.from({ length: newStudioAgentCount }).map((_, idx) => {
+                      const baseAgents = ['Alice', 'Carol', 'Bob', 'Dave', 'Eve', 'Frank', 'Grace', 'Hank'];
+                      const name = baseAgents[idx];
+                      const config = newStudioAgentsConfig.find(a => a.name === name) || { name, role: '기획', expertise: '' };
+                      
+                      const roleOptions = ['기획', '디자인', '개발', 'QA', '마케팅', '보안', 'CS', '테스터'];
+
+                      return (
+                        <div key={name} className="bg-[#0b0512]/60 p-3 rounded-xl border border-purple-950 flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-extrabold text-white flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: name === 'Alice' ? '#ff4d4d' : (name === 'Carol' ? '#ffb3ff' : (name === 'Bob' ? '#4da6ff' : (name === 'Dave' ? '#33cc33' : (name === 'Eve' ? '#ec4899' : (name === 'Frank' ? '#10b981' : (name === 'Grace' ? '#8b5cf6' : '#f59e0b')))))) }} />
+                              {name} 요원
+                            </span>
+                            
+                            <select
+                              value={config.role}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, role: val } : a));
+                              }}
+                              className="bg-[#12071d] border border-purple-900/30 text-purple-300 text-[9px] font-bold rounded px-1.5 py-0.5 focus:outline-none"
+                            >
+                              {roleOptions.map(r => (
+                                <option key={r} value={r}>{r} 부서</option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          <input
+                            type="text"
+                            value={config.expertise}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, expertise: val } : a));
+                            }}
+                            placeholder={`${name} 요원의 세부 전문성/페르소나 (예: 시니어 3D 물리엔진 마스터)`}
+                            className="bg-[#0c0615] border border-purple-950 text-zinc-300 rounded-lg px-2.5 py-1 text-[9px] focus:outline-none focus:border-purple-800"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* 하단 제어 */}
+            <div className="flex gap-2 justify-end pt-2 border-t border-[#3b2d52]/50">
+              <button 
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white text-[10px] font-bold transition-all border border-zinc-700/50"
+              >
+                취소
+              </button>
+              <button 
+                disabled={!newStudioName.trim()}
+                onClick={handleCreateStudio}
+                className={`px-5 py-2 rounded-xl text-[10px] font-extrabold transition-all ${newStudioName.trim() ? 'bg-purple-600 text-white hover:bg-purple-500 border border-purple-500 shadow-md' : 'bg-zinc-900 text-zinc-600 border border-zinc-800 cursor-not-allowed'}`}
+              >
+                스튜디오 개설
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          [마크다운 문서 뷰어 / 코드 에디터 모달]
+         ========================================== */}
+      {viewDoc && (
+        <div className="fixed inset-0 z-[1000] bg-black/85 flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="w-full max-w-4xl h-[85vh] bg-[#1a1226] border border-purple-900/30 rounded-2xl shadow-2xl flex flex-col font-sans overflow-hidden">
+            {/* 모달 헤더 */}
+            <div className="p-4 border-b border-purple-900/20 bg-[#140e1e] flex items-center justify-between flex-shrink-0 select-none">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-purple-400" />
+                <span className="font-extrabold text-xs text-purple-200 tracking-wider">
+                  {viewDoc.name} {showEditor ? '소스 편집기' : '상세 뷰어'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* 에디터와 일반 뷰어 전환 단추 (HTML 게임일 때만 소스 직접 편집 제공) */}
+                {selectedStudio.type === 'game' && !showEditor && (
+                  <button 
+                    onClick={() => handleOpenEditor(viewDoc)}
+                    className="px-3.5 py-1.5 rounded-lg bg-purple-900/30 border border-purple-800/40 text-purple-300 text-[10px] font-bold hover:bg-purple-800/50 hover:text-white transition-all shadow-sm"
+                  >
+                    소스코드 직접 편집
+                  </button>
+                )}
+                
+                {/* 닫기 */}
+                <button 
+                  onClick={() => {
+                    setViewDoc(null);
+                    setShowEditor(false);
+                  }}
+                  className="text-zinc-500 hover:text-white p-1 hover:bg-[#2b1f3c] rounded-md transition-colors"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+
+            {/* 본문 콘텐츠 스크롤 뷰 */}
+            <div className="flex-1 overflow-y-auto p-5 bg-[#0a050f] scrollbar-thin scrollbar-thumb-purple-950/20">
+              {showEditor ? (
+                /* 1. 소스 에디터 모드 */
+                <textarea 
+                  value={editorCode}
+                  onChange={(e) => setEditorCode(e.target.value)}
+                  className="w-full h-full bg-[#050209] border border-purple-950 text-emerald-400 font-mono text-xs p-4 rounded-xl focus:outline-none focus:border-purple-800 focus:ring-1 focus:ring-purple-900/50 leading-relaxed overflow-y-auto select-text scrollbar-thin"
+                  style={{ tabSize: 2 }}
+                />
+              ) : (
+                /* 2. 일반 마크다운 문서 렌더러 모드 (CSS 예쁘게 렌더링) */
+                <div className="prose prose-invert prose-purple max-w-none text-zinc-300 leading-relaxed font-sans text-xs select-text">
+                  {viewDoc.content ? (
+                    viewDoc.content.split('\n').map((line: string, idx: number) => {
+                      if (line.startsWith('# ')) {
+                        return <h1 key={idx} className="text-lg font-extrabold text-purple-300 mt-6 mb-3 pb-1.5 border-b border-purple-900/30 font-sans tracking-wide">{line.replace('# ', '')}</h1>;
+                      } else if (line.startsWith('## ')) {
+                        return <h2 key={idx} className="text-sm font-extrabold text-purple-400 mt-5 mb-2.5 font-sans tracking-wide">{line.replace('## ', '')}</h2>;
+                      } else if (line.startsWith('### ')) {
+                        return <h3 key={idx} className="text-xs font-bold text-cyan-400 mt-4 mb-2 font-sans">{line.replace('### ', '')}</h3>;
+                      } else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+                        return <li key={idx} className="ml-4 list-disc mb-1 text-zinc-300 leading-snug">{line.replace(/^[-*]\s+/, '')}</li>;
+                      } else if (line.trim().startsWith('> ')) {
+                        return <blockquote key={idx} className="border-l-4 border-purple-600 bg-purple-950/15 p-3 rounded-r-lg my-3 font-sans italic text-zinc-400">{line.replace(/^>\s+/, '')}</blockquote>;
+                      } else if (line.trim() === '---') {
+                        return <hr key={idx} className="border-purple-900/20 my-4" />;
+                      } else if (line.trim() === '') {
+                        return <div key={idx} className="h-2" />;
+                      }
+                      return <p key={idx} className="mb-2 leading-relaxed text-zinc-300">{line}</p>;
+                    })
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-24 gap-3 opacity-30 select-none">
+                      <AlertCircle size={32} className="text-zinc-500" />
+                      <span className="font-mono">본문이 비어있거나 올바른 문서 포맷이 아닙니다.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 모달 하단 제어 */}
+            <div className="p-4 border-t border-purple-900/20 bg-[#140e1e] flex justify-between items-center flex-shrink-0 select-none">
+              <div className="text-[10px] text-zinc-500 font-mono tracking-tight">
+                {viewDoc.fileUrl ? `물리주소: ${viewDoc.fileUrl}` : `데이터베이스 텍스트 보관중`}
+              </div>
+              
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    setViewDoc(null);
+                    setShowEditor(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white text-[10px] font-bold transition-all border border-zinc-700/50"
+                >
+                  {showEditor ? '취소' : '닫기'}
+                </button>
+                
+                {showEditor ? (
+                  <button 
+                    onClick={handleSaveEditor}
+                    className="px-5 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-500 border border-purple-500 text-[10px] font-extrabold shadow-md transition-all"
+                  >
+                    수정 소스 저장
+                  </button>
+                ) : (
+                  !viewDoc.fileUrl && (
+                    <button 
+                      onClick={() => handleDownloadDoc(viewDoc)}
+                      className="px-5 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500 border border-blue-500 text-[10px] font-extrabold shadow-md transition-all flex items-center gap-1.5"
+                    >
+                      <Download size={11} />
+                      문서 다운로드
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
