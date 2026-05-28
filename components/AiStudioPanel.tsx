@@ -50,12 +50,175 @@ const CHATTER: Record<string, string[]> = {
   Carol: ['디자인 픽싱 중...', '컬러 매칭...', 'UI 위치 조정...', '여긴 여백이 더 필요해', '이 폰트는 좀 깨지네...', '애니메이션 효과 생각 중', '로고 시안 작업...', '피그마 컴포넌트 묶기', '디자인 시스템 수정 중', '여기에 그라데이션 넣을까?', 'CSS 값 추출 중', '다크모드 컬러 잡기', '버튼 크기가 좀 작나?', '이 아이콘이 더 직관적이네', '벡터 이미지 따는 중', '개발 리소스 내보내기', '마진 몇으로 했더라?', '폰트 자간 조절...', '타이포그래피 테스트', '모바일 화면에서 어떨지 상상 중', '이 레이아웃 깔끔하네', '와이어프레임 바탕으로 시안 그리기', '핸드오프 준비', '이펙트는 은은하게...'],
   Bob: ['코드 작성 중...', '디버깅 진행...', '빌드 컴파일링...', '아, 오타 잡았다!', '왜 여기서 랜더링이 안 되지?', '스택오버플로우 검색 중...', '의존성 패키지 설치...', 'NPM 인스톨 중', '아 깃 충돌 났네 ㅠㅠ', '코드 포맷터 돌리는 중', '메모리 누수 잡는 중', 'Vite 빌드는 빠르네', '이거 레거시 코드 같은데...', '리팩토링 각 섰다', '아, API 아직 안 나왔구나', '이 변수명 뭐로 짓지?', '클린 코드 책 좀 봐야겠다', '비동기 처리 버그 잡는 중', '콘솔창이 빨갛네요', '무한 루프 돌았네 ㄷㄷ', '앗, 오타... 세미콜론!', '깃허브에 푸시 중...', 'PR 리뷰 남기는 중', '코드 한 줄 짰는데 1시간 지남...'],
   Dave: ['테스트 케이스 작성...', '로그 확인 중...', 'QA 검수 중...', '이 버튼 왜 두 번 눌리죠?', '이거 예외 처리 안 됐네요.', '오, 여긴 완벽하네.', '모바일에서 텍스트 잘려요', '재현 경로 캡처 중', '버그 리포트 작성', '이거 기획 버그인가요?', '엣지 케이스 테스트', '여기서 뒤로가기 누르면 뻗네요', '오류 팝업이 안 떠요', '네트워크 끊고 테스트해볼게요', '앱이 크래시납니다', '다크모드에서 흰 글씨가 안 보여요', '반응형인데 모바일에서 깨져요', '퍼포먼스 테스트 중...', '메모리 점유율이 너무 높아요', '로딩 스피너가 무한정 돕니다', '화면 렌더링이 느려요', '캐시 지우고 다시 해볼게요', '이거 기수정 버그 아닌가요?', '이 기능 스펙 아웃됐나요?'],
-  Justice: ['법률 판례 검색 중...', '소장 초안 작성...', '리서치 진행...', '계약 조건 검토 중', '아, 이 조항은 뺄까요?', '법적 쟁점 요약', '변론 전략 구상...', '판결문 분석 중', '의뢰인 면담 준비', '법률 문서 작성 중...', '변론 요지서 점검', '유사 소송 리포트 조사'],
-  Solomon: ['솔로몬 지혜 동원 중...', '분석 리포트 초안...', '사실 관계 확인 중', '쟁점 요약 정리', '이 판결이 맞을까?', '증거 자료 취합 중', '핵심 논쟁 분석', '승소 확률 시뮬레이션', '최종 판결 제안서 구성', '조정 안 작성 중...'],
-  Scribe: ['사건 기록 속기 중...', '조서 타이핑 중...', '공판 서류 정리...', '아, 속기 오타 수정', '기록 백업 보강', '속기 키보드 점검', '녹취록 대조 중', '문서 번역 진행', '이 발언 기록할게요', '회의록 작성 완료 중'],
-  Beat: ['비트 및 음악 구상 중...', '곡 콘셉트 기획...', '장르 방향성 타진', '무대 동선 체크', '여긴 코러스를 넣자', '가사 아이디어 메모', '믹싱 밸런스 잡기', '싱크 테스트 중', '뮤지션 매칭 일정 점검', '공연 WBS 작성', '무대 시퀀서 세팅'],
-  Budget: ['예산 비율 조율 중...', '지출 리포트 작성...', '손익분기점 시뮬레이션', '아, 여긴 삭감할게요', '세금 공제 조건 체크', '영수증 정산 처리', '제작비 원가 계산', '협찬금 배분 비중 분석', '티켓 매출 추정 중', '정산서 세부 점검'],
-  Trend: ['시장 트렌드 분석 중...', 'SNS 챌린지 기획...', '마케팅 카피 작문', '여기에 포인트를 주자', '인플루언서 섭외', '광고 효율 계산 중', '해시태그 발굴 중', '보도자료 배포 대기', '팬덤 피드백 점검', '바이럴 영상 기획']
+  Justice: [
+    '이 대법원 판례 인용하면 승소율 올라가겠네.',
+    '의뢰인의 정당한 권리를 변호하겠습니다.',
+    '계약서 제5조 제2항의 독소조항을 찾아냈어요.',
+    '상대방 소송 대리인의 준비서면을 정독 중입니다.',
+    '손해배상 청구 취지를 더 명확히 정돈해야 해요.',
+    '의뢰인 보호를 위한 법적 안전장치 확보!',
+    '법리와 사실관계를 대조하는 중입니다.',
+    '헌법 정신과 법률 규정에 따른 철저한 변론 전략.',
+    '이 사건은 형사보다는 민사 조정을 먼저 타진하죠.',
+    '상고 이유서 초안 구성 중...',
+    '가처분 신청서 요건 세부 검토 중',
+    '법원 행정처 최신 실무 지침 확인 완료'
+  ],
+  Solomon: [
+    '유사한 민사 하급심 판례 12건을 정밀 분석했어요.',
+    '상대측 주장의 모순점을 논리적으로 입증해 보겠습니다.',
+    '사실 관계를 뒤집을 수 있는 스모킹 건을 확보 중...',
+    '이 판결이 나온 역사적 맥락을 분석해야 합니다.',
+    '증거 자료의 신빙성 여부를 엄격하게 감정 중.',
+    '법리적 예외 조항이 적용될 수 있는지 서칭 중...',
+    '승소 확률 92% 시뮬레이션 결과가 나왔습니다.',
+    '조정안 합의 가이드라인을 최종 도출하는 중.',
+    '사건의 쟁점과 증거 효력을 매핑하고 있어요.',
+    '검찰 측 제출 증거의 오류 여부 재검토',
+    '판례 데이터베이스 크로스 체크 진행 중',
+    '과실 비율 분석 통계 모델 구동 중...'
+  ],
+  Scribe: [
+    '증인 신문 조서 속기록을 신속하게 텍스트화 중...',
+    '공판 기일 기록을 100% 무결하게 백업 완료.',
+    '녹취록의 잡음을 제거하고 발언을 한 자도 빠짐없이 속기 중.',
+    '사건 철 파일링 시스템을 체계화하고 있습니다.',
+    '속기 키보드의 압력 센서를 체크하는 중.',
+    '공판 자료 번역본을 대조하여 교정하고 있어요.',
+    '대표변호사님 변론 요지 속기 준비 완료!',
+    '재판 기록의 보관 시한과 법적 보안 규정 검토.',
+    '속기 오타 하나가 판결을 바꿀 수도 있습니다. 신중하게...',
+    '공판 속기 단축키 데이터베이스 갱신 중',
+    '사건 접수 번호별 디지털 카탈로깅 작업',
+    '서면 제출 전 최종 오탈자 전수 교열 중'
+  ],
+  Beat: [
+    '무대 연출 콘셉트를 ‘도심 속의 자연’으로 확정합니다.',
+    '공연 큐시트 초안을 타임라인별로 세밀하게 밸런싱 중...',
+    '아티스트 대기실 동선과 무대 진입 경로가 겹치지 않게 조율!',
+    '무대 조명 연출 시퀀서를 비트에 맞춰 동기화하는 중.',
+    '메인 오프닝 곡의 코러스 구간에 폭죽 특수효과 세팅.',
+    '관객 안전 사고 방지를 위한 경호 구역 배치도 확인 중.',
+    '음향 반사판 위치를 미세 조정하여 완벽한 음향 분산 도모.',
+    '무대 중앙 특수 LED 스크린 재생 소스 테스트 중.',
+    '감독관들과 리허설 무전기 채널 맞추기.',
+    '오케스트라 악기 세팅 및 헤드룸 밸런스 체크',
+    '인이어 모니터링 주파수 신호 간섭 확인',
+    '리허설 녹화본 프레임별 모니터링 진행'
+  ],
+  Budget: [
+    '티켓 판매 수수료를 감안한 BEP(손익분기점) 재산출 중.',
+    '음향 및 특수효과 외주 비용 단가를 조정하고 있습니다.',
+    '스폰서십 기업들과 매칭 펀드 비율 최종 협의 중.',
+    '제작 원가 대비 협찬금 확보율 120% 달성 전략 수립.',
+    '현장 굿즈(MD) 판매 매출 정산서 세부 마감 중.',
+    '부가가치세 및 원천세 공제 세율을 정밀하게 대입합니다.',
+    '행사장 대관료 선금 지급 전표 결재 승인 중.',
+    '마케팅 예산이 손실 없이 효율적으로 투입되도록 감시 중.',
+    '예비비를 8% 추가 확보하여 예상치 못한 지출에 대비.',
+    '카드사 제휴 티켓 할인 분담금 비율 계산',
+    '아티스트 출연료 송금 전표 최종 결재',
+    '행사 보증보험 가입 요율 대조 중...'
+  ],
+  Trend: [
+    'MZ세대를 타깃으로 한 인스타그램 쇼츠 바이럴 기획 중!',
+    '네이버 티켓 예매 오픈 30분 전 사전 알림 이벤트를 세팅합니다.',
+    '인플루언서 섭외 단가와 홍보 피드 가이드를 정돈 중.',
+    '공연 공식 포스터 메인 카피: ‘당신의 감성을 두드릴 단 하나의 무대’',
+    '보도자료 배포 시점을 포털 메인 노출 시간대에 맞추어 대기.',
+    '네티즌 피드백 빅데이터를 수집하여 바이럴 톤앤매너 수정.',
+    '사전 예매자 대상의 한정판 MD 증정 이벤트 챌린지 구성.',
+    '광고비 대비 전환율(ROAS)이 350%를 돌파했습니다!',
+    '공식 팬덤 커뮤니티에 특별 메시지 발송 대기 중.',
+    '유튜브 숏츠용 아티스트 응원 인터뷰 편집 기획',
+    '카카오톡 플러스친구 타겟 메시지 카피 라이팅',
+    '구글 애널리틱스 연령별 유입 분석 차트 점검'
+  ],
+  // 법률 및 공연 한국식 이름 CHATTER 바인딩 추가
+  '임변호': [
+    '이 대법원 판례 인용하면 승소율 올라가겠네.',
+    '의뢰인의 정당한 권리를 변호하겠습니다.',
+    '계약서 제5조 제2항의 독소조항을 찾아냈어요.',
+    '상대방 소송 대리인의 준비서면을 정독 중입니다.',
+    '손해배상 청구 취지를 더 명확히 정돈해야 해요.',
+    '의뢰인 보호를 위한 법적 안전장치 확보!',
+    '법리와 사실관계를 대조하는 중입니다.',
+    '헌법 정신과 법률 규정에 따른 철저한 변론 전략.',
+    '이 사건은 형사보다는 민사 조정을 먼저 타진하죠.',
+    '상고 이유서 초안 구성 중...',
+    '가처분 신청서 요건 세부 검토 중',
+    '법원 행정처 최신 실무 지침 확인 완료'
+  ],
+  '지분석': [
+    '유사한 민사 하급심 판례 12건을 정밀 분석했어요.',
+    '상대측 주장의 모순점을 논리적으로 입증해 보겠습니다.',
+    '사실 관계를 뒤집을 수 있는 스모킹 건을 확보 중...',
+    '이 판결이 나온 역사적 맥락을 분석해야 합니다.',
+    '증거 자료의 신빙성 여부를 엄격하게 감정 중.',
+    '법리적 예외 조항이 적용될 수 있는지 서칭 중...',
+    '승소 확률 92% 시뮬레이션 결과가 나왔습니다.',
+    '조정안 합의 가이드라인을 최종 도출하는 중.',
+    '사건의 쟁점과 증거 효력을 매핑하고 있어요.',
+    '검찰 측 제출 증거의 오류 여부 재검토',
+    '판례 데이터베이스 크로스 체크 진행 중',
+    '과실 비율 분석 통계 모델 구동 중...'
+  ],
+  '서기록': [
+    '증인 신문 조서 속기록을 신속하게 텍스트화 중...',
+    '공판 기일 기록을 100% 무결하게 백업 완료.',
+    '녹취록의 잡음을 제거하고 발언을 한 자도 빠짐없이 속기 중.',
+    '사건 철 파일링 시스템을 체계화하고 있습니다.',
+    '속기 키보드의 압력 센서를 체크하는 중.',
+    '공판 자료 번역본을 대조하여 교정하고 있어요.',
+    '대표변호사님 변론 요지 속기 준비 완료!',
+    '재판 기록의 보관 시한과 법적 보안 규정 검토.',
+    '속기 오타 하나가 판결을 바꿀 수도 있습니다. 신중하게...',
+    '공판 속기 단축키 데이터베이스 갱신 중',
+    '사건 접수 번호별 디지털 카탈로깅 작업',
+    '서면 제출 전 최종 오탈자 전수 교열 중'
+  ],
+  '오기획': [
+    '무대 연출 콘셉트를 ‘도심 속의 자연’으로 확정합니다.',
+    '공연 큐시트 초안을 타임라인별로 세밀하게 밸런싱 중...',
+    '아티스트 대기실 동선과 무대 진입 경로가 겹치지 않게 조율!',
+    '무대 조명 연출 시퀀서를 비트에 맞춰 동기화하는 중.',
+    '메인 오프닝 곡의 코러스 구간에 폭죽 특수효과 세팅.',
+    '관객 안전 사고 방지를 위한 경호 구역 배치도 확인 중.',
+    '음향 반사판 위치를 미세 조정하여 완벽한 음향 분산 도모.',
+    '무대 중앙 특수 LED 스크린 재생 소스 테스트 중.',
+    '감독관들과 리허설 무전기 채널 맞추기.',
+    '오케스트라 악기 세팅 및 헤드룸 밸런스 체크',
+    '인이어 모니터링 주파수 신호 간섭 확인',
+    '리허설 녹화본 프레임별 모니터링 진행'
+  ],
+  '한재무': [
+    '티켓 판매 수수료를 감안한 BEP(손익분기점) 재산출 중.',
+    '음향 및 특수효과 외주 비용 단가를 조정하고 있습니다.',
+    '스폰서십 기업들과 매칭 펀드 비율 최종 협의 중.',
+    '제작 원가 대비 협찬금 확보율 120% 달성 전략 수립.',
+    '현장 굿즈(MD) 판매 매출 정산서 세부 마감 중.',
+    '부가가치세 및 원천세 공제 세율을 정밀하게 대입합니다.',
+    '행사장 대관료 선금 지급 전표 결재 승인 중.',
+    '마케팅 예산이 손실 없이 효율적으로 투입되도록 감시 중.',
+    '예비비를 8% 추가 확보하여 예상치 못한 지출에 대비.',
+    '카드사 제휴 티켓 할인 분담금 비율 계산',
+    '아티스트 출연료 송금 전표 최종 결재',
+    '행사 보증보험 가입 요율 대조 중...'
+  ],
+  '윤홍보': [
+    'MZ세대를 타깃으로 한 인스타그램 쇼츠 바이럴 기획 중!',
+    '네이버 티켓 예매 오픈 30분 전 사전 알림 이벤트를 세팅합니다.',
+    '인플루언서 섭외 단가와 홍보 피드 가이드를 정돈 중.',
+    '공연 공식 포스터 메인 카피: ‘당신의 감성을 두드릴 단 하나의 무대’',
+    '보도자료 배포 시점을 포털 메인 노출 시간대에 맞추어 대기.',
+    '네티즌 피드백 빅데이터를 수집하여 바이럴 톤앤매너 수정.',
+    '사전 예매자 대상의 한정판 MD 증정 이벤트 챌린지 구성.',
+    '광고비 대비 전환율(ROAS)이 350%를 돌파했습니다!',
+    '공식 팬덤 커뮤니티에 특별 메시지 발송 대기 중.',
+    '유튜브 숏츠용 아티스트 응원 인터뷰 편집 기획',
+    '카카오톡 플러스친구 타겟 메시지 카피 라이팅',
+    '구글 애널리틱스 연령별 유입 분석 차트 점검'
+  ]
 };
 
 const SIM_CHATTER: Record<string, string[]> = {
@@ -255,7 +418,10 @@ const SVG_ASSETS: Record<string, string> = {
   svgAlice, svgCarol, svgBob, svgDave,
   svgEve, svgFrank, svgGrace, svgHank,
   svgJustice, svgSolomon, svgScribe,
-  svgBeat, svgBudget, svgTrend
+  svgBeat, svgBudget, svgTrend,
+  // 법률 및 공연 전용 한국식 매핑 보강
+  svg임변호: svgJustice, svg지분석: svgSolomon, svg서기록: svgScribe,
+  svg오기획: svgBeat, svg한재무: svgBudget, svg윤홍보: svgTrend
 };
 
 // ==========================================
@@ -278,13 +444,17 @@ function Agent({ name, svgContent, showDesk = false, isAbsent = false, status, l
     Alice: '#ff4d4d', Carol: '#ffb3ff', Bob: '#4da6ff', Dave: '#33cc33',
     Eve: '#ec4899', Frank: '#10b981', Grace: '#8b5cf6', Hank: '#f59e0b',
     Justice: '#fbbf24', Solomon: '#a855f7', Scribe: '#0891b2',
-    Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899'
+    Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899',
+    '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2',
+    '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899'
   };
   const roles: Record<string, string> = {
     Alice: '기획', Carol: '디자인', Bob: '개발', Dave: 'QA',
     Eve: '마케팅', Frank: '보안', Grace: 'CS', Hank: '테스터',
     Justice: '변호사', Solomon: '분석관', Scribe: '기록관',
-    Beat: '총괄', Budget: '재무', Trend: '마케팅'
+    Beat: '총괄', Budget: '재무', Trend: '마케팅',
+    '임변호': '변호사', '지분석': '분석관', '서기록': '기록관',
+    '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅'
   };
   const color = colors[name] || '#a855f7';
   const role = customRole || roles[name] || '요원';
@@ -405,6 +575,13 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
       const next = { ...prev };
       const totalAgentCount = Object.keys(agentState).length;
 
+      // 💡 현재 agentState(선택한 스튜디오 요원들)에 들어있지 않은 이전 요원들의 쓰레기 캐시 강제 청소
+      Object.keys(next).forEach(name => {
+        if (agentState[name] === undefined) {
+          delete next[name];
+        }
+      });
+
       // 역할별 정렬 가중치 계산 헬퍼 함수
       const getAgentWeight = (agentName: string) => {
         const info = agentState[agentName] as any;
@@ -451,20 +628,25 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
         });
       }
 
+      // 4인 이하인 경우 책상 수는 직원 수 만큼만 존재함 (헌법 3-1번)
+      const deskCount = totalAgentCount > 0 
+        ? (totalAgentCount <= 4 ? totalAgentCount : 4) 
+        : 4;
+
       const occupiedSeats = new Set<number>();
       devRoomAgents.forEach(name => {
-        if (next[name] !== undefined && next[name] >= 0 && next[name] < 4) {
+        if (next[name] !== undefined && next[name] >= 0 && next[name] < deskCount) {
           occupiedSeats.add(next[name]);
         } else {
           delete next[name];
         }
       });
 
-      // 비어있는 책상(0~3) 순차 할당
+      // 비어있는 책상 순차 할당 (deskCount에 맞추어 할당 범위 축소)
       devRoomAgents.forEach(name => {
         if (next[name] === undefined) {
           let emptySeat = -1;
-          for (let i = 0; i < 4; i++) {
+          for (let i = 0; i < deskCount; i++) {
             const isOccupied = Object.values(next).some(seat => seat === i);
             if (!isOccupied) {
               emptySeat = i;
@@ -536,21 +718,65 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
       setAgentState(prev => {
         let changed = false;
         const next = { ...prev };
+        const totalAgentCount = Object.keys(prev).length;
 
-        // 현재 선택한 스튜디오에 귀속된 요원 명단을 구함
+        // 각 방의 현재 실시간 요원 헤드카운트 계산 (next 기준)
+        const getRoomCount = (roomName: string, state: any) => {
+          return Object.values(state).filter((info: any) => info.room === roomName).length;
+        };
+
         const currentAgents = Object.keys(prev);
 
         for (const name of currentAgents) {
           const info = next[name] || { status: 'idle', room: 'DevRoom', log: '' };
 
-          // 작업 중인 주체 에이전트들은 로컬 시뮬레이션이 장소를 강제로 옮기지 않도록 가드
+          // 헌법 5번 수호: 자기 작업 순서(thinking / coding)인데 메인 작업실(DevRoom) 밖에 있다면 바로 강제 복귀!
           if (info.status === 'thinking' || info.status === 'coding') {
+            if (info.room !== 'DevRoom') {
+              const devRoomCount = getRoomCount('DevRoom', next);
+              if (devRoomCount >= 4) {
+                // 작업실에 4명이 꽉 차 있다면, 노는(idle) 요원 중 한 명을 방출!
+                const idleAgentsInDevRoom = Object.keys(next).filter(
+                  k => next[k]?.room === 'DevRoom' && next[k]?.status === 'idle'
+                );
+                
+                if (idleAgentsInDevRoom.length > 0) {
+                  // 유휴 요원 중 무작위 한 명 선정
+                  const ejectedName = idleAgentsInDevRoom[Math.floor(Math.random() * idleAgentsInDevRoom.length)];
+                  
+                  // 방출될 방 결정 (정원이 4명 미만인 회의실 또는 휴게실)
+                  let targetEjectRoom = '';
+                  const confCount = getRoomCount('Conference', next);
+                  const pantryCount = getRoomCount('Pantry', next);
+                  
+                  if (pantryCount < 4) targetEjectRoom = 'Pantry';
+                  else if (confCount < 4) targetEjectRoom = 'Conference';
+                  
+                  if (targetEjectRoom) {
+                    next[ejectedName] = { ...next[ejectedName], room: targetEjectRoom, log: '작업실 자리를 양보하고 이동합니다☕' };
+                    next[name] = { ...info, room: 'DevRoom', log: '순서가 되어 메인 작업실로 즉시 복귀합니다💻' };
+                    changed = true;
+                    continue; // 처리 완료했으므로 다음 에이전트로 이동
+                  }
+                }
+              } else {
+                // 작업실에 빈자리가 있다면 즉시 작업실로 복귀
+                next[name] = { ...info, room: 'DevRoom', log: '순서가 되어 작업실로 복귀합니다💻' };
+                changed = true;
+                continue;
+              }
+            }
+
+            // 작업 중 말풍선 갱신
             const phrases = CHATTER[name] || CHATTER['Alice'];
             const msg = phrases[Math.floor(Math.random() * phrases.length)];
-            next[name] = { ...info, log: msg };
+            next[name] = { ...next[name], log: msg };
             changed = true;
-          } else if (info.status === 'idle') {
-            // 50% 확률로 장소 및 말풍선 변경
+          } 
+          
+          // 헌법 추가 조항 수호: 작업 중이지 않은(idle) 에이전트는 자유롭게 공간을 이동한다!
+          else if (info.status === 'idle') {
+            // 50% 확률로 장소 및 말풍선 변경 결정
             if (Math.random() < 0.5) {
               const r = Math.random();
               let targetLocation = 'desk';
@@ -561,11 +787,21 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
               if (targetLocation === 'pantry') newRoom = 'Pantry';
               if (targetLocation === 'conference') newRoom = 'Conference';
 
-              const phrases = SIM_CHATTER[targetLocation];
-              const msg = phrases[Math.floor(Math.random() * phrases.length)];
-
-              next[name] = { ...info, log: msg, room: newRoom };
-              changed = true;
+              const currentTargetCount = getRoomCount(newRoom, next);
+              
+              if (newRoom === info.room) {
+                // 1. 같은 방에 계속 머무르는 경우: 방 이동 없이 말풍선 멘트만 신선하게 업데이트! (침묵 해제)
+                const phrases = SIM_CHATTER[targetLocation];
+                const msg = phrases[Math.floor(Math.random() * phrases.length)];
+                next[name] = { ...info, log: msg };
+                changed = true;
+              } else if (currentTargetCount < 4) {
+                // 2. 다른 방으로 이동하는 경우: 정원 한도 체크 후 이동 및 새로운 멘트 적용
+                const phrases = SIM_CHATTER[targetLocation];
+                const msg = phrases[Math.floor(Math.random() * phrases.length)];
+                next[name] = { ...info, log: msg, room: newRoom };
+                changed = true;
+              }
             } else {
               if (info.log !== '') {
                 next[name] = { ...info, log: '' };
@@ -615,6 +851,7 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
     setSelectedStudio(studio);
     setLogs([]);
     setAgentState({});
+    setDeskAssignments({}); // 💡 스튜디오 전환 시 이전 좌석 배정 캐시를 완벽히 소거하여 요원 겹침/이동 버그 원천 차단!
     setIsWorking(false);
     
     if (socket) {
@@ -724,14 +961,14 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
         ? newStudioAgentsConfig.slice(0, newStudioAgentCount)
         : (newStudioType === 'law' 
             ? [
-                { name: 'Justice', role: '변호사', expertise: '종합 법률 자문 총괄 변호사' },
-                { name: 'Solomon', role: '분석관', expertise: '사례 및 정밀 대조 판례 분석관' },
-                { name: 'Scribe', role: '기록관', expertise: '무결한 기록 및 자문서 초안 작성 서기' }
+                { name: '임변호', role: '변호사', expertise: '종합 법률 자문 총괄 변호사' },
+                { name: '지분석', role: '분석관', expertise: '사례 및 정밀 대조 판례 분석관' },
+                { name: '서기록', role: '기록관', expertise: '무결한 기록 및 자문서 초안 작성 서기' }
               ]
             : [
-                { name: 'Beat', role: '총괄', expertise: '콘서트 페스티벌 기획 총괄 디렉터' },
-                { name: 'Budget', role: '재무', expertise: '수지타산 및 티켓 가격 산정 재무관' },
-                { name: 'Trend', role: '마케팅', expertise: '온오프라인 바이럴 광고 마케팅 분석관' }
+                { name: '오기획', role: '총괄', expertise: '콘서트 페스티벌 기획 총괄 디렉터' },
+                { name: '한재무', role: '재무', expertise: '수지타산 및 티켓 가격 산정 재무관' },
+                { name: '윤홍보', role: '마케팅', expertise: '온오프라인 바이럴 광고 마케팅 분석관' }
               ]
           );
 
@@ -939,12 +1176,16 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
     const colors: Record<string, string> = {
       Alice: '#ff4d4d', Carol: '#ffb3ff', Bob: '#4da6ff', Dave: '#33cc33',
       Justice: '#fbbf24', Solomon: '#a855f7', Scribe: '#0891b2',
-      Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899'
+      Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899',
+      '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2',
+      '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899'
     };
     const roles: Record<string, string> = {
       Alice: '기획', Carol: '디자인', Bob: '개발', Dave: 'QA',
       Justice: '변호사', Solomon: '분석관', Scribe: '기록관',
-      Beat: '총괄', Budget: '재무', Trend: '마케팅'
+      Beat: '총괄', Budget: '재무', Trend: '마케팅',
+      '임변호': '변호사', '지분석': '분석관', '서기록': '기록관',
+      '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅'
     };
     const color = colors[name] || '#a855f7';
     const role = roles[name] || '요원';
@@ -1182,26 +1423,36 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                 const agentsInPantry = Object.values(agentState).some((info: any) => info.room === 'Pantry');
                 
                 const config: Record<string, string> = {};
-                if (selectedStudio.type === 'game') {
-                  Object.keys(agentState).forEach(name => {
-                    if (SVG_ASSETS['svg' + name]) {
-                      config[name] = SVG_ASSETS['svg' + name];
-                    }
-                  });
-                  if (Object.keys(config).length === 0) {
-                    config['Alice'] = svgAlice;
-                    config['Carol'] = svgCarol;
-                    config['Bob'] = svgBob;
-                    config['Dave'] = svgDave;
+                
+                // 1. 현재 존재하는 에이전트들의 SVG 에셋을 SVG_ASSETS에서 동적으로 찾아 매핑
+                Object.keys(agentState).forEach(name => {
+                  if (SVG_ASSETS['svg' + name]) {
+                    config[name] = SVG_ASSETS['svg' + name];
                   }
+                });
+
+                // 2. 동적 매핑 후에도 비어있거나 부족할 때를 대비한 타입별 기본 백업 요원 설정
+                if (selectedStudio.type === 'game') {
+                  if (!config['Alice']) config['Alice'] = svgAlice;
+                  if (!config['Carol']) config['Carol'] = svgCarol;
+                  if (!config['Bob']) config['Bob'] = svgBob;
+                  if (!config['Dave']) config['Dave'] = svgDave;
                 } else if (selectedStudio.type === 'law') {
-                  config['Justice'] = svgJustice;
-                  config['Solomon'] = svgSolomon;
-                  config['Scribe'] = svgScribe;
+                  if (!config['임변호']) config['임변호'] = svgJustice;
+                  if (!config['지분석']) config['지분석'] = svgSolomon;
+                  if (!config['서기록']) config['서기록'] = svgScribe;
+                  // 하위 호환용 영문 백업
+                  if (!config['Justice']) config['Justice'] = svgJustice;
+                  if (!config['Solomon']) config['Solomon'] = svgSolomon;
+                  if (!config['Scribe']) config['Scribe'] = svgScribe;
                 } else {
-                  config['Beat'] = svgBeat;
-                  config['Budget'] = svgBudget;
-                  config['Trend'] = svgTrend;
+                  if (!config['오기획']) config['오기획'] = svgBeat;
+                  if (!config['한재무']) config['한재무'] = svgBudget;
+                  if (!config['윤홍보']) config['윤홍보'] = svgTrend;
+                  // 하위 호환용 영문 백업
+                  if (!config['Beat']) config['Beat'] = svgBeat;
+                  if (!config['Budget']) config['Budget'] = svgBudget;
+                  if (!config['Trend']) config['Trend'] = svgTrend;
                 }
 
                 return (
@@ -1343,61 +1594,69 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                     <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid #2d2d3a', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', minHeight: '130px', overflow: 'visible' }}>
                       <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: 'auto', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>💻 메인 작업실</span>
                       
-                      {/* 가로 책상 및 에이전트 캐릭터 렌더링 (원래 책상 배치 간격을 100% 유지하며 스크롤바 제거 + overflow: visible 및 zIndex 상향) */}
-                      <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: 'repeat(4, 1fr)', 
-                        gap: '15px 5px', 
-                        justifyItems: 'center', 
-                        alignItems: 'end', 
-                        marginTop: '10px',
-                        position: 'relative',
-                        zIndex: 50,
-                        overflow: 'visible',
-                        paddingBottom: '5px'
-                      }}>
-                        {/* 💻 요원별 순차 루프 대신, 고정된 4개의 책상 시트(0~3)를 기준으로 렌더링 */}
-                        {Array.from({ length: 4 }).map((_, seatIdx) => {
-                          // 현재 이 책상 자리에 배정된 요원 찾기
-                          const assignedAgentName = Object.keys(deskAssignments).find(
-                            name => deskAssignments[name] === seatIdx
-                          );
+                      {(() => {
+                        const totalAgentCount = Object.keys(agentState).length;
+                        const deskCount = totalAgentCount > 0 
+                          ? (totalAgentCount <= 4 ? totalAgentCount : 4) 
+                          : 4;
 
-                          if (assignedAgentName) {
-                            // 배정된 요원이 있다면 해당 요원의 캐릭터와 책상을 함께 렌더링!
-                            const svgContent = config[assignedAgentName] || svgAlice;
-                            const info = (agentState[assignedAgentName] || { status: 'idle', room: 'DevRoom', log: '' }) as any;
-                            return (
-                              <Agent 
-                                key={assignedAgentName}
-                                name={assignedAgentName}
-                                svgContent={svgContent}
-                                showDesk={true}
-                                isAbsent={info.room !== 'DevRoom'}
-                                status={info.status}
-                                log={info.log}
-                                selectedStudioType={selectedStudio.type}
-                                customRole={info.role}
-                                customExpertise={info.expertise}
-                              />
-                            );
-                          } else {
-                            // 이 책상 자리가 비어 있다면, '빈 책상'을 렌더링!
-                            return (
-                              <Agent 
-                                key={`empty-seat-${seatIdx}`}
-                                name=""
-                                svgContent=""
-                                showDesk={true}
-                                isAbsent={true}
-                                status="idle"
-                                log=""
-                                selectedStudioType={selectedStudio.type}
-                              />
-                            );
-                          }
-                        })}
-                      </div>
+                        return (
+                          <div style={{ 
+                            display: 'grid', 
+                            gridTemplateColumns: `repeat(${deskCount}, 1fr)`, 
+                            gap: '15px 5px', 
+                            justifyItems: 'center', 
+                            alignItems: 'end', 
+                            marginTop: '10px',
+                            position: 'relative',
+                            zIndex: 50,
+                            overflow: 'visible',
+                            paddingBottom: '5px'
+                          }}>
+                            {/* 💻 요원별 순차 루프 대신, 직원 수에 맞춘 deskCount 책상 시트를 기준으로 렌더링 (헌법 3-1번) */}
+                            {Array.from({ length: deskCount }).map((_, seatIdx) => {
+                              // 현재 이 책상 자리에 배정된 요원 찾기
+                              const assignedAgentName = Object.keys(deskAssignments).find(
+                                name => deskAssignments[name] === seatIdx
+                              );
+
+                              if (assignedAgentName) {
+                                // 배정된 요원이 있다면 해당 요원의 캐릭터와 책상을 함께 렌더링!
+                                const svgContent = config[assignedAgentName] || svgAlice;
+                                const info = (agentState[assignedAgentName] || { status: 'idle', room: 'DevRoom', log: '' }) as any;
+                                return (
+                                  <Agent 
+                                    key={assignedAgentName}
+                                    name={assignedAgentName}
+                                    svgContent={svgContent}
+                                    showDesk={true}
+                                    isAbsent={info.room !== 'DevRoom'}
+                                    status={info.status}
+                                    log={info.log}
+                                    selectedStudioType={selectedStudio.type}
+                                    customRole={info.role}
+                                    customExpertise={info.expertise}
+                                  />
+                                );
+                              } else {
+                                // 이 책상 자리가 비어 있다면, '빈 책상'을 렌더링!
+                                return (
+                                  <Agent 
+                                    key={`empty-seat-${seatIdx}`}
+                                    name=""
+                                    svgContent=""
+                                    showDesk={true}
+                                    isAbsent={true}
+                                    status="idle"
+                                    log=""
+                                    selectedStudioType={selectedStudio.type}
+                                  />
+                                );
+                              }
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </LayoutGroup>

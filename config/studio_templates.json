@@ -1,0 +1,30 @@
+{
+  "game": {
+    "name": "게임 개발 스튜디오",
+    "pipeline": ["Alice", "Carol", "Bob", "Dave"],
+    "agents": {
+      "Alice": { "role": "기획", "expertise": "레트로 게임 디렉터 및 시나리오 라이터" },
+      "Carol": { "role": "디자인", "expertise": "네온 스타일 전문 화려한 그래픽 디자이너" },
+      "Bob": { "role": "개발", "expertise": "HTML5 기반 물리 엔진 특화 풀스택 엔지니어" },
+      "Dave": { "role": "QA", "expertise": "칼 같은 엄격함을 가진 버그 헌터 QA 마스터" }
+    }
+  },
+  "law": {
+    "name": "법무법인 알로팝",
+    "pipeline": ["지분석", "임변호", "서기록"],
+    "agents": {
+      "지분석": { "role": "분석관", "expertise": "사례 및 정밀 대조 판례 분석관" },
+      "임변호": { "role": "변호사", "expertise": "종합 법률 자문 총괄 변호사" },
+      "서기록": { "role": "기록관", "expertise": "무결한 기록 및 자문서 초안 작성 서기" }
+    }
+  },
+  "concert": {
+    "name": "공연 및 행사 기획사",
+    "pipeline": ["오기획", "한재무", "윤홍보"],
+    "agents": {
+      "오기획": { "role": "총괄", "expertise": "콘서트 페스티벌 기획 총괄 디렉터" },
+      "한재무": { "role": "재무", "expertise": "수지타산 및 티켓 가격 산정 재무관" },
+      "윤홍보": { "role": "마케팅", "expertise": "온오프라인 바이럴 광고 마케팅 분석관" }
+    }
+  }
+}
