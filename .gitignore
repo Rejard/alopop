@@ -63,3 +63,11 @@ data/diagnostics.jsonl
 get_token.js
 trigger_bot.js
 type.ps1
+
+# Antigravity CLI and backup files
+.antigravitycli/
+*.bak
+.sync-hospitals-result.json
+chaos_log.txt
+/public/output/
+/scratch/
