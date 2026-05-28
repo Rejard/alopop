@@ -2374,11 +2374,9 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
               <div className="flex flex-col gap-2 border-t border-[#3b2d52]/30 pt-3">
                 <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">부서 배치 및 전문 분야 (성격) 설정</label>
                 <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-purple-950/40">
-                  {Array.from({ length: newStudioAgentCount }).map((_, idx) => {
-                    const baseAgents = ['최인사', '정기획', '홍홍보', '윤재무', '김영업', '이회계', '박비서', '강지원'];
-                    const name = baseAgents[idx];
-                    const config = newStudioAgentsConfig.find(a => a.name === name) || { name, role: '기획', expertise: '' };
-                    
+                  {newStudioAgentsConfig.slice(0, newStudioAgentCount).map((config, idx) => {
+                    const defaultNames = ['최인사', '정기획', '홍홍보', '윤재무', '김영업', '이회계', '박비서', '강지원'];
+                    const defaultName = defaultNames[idx];
                     const roleOptions = ['인사', '기획', '홍보', '재무', '영업', '회계', '비서', '총무'];
                     const agentColors: Record<string, string> = {
                       '최인사': '#f87171', '정기획': '#fb923c', '홍홍보': '#f472b6', '윤재무': '#a78bfa',
@@ -2386,18 +2384,28 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                     };
 
                     return (
-                      <div key={name} className="bg-[#0b0512]/60 p-3 rounded-xl border border-purple-950 flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-extrabold text-white flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: agentColors[name] || '#a855f7' }} />
-                            {name} 요원
-                          </span>
+                      <div key={idx} className="bg-[#0b0512]/60 p-3 rounded-xl border border-purple-950 flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: agentColors[defaultName] || '#a855f7' }} />
+                            <input 
+                              type="text"
+                              value={config.name}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setNewStudioAgentsConfig(prev => prev.map((a, i) => i === idx ? { ...a, name: val } : a));
+                              }}
+                              placeholder={`${defaultName} (이름 직접 수정)`}
+                              className="bg-[#12071d] border border-purple-900/30 text-white text-[10px] font-bold rounded px-1.5 py-0.5 focus:outline-none focus:border-purple-600 w-28 text-center"
+                            />
+                            <span className="text-[8px] text-zinc-500 flex-shrink-0">요원</span>
+                          </div>
                           
                           <select
                             value={config.role}
                             onChange={(e) => {
                               const val = e.target.value;
-                              setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, role: val } : a));
+                              setNewStudioAgentsConfig(prev => prev.map((a, i) => i === idx ? { ...a, role: val } : a));
                             }}
                             className="bg-[#12071d] border border-purple-900/30 text-purple-300 text-[9px] font-bold rounded px-1.5 py-0.5 focus:outline-none"
                           >
@@ -2412,9 +2420,9 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                           value={config.expertise}
                           onChange={(e) => {
                             const val = e.target.value;
-                            setNewStudioAgentsConfig(prev => prev.map(a => a.name === name ? { ...a, expertise: val } : a));
+                            setNewStudioAgentsConfig(prev => prev.map((a, i) => i === idx ? { ...a, expertise: val } : a));
                           }}
-                          placeholder={`${name} 요원의 세부 전문성/페르소나 (예: 10년차 베테랑 ${config.role} 스페셜리스트)`}
+                          placeholder={`${config.name} 요원의 세부 전문성/페르소나 (예: 10년차 베테랑 ${config.role} 스페셜리스트)`}
                           className="bg-[#0c0615] border border-purple-950 text-zinc-300 rounded-lg px-2.5 py-1 text-[9px] focus:outline-none focus:border-purple-800"
                         />
                       </div>
