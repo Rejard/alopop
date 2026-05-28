@@ -1619,8 +1619,8 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin scrollbar-thumb-purple-900/20">
           {studios.map(studio => {
             const isSelected = selectedStudio?.id === studio.id;
-            const IconComponent = studio.type === 'game' ? Gamepad2 : (studio.type === 'law' ? Scale : (studio.type === 'tax' ? Server : Music));
-            const typeLabel = studio.type === 'game' ? '게임' : (studio.type === 'law' ? '법률' : (studio.type === 'tax' ? '세무' : '공연'));
+            const IconComponent = studio.type === 'game' ? Gamepad2 : (studio.type === 'law' ? Scale : (studio.type === 'tax' ? Server : (studio.type === 'office' ? Building2 : Music)));
+            const typeLabel = studio.type === 'game' ? '게임' : (studio.type === 'law' ? '법률' : (studio.type === 'tax' ? '세무' : (studio.type === 'office' ? '사무직' : '공연')));
             
             return (
               <div 
