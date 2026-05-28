@@ -48,6 +48,9 @@ model User {
   offlineMessages OfflineMessage[] @relation("UserOfflineMessages")
   adminAuditLogs AdminAuditLog[] @relation("AdminAuditLogs")
   targetedAdminAuditLogs AdminAuditLog[] @relation("TargetedAdminAuditLogs")
+  
+  // AI 스튜디오 관계 추가
+  studios       Studio[] @relation("UserStudios")
 }
 
 model Transaction {
@@ -343,4 +346,59 @@ model PetLike {
   post      PetPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([postId, userId])
+}
+
+// =============================================
+// AI Studio 관련 통합 모델
+// =============================================
+
+model Studio {
+  id                 String           @id @default(uuid())
+  name               String           // 스튜디오 이름 (예: "알로팝 게임 1호점", "법무법인 알로")
+  type               String           // 스튜디오 타입 ('game', 'law', 'concert' 등)
+  isSystem           Boolean          @default(false) // 관리자/시스템 개설 공용 스튜디오 여부 (true면 모든 유저가 사용 가능)
+  isWorking          Boolean          @default(false) // 현재 AI 에이전트들이 작업 중인지 여부
+  currentProjectJson String           @default("{}")  // specDoc, designDoc, codeDoc 등 임시 작업 컨텍스트 (JSON String)
+  agentStateJson     String           @default("{}")  // 요원들의 현재 상태 및 말풍선 로그 (JSON String)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  ownerId            String
+  owner              User             @relation("UserStudios", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  logs               StudioLog[]      @relation("StudioLogs")
+  artifacts          StudioArtifact[] @relation("StudioArtifacts")
+
+  @@index([ownerId])
+  @@index([type])
+  @@index([isSystem])
+}
+
+model StudioLog {
+  id         String   @id @default(uuid())
+  agent      String   // 발신 에이전트 이름 ('대표님', 'Alice', 'Carol', '변호사' 등)
+  msg        String   // 로그 본문
+  error      Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  studioId   String
+  studio     Studio   @relation("StudioLogs", fields: [studioId], references: [id], onDelete: Cascade)
+
+  @@index([studioId])
+  @@index([createdAt])
+}
+
+model StudioArtifact {
+  id         String   @id @default(uuid())
+  name       String   // 산출물 이름 (예: "스페이스 런 V1", "공연 기획서 V2")
+  fileUrl    String?  // HTML 등 웹 실행 파일 경로 (/output/...)
+  content    String?  // 법률/공연 등의 마크다운 문서 내용 (텍스트)
+  isDeployed Boolean  @default(false) // PM2 정식 포트 배포 여부 (게임 한정)
+  createdAt  DateTime @default(now())
+
+  studioId   String
+  studio     Studio   @relation("StudioArtifacts", fields: [studioId], references: [id], onDelete: Cascade)
+
+  @@index([studioId])
+  @@index([createdAt])
 }

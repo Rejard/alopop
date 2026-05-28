@@ -9,6 +9,7 @@ import { db, ChatMessage } from '@/lib/db';
 import { useChatStore } from '@/store/useChatStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { SettingsModal } from '@/components/SettingsModal';
+import { AiStudioPanel } from '@/components/AiStudioPanel';
 import { v4 as uuidv4 } from 'uuid';
 import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
 
@@ -95,7 +96,7 @@ export default function Home() {
   const fetchGames = () => {
     Promise.all([
       fetch('/game-proxy/3000/api/games').then(r => r.ok ? r.json() : []).catch(() => []),
-      fetch('/game-proxy/3090/api/games_status').then(r => r.ok ? r.json() : []).catch(() => [])
+      fetch('/api/aistudio/games_status').then(r => r.ok ? r.json() : []).catch(() => [])
     ]).then(async ([portalGames, studioGames]) => {
       const merged = [
         ...(Array.isArray(portalGames) ? portalGames : []),
@@ -2961,7 +2962,7 @@ export default function Home() {
           // 홈 화면 (LNB 탭 메뉴 방식으로 변경됨)
           <div className="flex-1 flex overflow-hidden">
             {/* 좌측 사이드바 LNB */}
-            <div className="alo-side-rail w-[4.5rem] bg-surface-container-lowest flex flex-col items-center py-6 shrink-0 z-0 relative overflow-y-auto">
+            <div className="alo-side-rail w-[4.5rem] bg-surface-container-lowest flex flex-col items-center py-6 shrink-0 z-0 relative overflow-y-auto no-scrollbar">
               <div className={`flex flex-col ${currentTab === 'pet365care' ? 'gap-1' : 'gap-6'} w-full items-center transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]`}>
                 {/* 탭 전환 상태 인디케이터 배지 (동적 위치) */}
                 <div
@@ -3543,10 +3544,10 @@ export default function Home() {
                 </div>
               )}
 
-              {/* 게임(Games) 탭 */}
+              {/* AI 스튜디오 탭 */}
               {currentTab === 'aistudio' && (
-                <div className="flex-1 w-full h-full flex flex-col relative bg-transparent">
-                  <iframe src="https://aistudio.alonics.com/" className="absolute inset-0 w-full h-full border-none" allowFullScreen />
+                <div className="flex-1 w-full h-full flex flex-col relative bg-transparent overflow-hidden">
+                  <AiStudioPanel user={user} markRoomAsRead={markRoomAsRead} />
                 </div>
               )}
 
@@ -3565,7 +3566,7 @@ export default function Home() {
                         key={game.id}
                         onClick={() => {
                           if (game.isAlopopStudio) {
-                            setActiveGameUrl(`/game-proxy/3090/output/${game.path}.html`);
+                            setActiveGameUrl(`/output/${game.path}.html`);
                           } else {
                             setActiveGameUrl(`/game-proxy/3000/games/${game.path}/index.html`);
                           }
