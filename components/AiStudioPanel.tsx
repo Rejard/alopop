@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, LayoutGroup } from 'framer-motion';
 import { useChatStore } from '@/store/useChatStore';
 import { 
@@ -218,6 +218,76 @@ const CHATTER: Record<string, string[]> = {
     '유튜브 숏츠용 아티스트 응원 인터뷰 편집 기획',
     '카카오톡 플러스친구 타겟 메시지 카피 라이팅',
     '구글 애널리틱스 연령별 유입 분석 차트 점검'
+  ],
+  '김장부': [
+    '매출 및 매입 세금계산서 전표 입력 중...',
+    '복식부기 장부 대조 작업 중입니다.',
+    '앗, 이 전표 적격증빙이 누락되었네요.',
+    '통장 거래 내역과 장부 잔액 매칭 중.',
+    '월말 세무 기장 마감 보고서 작성 중...',
+    '급여 대장 원천세 계산기 작동 중',
+    '계정과목 분류 체계를 검토하는 중입니다.',
+    '소모품비 전표 처리 기준 체크!',
+    '카드 매출 영수증 대조 속도 업!',
+    '세무 대리인 동의 절차 서류 정리 중',
+    '가지급금 계정 잔액 관리 중...',
+    '일계표와 월계표 무결성 검증 완료'
+  ],
+  '이절세': [
+    '조세특례제한법상 세액공제 항목 분석 중...',
+    '기업부설연구소 설립을 통한 세액감면 검토!',
+    '고용증대 세액공제 최적화 시뮬레이션 중.',
+    '합법적 절세 방안 시나리오 3종 수립 완료.',
+    '소득세 및 법인세 분납 플랜 구성 중...',
+    '지방세 감면 특례 조항 서칭 중입니다.',
+    '창업중소기업 세액감면 적용 대상 체크!',
+    '통합투자세액공제 최대화 전략 검토 중',
+    '의뢰인의 세무 리스크 비용 최소화 방안!',
+    '세법 개정안 반영 절세 전략서 교정 중',
+    '공동사업자 소득 분배 비율 최적화 분석',
+    '세금 감면 한도액 크로스 체크 완료'
+  ],
+  '박감사': [
+    '국세청 통합조사 리스크 사전 감사 진행 중...',
+    '매출 누락 가능성 및 리스크 사전 진단.',
+    '가공경비 계상 여부 정밀 감리 중입니다.',
+    '적격증빙 미비 가산세 가중치 시뮬레이션.',
+    '특수관계인 간 부당행위계산부인 규정 점검!',
+    '재무비율 분석을 통한 세무조사 타겟 방어.',
+    '현금영수증 미발행 가산세 리스크 리포트.',
+    '재고 자산 평가 방법 적정성 체크 중',
+    '세무 감사 대비 소명 자료 패키징 중...',
+    '부가가치세 조기 환급 현장 확인 대비',
+    '장부 불일치 원인 추적 정밀 감리 돌입',
+    '조사관 예상 질의응답 리스트 구성 완료'
+  ],
+  '정신고': [
+    '종합소득세 신고서 서식 최종 검토 중...',
+    '부가가치세 예정 및 확정 신고 대기!',
+    '법인세 신고 세액조정계산서 정독 중입니다.',
+    '원천징수이행상황신고서 국세청 전송 준비.',
+    '지방소득세 특별징수 명세서 크로스 체크.',
+    '세무 조정 사항 및 가산세 계산기 가동.',
+    '신고 기한 마감 임박! 꼼꼼히 재검토.',
+    '해외 거래처 원천징수 세율 대조 중...',
+    '면세사업자 수입금액 현황 신고서 점검',
+    '중간예납 신고 절차 가이드라인 수립',
+    '전자신고 오류 검증 프로그램 기동 완료',
+    '신고 누락 방지를 위한 최종 점검 체크리스트'
+  ],
+  '최재무': [
+    '결산 재무제표(대차대조표/손익계산서) 최종 마감 중...',
+    '경영 상태 분석 및 부채 비율 점검.',
+    '투자 유치 대비 재무 구조 건전성 강화 플랜.',
+    'CFO 최종 자문서 날인 완료 중...',
+    '현금 흐름표(Cash Flow) 실시간 모니터링.',
+    '차기 연도 세무 리스크 예산 배정액 확정.',
+    '매출 채권 회수 기일 및 대손충당금 검토.',
+    '은행 대출 연장 심사용 재무 자료 조율 중',
+    '경영진 대상 최종 결산 세무 보고서 마감',
+    '배당금 지급 한도 및 절세 플랜 최종 검토',
+    '운전자본 회전율 극대화 시나리오 도출',
+    'CFO 재무 실무 지침 가이드 배포 완료'
   ]
 };
 
@@ -414,6 +484,76 @@ const svgTrend = `
   <path d="M 15 28 Q 50 -15 85 28 Z" fill="#f472b6"/>
 </svg>`;
 
+const svg김장부 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#0284c7"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#0c4a6e"/>
+  <circle cx="50" cy="40" r="30" fill="#f0f9ff"/>
+  <circle cx="40" cy="40" r="3" fill="#111"/>
+  <circle cx="60" cy="40" r="3" fill="#111"/>
+  <path d="M 44 51 Q 50 54 56 51" stroke="#111" stroke-width="2.2" fill="transparent"/>
+  <path d="M 15 35 Q 50 -15 85 35 Z" fill="#0284c7"/>
+  <rect x="42" y="86" width="16" height="12" rx="1" fill="#fff" stroke="#0284c7" stroke-width="1.5"/>
+  <line x1="46" y1="90" x2="54" y2="90" stroke="#0284c7" stroke-width="1"/>
+  <line x1="46" y1="93" x2="52" y2="93" stroke="#0284c7" stroke-width="1"/>
+</svg>`;
+
+const svg이절세 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#059669"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#064e3b"/>
+  <circle cx="50" cy="40" r="30" fill="#f0fdf4"/>
+  <circle cx="39" cy="38" r="3.5" fill="#111"/>
+  <circle cx="61" cy="38" r="3.5" fill="#111"/>
+  <rect x="34" y="33" width="12" height="9" rx="1" stroke="#10b981" stroke-width="1.8" fill="transparent"/>
+  <rect x="54" y="33" width="12" height="9" rx="1" stroke="#10b981" stroke-width="1.8" fill="transparent"/>
+  <line x1="46" y1="37" x2="54" y2="37" stroke="#10b981" stroke-width="1.8"/>
+  <path d="M 45 49 Q 50 52 55 49" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 20 30 Q 50 -15 80 30 Z" fill="#10b981"/>
+</svg>`;
+
+const svg박감사 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#d97706"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#451a03"/>
+  <circle cx="50" cy="40" r="30" fill="#fefdf0"/>
+  <circle cx="40" cy="40" r="3" fill="#111"/>
+  <circle cx="60" cy="40" r="3" fill="#111"/>
+  <path d="M 45 52 Q 50 49 55 52" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 15 32 Q 50 -15 85 32 L 80 50 Z" fill="#b45309"/>
+  <circle cx="70" cy="88" r="6" stroke="#fbbf24" stroke-width="1.8" fill="transparent"/>
+  <line x1="74" y1="92" x2="79" y2="97" stroke="#fbbf24" stroke-width="1.8"/>
+</svg>`;
+
+const svg정신고 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#ea580c"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#7c2d12"/>
+  <circle cx="50" cy="40" r="30" fill="#fff7ed"/>
+  <circle cx="41" cy="40" r="2.5" fill="#111"/>
+  <circle cx="59" cy="40" r="2.5" fill="#111"/>
+  <path d="M 44 51 Q 50 54 56 51" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 20 28 Q 50 -15 80 28 Z" fill="#ea580c"/>
+  <path d="M 45 84 L 55 84 L 55 96 L 45 96 Z" fill="#ffedd5" stroke="#ea580c" stroke-width="1"/>
+  <path d="M 48 88 L 52 92 M 52 88 L 48 92" stroke="#ea580c" stroke-width="1.2"/>
+</svg>`;
+
+const svg최재무 = `
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="35" y="70" width="30" height="40" rx="10" fill="#7c3aed"/>
+  <rect x="30" y="80" width="40" height="30" rx="5" fill="#2e1065"/>
+  <circle cx="50" cy="40" r="30" fill="#faf5ff"/>
+  <circle cx="39" cy="40" r="3" fill="#111"/>
+  <circle cx="61" cy="40" r="3" fill="#111"/>
+  <path d="M 45 52 Q 50 55 55 52" stroke="#111" stroke-width="2" fill="transparent"/>
+  <path d="M 15 42 L 32.5 25 L 50 42 L 67.5 25 L 85 42 L 80 60 L 20 60 Z" fill="#6d28d9"/>
+  <circle cx="50" cy="18" r="4.5" fill="#eab308"/>
+  <circle cx="32.5" cy="18" r="4.5" fill="#eab308"/>
+  <circle cx="67.5" cy="18" r="4.5" fill="#eab308"/>
+  <circle cx="50" cy="90" r="6" fill="#fbbf24"/>
+  <text x="47" y="94.5" font-family="sans-serif" font-size="6.5" font-weight="bold" fill="#7c3aed">$</text>
+</svg>`;
+
 const SVG_ASSETS: Record<string, string> = {
   svgAlice, svgCarol, svgBob, svgDave,
   svgEve, svgFrank, svgGrace, svgHank,
@@ -421,7 +561,8 @@ const SVG_ASSETS: Record<string, string> = {
   svgBeat, svgBudget, svgTrend,
   // 법률 및 공연 전용 한국식 매핑 보강
   svg임변호: svgJustice, svg지분석: svgSolomon, svg서기록: svgScribe,
-  svg오기획: svgBeat, svg한재무: svgBudget, svg윤홍보: svgTrend
+  svg오기획: svgBeat, svg한재무: svgBudget, svg윤홍보: svgTrend,
+  svg김장부, svg이절세, svg박감사, svg정신고, svg최재무
 };
 
 // ==========================================
@@ -445,16 +586,14 @@ function Agent({ name, svgContent, showDesk = false, isAbsent = false, status, l
     Eve: '#ec4899', Frank: '#10b981', Grace: '#8b5cf6', Hank: '#f59e0b',
     Justice: '#fbbf24', Solomon: '#a855f7', Scribe: '#0891b2',
     Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899',
-    '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2',
-    '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899'
+    '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2', '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899', '김장부': '#38bdf8', '이절세': '#22c55e', '박감사': '#eab308', '정신고': '#f97316', '최재무': '#a855f7'
   };
   const roles: Record<string, string> = {
     Alice: '기획', Carol: '디자인', Bob: '개발', Dave: 'QA',
     Eve: '마케팅', Frank: '보안', Grace: 'CS', Hank: '테스터',
     Justice: '변호사', Solomon: '분석관', Scribe: '기록관',
     Beat: '총괄', Budget: '재무', Trend: '마케팅',
-    '임변호': '변호사', '지분석': '분석관', '서기록': '기록관',
-    '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅'
+    '임변호': '변호사', '지분석': '분석관', '서기록': '기록관', '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅', '김장부': '기장', '이절세': '세무', '박감사': '감사', '정신고': '신고', '최재무': 'CFO'
   };
   const color = colors[name] || '#a855f7';
   const role = customRole || roles[name] || '요원';
@@ -564,106 +703,61 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
   
   // 현재 가상 에이전트 사무실 상태 및 말풍선 로그
   const [agentState, setAgentState] = useState<Record<string, { status: string; room: string; log: string }>>({});
-  const [deskAssignments, setDeskAssignments] = useState<Record<string, number>>({});
   const [isWorking, setIsWorking] = useState(false);
 
-  // 💻 5인 이상 스튜디오를 위한 동적 책상 배정 및 위치 고정(재정렬 금지) 세션 엔진
-  useEffect(() => {
-    if (!selectedStudio) return;
-    
-    setDeskAssignments(prev => {
-      const next = { ...prev };
-      const totalAgentCount = Object.keys(agentState).length;
+  // 💻 5인 이상 스튜디오를 위한 동기식 실시간 책상 배정 및 위치 고정(재정렬 금지) 헬퍼 세션 엔진 (1 틱 딜레이 해결로 점프 이동 완벽 차단)
+  const deskAssignments = useMemo(() => {
+    const assignments: Record<string, number> = {};
+    const targetAgents = Object.keys(agentState);
+    const totalAgentCount = targetAgents.length;
 
-      // 💡 현재 agentState(선택한 스튜디오 요원들)에 들어있지 않은 이전 요원들의 쓰레기 캐시 강제 청소
-      Object.keys(next).forEach(name => {
-        if (agentState[name] === undefined) {
-          delete next[name];
-        }
-      });
+    // 역할별 정렬 가중치 계산
+    const getAgentWeight = (agentName: string) => {
+      const info = agentState[agentName] as any;
+      const role = info?.role || '';
+      
+      const ROLE_ORDER: Record<string, number> = {
+        '기획': 1, '디자인': 2, '개발': 3, 'QA': 4,
+        '변호사': 1, '분석관': 2, '기록관': 3,
+        '총괄': 1, '재무': 2, '마케팅': 3,
+        '기장': 1, '세무': 2, '감사': 3, '신고': 4, 'CFO': 5,
+        '마케터': 5, '보안': 6, 'CS': 7, '테스터': 8
+      };
+      
+      if (ROLE_ORDER[role] !== undefined) return ROLE_ORDER[role];
 
-      // 역할별 정렬 가중치 계산 헬퍼 함수
-      const getAgentWeight = (agentName: string) => {
-        const info = agentState[agentName] as any;
-        const role = info?.role || '';
-        
-        const ROLE_ORDER: Record<string, number> = {
-          '기획': 1, '디자인': 2, '개발': 3, 'QA': 4,
-          '변호사': 1, '분석관': 2, '기록관': 3,
-          '총괄': 1, '재무': 2, '마케팅': 3,
-          '기장': 1, '세무': 2, '감사': 3, '신고': 4, 'CFO': 5,
-          '마케터': 5, '보안': 6, 'CS': 7, '테스터': 8
-        };
-        
-        if (ROLE_ORDER[role] !== undefined) {
-          return ROLE_ORDER[role];
-        }
-
-        // 이름 기반 백업 (agentState에 일시적으로 role이 없을 때 대비)
-        const AGENT_NAME_ORDER: Record<string, number> = {
-          Alice: 1, Carol: 2, Bob: 3, Dave: 4,
-          Eve: 5, Frank: 6, Grace: 7, Hank: 8,
-          Justice: 1, Solomon: 2, Scribe: 3,
-          Beat: 1, Budget: 2, Trend: 3,
-          '김장부': 1, '이절세': 2, '박감사': 3, '정신고': 4, '최재무': 5
-        };
-
-        return AGENT_NAME_ORDER[agentName] || 999;
+      const AGENT_NAME_ORDER: Record<string, number> = {
+        Alice: 1, Carol: 2, Bob: 3, Dave: 4,
+        Eve: 5, Frank: 6, Grace: 7, Hank: 8,
+        Justice: 1, Solomon: 2, Scribe: 3,
+        Beat: 1, Budget: 2, Trend: 3,
+        '김장부': 1, '이절세': 2, '박감사': 3, '정신고': 4, '최재무': 5
       };
 
-      // 4인 이하 스튜디오의 경우: 모든 상주 요원을 좌석 배정 대상으로 삼아 영구 박제!
-      // 5인 이상 스튜디오의 경우: 오직 메인 작업실(DevRoom)에 있는 요원만 배정 대상으로 삼음
-      const targetAgents = Object.keys(agentState);
-      const devRoomAgents = (totalAgentCount <= 4 ? targetAgents : targetAgents.filter(name => agentState[name]?.room === 'DevRoom'))
+      return AGENT_NAME_ORDER[agentName] || 999;
+    };
+
+    if (totalAgentCount <= 4) {
+      // 4인 이하: 가중치 순으로 고유 지정석 영구 고정
+      const sorted = [...targetAgents].sort((a, b) => getAgentWeight(a) - getAgentWeight(b));
+      sorted.forEach((name, idx) => {
+        assignments[name] = idx;
+      });
+    } else {
+      // 5인 이상: 현재 DevRoom에 있는 요원만 가중치 순 정렬 후 순서대로 책상(0~3) 배정
+      const devRoomAgents = targetAgents
+        .filter(name => agentState[name]?.room === 'DevRoom')
         .sort((a, b) => getAgentWeight(a) - getAgentWeight(b));
 
-      // 4인 이하 스튜디오는 좌석을 절대 해제하지 않음. 5인 이상 스튜디오는 이탈 시 해제
-      if (totalAgentCount > 4) {
-        // 메인 작업실을 떠난 요원의 책상 시트는 빈자리로 전환
-        Object.keys(next).forEach(name => {
-          const info = agentState[name];
-          if (info && info.room !== 'DevRoom') {
-            delete next[name];
-          }
-        });
-      }
-
-      // 4인 이하인 경우 책상 수는 직원 수 만큼만 존재함 (헌법 3-1번)
-      const deskCount = totalAgentCount > 0 
-        ? (totalAgentCount <= 4 ? totalAgentCount : 4) 
-        : 4;
-
-      const occupiedSeats = new Set<number>();
-      devRoomAgents.forEach(name => {
-        if (next[name] !== undefined && next[name] >= 0 && next[name] < deskCount) {
-          occupiedSeats.add(next[name]);
-        } else {
-          delete next[name];
+      devRoomAgents.forEach((name, idx) => {
+        if (idx < 4) {
+          assignments[name] = idx;
         }
       });
+    }
 
-      // 비어있는 책상 순차 할당 (deskCount에 맞추어 할당 범위 축소)
-      devRoomAgents.forEach(name => {
-        if (next[name] === undefined) {
-          let emptySeat = -1;
-          for (let i = 0; i < deskCount; i++) {
-            const isOccupied = Object.values(next).some(seat => seat === i);
-            if (!isOccupied) {
-              emptySeat = i;
-              break;
-            }
-          }
-          if (emptySeat !== -1) {
-            next[name] = emptySeat;
-          } else {
-            next[name] = -1; // 만약 자리가 없다면 서서 근무 분위기
-          }
-        }
-      });
-
-      return next;
-    });
-  }, [agentState, selectedStudio?.id]);
+    return assignments;
+  }, [agentState]);
   
   // 터미널 및 인풋
   const [logs, setLogs] = useState<any[]>([]);
@@ -851,7 +945,6 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
     setSelectedStudio(studio);
     setLogs([]);
     setAgentState({});
-    setDeskAssignments({}); // 💡 스튜디오 전환 시 이전 좌석 배정 캐시를 완벽히 소거하여 요원 겹침/이동 버그 원천 차단!
     setIsWorking(false);
     
     if (socket) {
@@ -965,12 +1058,17 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                 { name: '지분석', role: '분석관', expertise: '사례 및 정밀 대조 판례 분석관' },
                 { name: '서기록', role: '기록관', expertise: '무결한 기록 및 자문서 초안 작성 서기' }
               ]
-            : [
+            : (newStudioType === 'tax' ? [
+                { name: '김장부', role: '기장', expertise: '매출/매입 세부 장부 기록 및 전표 입력 기장사' },
+                { name: '이절세', role: '세무', expertise: '합법적 세액 감면 및 절세 시나리오 도출 세무사' },
+                { name: '박감사', role: '감사', expertise: '세무 감사 리스크 진단 및 사전 감리 회계사' },
+                { name: '정신고', role: '신고', expertise: '종합소득세, 부가가치세 및 법인세 신고 전문 세무사' },
+                { name: '최재무', role: 'CFO', expertise: '재무제표 최종 마감 및 경영 전략 자문 수석재무관' }
+              ] : [
                 { name: '오기획', role: '총괄', expertise: '콘서트 페스티벌 기획 총괄 디렉터' },
                 { name: '한재무', role: '재무', expertise: '수지타산 및 티켓 가격 산정 재무관' },
                 { name: '윤홍보', role: '마케팅', expertise: '온오프라인 바이럴 광고 마케팅 분석관' }
-              ]
-          );
+              ]));
 
       const res = await fetch('/api/aistudio/create', {
         method: 'POST',
@@ -1177,15 +1275,13 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
       Alice: '#ff4d4d', Carol: '#ffb3ff', Bob: '#4da6ff', Dave: '#33cc33',
       Justice: '#fbbf24', Solomon: '#a855f7', Scribe: '#0891b2',
       Beat: '#e11d48', Budget: '#10b981', Trend: '#ec4899',
-      '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2',
-      '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899'
+      '임변호': '#fbbf24', '지분석': '#a855f7', '서기록': '#0891b2', '오기획': '#e11d48', '한재무': '#10b981', '윤홍보': '#ec4899', '김장부': '#38bdf8', '이절세': '#22c55e', '박감사': '#eab308', '정신고': '#f97316', '최재무': '#a855f7'
     };
     const roles: Record<string, string> = {
       Alice: '기획', Carol: '디자인', Bob: '개발', Dave: 'QA',
       Justice: '변호사', Solomon: '분석관', Scribe: '기록관',
       Beat: '총괄', Budget: '재무', Trend: '마케팅',
-      '임변호': '변호사', '지분석': '분석관', '서기록': '기록관',
-      '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅'
+      '임변호': '변호사', '지분석': '분석관', '서기록': '기록관', '오기획': '총괄', '한재무': '재무', '윤홍보': '마케팅', '김장부': '기장', '이절세': '세무', '박감사': '감사', '정신고': '신고', '최재무': 'CFO'
     };
     const color = colors[name] || '#a855f7';
     const role = roles[name] || '요원';
@@ -1297,8 +1393,8 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin scrollbar-thumb-purple-900/20">
           {studios.map(studio => {
             const isSelected = selectedStudio?.id === studio.id;
-            const IconComponent = studio.type === 'game' ? Gamepad2 : (studio.type === 'law' ? Scale : Music);
-            const typeLabel = studio.type === 'game' ? '게임' : (studio.type === 'law' ? '법률' : '공연');
+            const IconComponent = studio.type === 'game' ? Gamepad2 : (studio.type === 'law' ? Scale : (studio.type === 'tax' ? Server : Music));
+            const typeLabel = studio.type === 'game' ? '게임' : (studio.type === 'law' ? '법률' : (studio.type === 'tax' ? '세무' : '공연'));
             
             return (
               <div 
@@ -1437,6 +1533,13 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                   if (!config['Carol']) config['Carol'] = svgCarol;
                   if (!config['Bob']) config['Bob'] = svgBob;
                   if (!config['Dave']) config['Dave'] = svgDave;
+                } else if (selectedStudio.type === 'tax') {
+                  if (!config['김장부']) config['김장부'] = svg김장부;
+                  if (!config['이절세']) config['이절세'] = svg이절세;
+                  if (!config['박감사']) config['박감사'] = svg박감사;
+                  if (!config['정신고']) config['정신고'] = svg정신고;
+                  if (!config['최재무']) config['최재무'] = svg최재무;
+                  if (!config['김기장']) config['김기장'] = svg김장부;
                 } else if (selectedStudio.type === 'law') {
                   if (!config['임변호']) config['임변호'] = svgJustice;
                   if (!config['지분석']) config['지분석'] = svgSolomon;
@@ -1491,7 +1594,7 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                         {/* 회의실 내 에이전트 캐릭터 렌더링 (원래의 50:50 Grid를 유지하며 스크롤바 영구 제거 + overflow: visible 및 zIndex 상향) */}
                         <div style={{ 
                           display: 'grid', 
-                          gridTemplateColumns: Object.keys(config).length > 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', 
+                          gridTemplateColumns: 'repeat(2, 1fr)', // 2행 2열(최대 4인) 구조 영구 고정 (헌법 수호) 
                           gap: '5px 2px', 
                           justifyItems: 'center', 
                           alignItems: 'end', 
@@ -1555,7 +1658,7 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                         {/* 탕비실 내 에이전트 캐릭터 렌더링 (원래의 50:50 Grid를 유지하며 스크롤바 영구 제거 + overflow: visible 및 zIndex 상향) */}
                         <div style={{ 
                           display: 'grid', 
-                          gridTemplateColumns: Object.keys(config).length > 4 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', 
+                          gridTemplateColumns: 'repeat(2, 1fr)', // 2행 2열(최대 4인) 구조 영구 고정 (헌법 수호) 
                           gap: '5px 2px', 
                           justifyItems: 'center', 
                           alignItems: 'end', 
@@ -1621,38 +1724,42 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
                               );
 
                               if (assignedAgentName) {
-                                // 배정된 요원이 있다면 해당 요원의 캐릭터와 책상을 함께 렌더링!
-                                const svgContent = config[assignedAgentName] || svgAlice;
                                 const info = (agentState[assignedAgentName] || { status: 'idle', room: 'DevRoom', log: '' }) as any;
-                                return (
-                                  <Agent 
-                                    key={assignedAgentName}
-                                    name={assignedAgentName}
-                                    svgContent={svgContent}
-                                    showDesk={true}
-                                    isAbsent={info.room !== 'DevRoom'}
-                                    status={info.status}
-                                    log={info.log}
-                                    selectedStudioType={selectedStudio.type}
-                                    customRole={info.role}
-                                    customExpertise={info.expertise}
-                                  />
-                                );
-                              } else {
-                                // 이 책상 자리가 비어 있다면, '빈 책상'을 렌더링!
-                                return (
-                                  <Agent 
-                                    key={`empty-seat-${seatIdx}`}
-                                    name=""
-                                    svgContent=""
-                                    showDesk={true}
-                                    isAbsent={true}
-                                    status="idle"
-                                    log=""
-                                    selectedStudioType={selectedStudio.type}
-                                  />
-                                );
+                                const isPresent = info.room === 'DevRoom';
+
+                                if (isPresent) {
+                                  // 실제로 메인 작업실에 존재할 때만 요원 본체와 책상을 함께 렌더링
+                                  const svgContent = config[assignedAgentName] || svgAlice;
+                                  return (
+                                    <Agent 
+                                      key={assignedAgentName}
+                                      name={assignedAgentName}
+                                      svgContent={svgContent}
+                                      showDesk={true}
+                                      isAbsent={false}
+                                      status={info.status}
+                                      log={info.log}
+                                      selectedStudioType={selectedStudio.type}
+                                      customRole={info.role}
+                                      customExpertise={info.expertise}
+                                    />
+                                  );
+                                }
                               }
+
+                              // 요원이 없거나 다른 방으로 이동(부재중)했다면, 빈 책상만 렌더링 (요원 본체는 언마운트하여 점프 이동 방지)
+                              return (
+                                <Agent 
+                                  key={`empty-seat-${seatIdx}`}
+                                  name=""
+                                  svgContent=""
+                                  showDesk={true}
+                                  isAbsent={true}
+                                  status="idle"
+                                  log=""
+                                  selectedStudioType={selectedStudio.type}
+                                />
+                              );
                             })}
                           </div>
                         );
@@ -1999,17 +2106,20 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
               {/* 스튜디오 타입 선택 */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">전문 업무 영역 선택</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {[
                     { id: 'game', label: '🎮 게임 개발', color: 'border-purple-600 bg-purple-950/20 text-purple-200' },
                     { id: 'law', label: '⚖️ 법무법인', color: 'border-yellow-600 bg-yellow-950/20 text-yellow-200' },
-                    { id: 'concert', label: '✨ 기획/행사', color: 'border-rose-600 bg-rose-950/20 text-rose-200' }
+                    { id: 'concert', label: '✨ 기획/행사', color: 'border-rose-600 bg-rose-950/20 text-rose-200' },
+                    { id: 'tax', label: '📊 세무회계', color: 'border-sky-600 bg-sky-950/20 text-sky-200' }
                   ].map((t) => (
                     <button
                       key={t.id}
                       onClick={() => {
                         setNewStudioType(t.id);
-                        if (t.id !== 'game') {
+                        if (t.id === 'tax') {
+                          setNewStudioAgentCount(5);
+                        } else if (t.id !== 'game') {
                           setNewStudioAgentCount(3);
                         } else {
                           setNewStudioAgentCount(4);
