@@ -10,6 +10,7 @@ import { useChatStore } from '@/store/useChatStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { SettingsModal } from '@/components/SettingsModal';
 import { AiStudioPanel } from '@/components/AiStudioPanel';
+import { AiModelSelector } from '@/components/AiModelSelector';
 import { v4 as uuidv4 } from 'uuid';
 import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
 
@@ -2762,45 +2763,20 @@ export default function Home() {
                 </span>
                 {currentRoom && (
                   <div className="relative z-50 flex items-center gap-1.5 block md:hidden lg:block">
-                    {showAiWarning ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSettingsOpen(true, true); // forceGlobal을 true로 주어 전역 설정이 뜨도록 함
-                        }}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/50 shadow-sm transition-colors text-[10px] font-bold"
-                      >
-                        🤖 AI 연결 필요
-                      </button>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isSponsorLocked) setIsAiModelDropdownOpen(!isAiModelDropdownOpen);
-                        }}
-                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border shrink-0 shadow-sm ${isSponsorLocked
-                          ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
-                          : isFreeAiActiveForModel
-                            ? 'bg-purple-600/20 text-purple-400 shadow-[0_0_8px_rgba(147,51,234,0.3)] border-purple-500/30 hover:bg-purple-600/30'
-                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
-                          }`}
-                      >
-                        {(() => {
-                          let displayModelName = selectedAiModel || 'AI 선택';
-                          const selectedEvent = freeAiEvents.find((e: any) => e.aiModel === selectedAiModel);
-                          if (isSponsorLocked) {
-                            displayModelName = lockedModelName;
-                          } else if (selectedEvent) {
-                            displayModelName = aiModels[selectedEvent.aiProvider === 'gemini-free' ? 'gemini' : selectedEvent.aiProvider]?.find((m) => m.id === selectedEvent.aiModel)?.name || selectedEvent.aiModel;
-                          } else {
-                            displayModelName = aiModels[selectedProvider === 'gemini-free' ? 'gemini' : selectedProvider]?.find(m => m.id === selectedAiModel)?.name || selectedAiModel || 'AI 선택';
-                          }
-                          return <span className="truncate max-w-[90px]">{displayModelName}</span>;
-                        })()}
-                        {isFreeAiActiveForModel && !isSponsorLocked && <span className="bg-emerald-500 text-dark-bg px-1 rounded text-[8px] font-bold tracking-tighter">EVENT</span>}
-                        {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
-                      </button>
-                    )}
+                    <AiModelSelector
+                      selectedAiModel={selectedAiModel}
+                      setSelectedAiModel={(id) => {
+                        setSelectedAiModel(id);
+                        localStorage.setItem('alo_ai_model', id);
+                      }}
+                      aiModels={aiModels}
+                      activeEvents={activeEvents}
+                      exhaustedFreeEvents={exhaustedFreeEvents}
+                      variant="chat-hud"
+                      isSponsorLocked={!!isSponsorLocked}
+                      lockedModelName={lockedModelName || '스폰서 전용 AI'}
+                      dropdownClassName="mt-1.5 w-40"
+                    />
                     {showAiWarning ? (
                       <button
                         onClick={(e) => {

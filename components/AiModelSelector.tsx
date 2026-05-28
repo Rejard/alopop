@@ -13,6 +13,10 @@ interface AiModelSelectorProps {
   disabled?: boolean;
   studioId?: string; // 특정 스튜디오별 개별 저장 시 사용
   className?: string; // 모바일/데스크톱 대응 또는 특화 스타일 레이아웃용
+  dropdownClassName?: string; // 드롭다운 특수 위치 조정용
+  variant?: 'default' | 'chat-hud'; // HUD 전용 테마 플래그
+  isSponsorLocked?: boolean; // 스폰서 락 모드
+  lockedModelName?: string; // 스폰서 락 시 보여질 강제 모델 이름
 }
 
 export function AiModelSelector({
@@ -23,7 +27,11 @@ export function AiModelSelector({
   exhaustedFreeEvents = {},
   disabled = false,
   studioId,
-  className = ''
+  className = '',
+  dropdownClassName = 'mt-1.5 w-40', // 기본값
+  variant = 'default',
+  isSponsorLocked = false,
+  lockedModelName = '스폰서 전용 AI',
 }: AiModelSelectorProps) {
   const {
     selectedProvider: globalProvider,
@@ -56,21 +64,26 @@ export function AiModelSelector({
     (model) => !freeAiEvents.some((event: any) => event.aiModel === model.id)
   );
 
-  // 둘 다 없을 때만 AI 연결 필요 경고 노출
-  const showAiWarning = filteredUserModels.length === 0 && freeAiEvents.length === 0;
+  // 둘 다 없을 때만 AI 연결 필요 경고 노출 (스폰서 락 모드가 아닐 때만)
+  const showAiWarning = !isSponsorLocked && filteredUserModels.length === 0 && freeAiEvents.length === 0;
 
   // 현재 선택된 모델 이름 계산
   let displayModelName = selectedAiModel || 'AI 선택';
   const selectedEvent = freeAiEvents.find((e: any) => e.aiModel === selectedAiModel);
-  if (selectedEvent) {
+  if (isSponsorLocked) {
+    displayModelName = lockedModelName;
+  } else if (selectedEvent) {
     displayModelName = aiModels[selectedEvent.aiProvider === 'gemini-free' ? 'gemini' : selectedEvent.aiProvider]?.find((m) => m.id === selectedEvent.aiModel)?.name || selectedEvent.aiModel;
   } else if (hasProviderKey) {
     displayModelName = allProviderModels.find((m) => m.id === selectedAiModel)?.name || selectedAiModel || 'AI 선택';
   }
 
+  // 테마 분기
+  const isChatHud = variant === 'chat-hud';
+
   return (
     <div className={`relative flex items-center gap-1.5 shrink-0 z-50 ${className}`}>
-      <span className="text-[9px] text-purple-400 font-extrabold shrink-0">🤖 AI 모델:</span>
+      {!isChatHud && <span className="text-[9px] text-purple-400 font-extrabold shrink-0">🤖 AI 모델:</span>}
       
       {showAiWarning ? (
         <button
@@ -79,41 +92,53 @@ export function AiModelSelector({
             e.stopPropagation();
             setSettingsOpen(true, true); // forceGlobal을 true로 주어 전역 설정이 뜨도록 함
           }}
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-900/50 shadow-sm transition-colors text-[9px] font-extrabold"
+          className={`flex items-center gap-1.5 px-2 rounded shadow-sm transition-colors text-[9px] font-extrabold ${
+            isChatHud 
+              ? 'py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/50 text-[10px]' 
+              : 'py-0.5 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-900/50'
+          }`}
         >
-          ⚠️ AI 연결 필요
+          {isChatHud ? '🤖 AI 연결 필요' : '⚠️ AI 연결 필요'}
         </button>
       ) : (
         <button
-          disabled={disabled}
+          disabled={disabled || isSponsorLocked}
           onClick={(e) => {
             e.stopPropagation();
-            setIsDropdownOpen(!isDropdownOpen);
+            if (!isSponsorLocked) setIsDropdownOpen(!isDropdownOpen);
           }}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold transition-colors border shrink-0 shadow-sm ${
-            isFreeAiActiveForModel
-              ? 'bg-purple-600/20 text-purple-400 shadow-[0_0_8px_rgba(147,51,234,0.3)] border-purple-500/30 hover:bg-purple-600/30'
-              : 'bg-[#1b1227] hover:bg-purple-900/20 text-purple-300 border-purple-800/30'
+          className={`flex items-center gap-1 rounded transition-colors border shrink-0 shadow-sm ${
+            isChatHud ? 'px-1.5 py-0.5 text-[10px] font-medium' : 'px-1.5 py-0.5 text-[9px] font-extrabold'
+          } ${
+            isSponsorLocked
+              ? 'bg-teal-500/10 text-teal-400 border-teal-500/30 cursor-not-allowed'
+              : isFreeAiActiveForModel
+                ? 'bg-purple-600/20 text-purple-400 shadow-[0_0_8px_rgba(147,51,234,0.3)] border-purple-500/30 hover:bg-purple-600/30'
+                : isChatHud
+                  ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
+                  : 'bg-[#1b1227] hover:bg-purple-900/20 text-purple-300 border-purple-800/30'
           }`}
         >
           <span className="truncate max-w-[110px]">
             {displayModelName}
           </span>
-          {isFreeAiActiveForModel && (
-            <span className="bg-emerald-500 text-black px-1 rounded text-[7px] font-bold tracking-tighter">
+          {isFreeAiActiveForModel && !isSponsorLocked && (
+            <span className={`bg-emerald-500 px-1 rounded tracking-tighter ${isChatHud ? 'text-dark-bg text-[8px] font-bold' : 'text-black text-[7px] font-bold'}`}>
               EVENT
             </span>
           )}
-          <ChevronDown size={10} className="opacity-70 shrink-0" />
+          {!isSponsorLocked && <ChevronDown size={10} className="opacity-70 shrink-0" />}
         </button>
       )}
 
       {isDropdownOpen && !showAiWarning && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-40 bg-[#1b1227] border border-purple-800/40 rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100 z-50 max-h-60 overflow-y-auto no-scrollbar">
+        <div className={`absolute top-full left-1/2 -translate-x-1/2 ${dropdownClassName} ${
+          isChatHud ? 'bg-zinc-800 border border-zinc-700' : 'bg-[#1b1227] border border-purple-800/40'
+        } rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100 z-50 max-h-60 overflow-y-auto no-scrollbar flex flex-col`}>
           
           {/* 유저 모델 리스트 */}
           {filteredUserModels.length > 0 && (
-            <div className="flex flex-col border-b border-purple-800/40 pb-1 mb-1">
+            <div className={`flex flex-col ${isChatHud ? '' : 'border-b border-purple-800/40 pb-1 mb-1'}`}>
               {filteredUserModels.map((model) => (
                 <button
                   key={model.id}
@@ -138,12 +163,19 @@ export function AiModelSelector({
                     setIsDropdownOpen(false);
                   }}
                   className={`w-full text-left px-3 py-2 text-[11px] transition-colors ${
-                    selectedAiModel === model.id && !freeAiEvents.some((e: any) => e.aiModel === selectedAiModel)
-                      ? 'bg-purple-900/30 text-purple-300'
-                      : 'text-zinc-300 hover:bg-zinc-800'
+                    isChatHud
+                      ? selectedAiModel === model.id && !freeAiEvents.some((e: any) => e.aiModel === selectedAiModel)
+                        ? 'bg-purple-900/30 text-purple-300'
+                        : 'text-zinc-300 hover:bg-zinc-700'
+                      : selectedAiModel === model.id && !freeAiEvents.some((e: any) => e.aiModel === selectedAiModel)
+                        ? 'bg-purple-900/30 text-purple-300'
+                        : 'text-zinc-300 hover:bg-zinc-800'
                   }`}
                 >
-                  <span className="truncate">{model.name}</span>
+                  <div className="flex justify-between items-center">
+                    <span className="truncate pr-1">{model.name}</span>
+                    {selectedAiModel === model.id && !freeAiEvents.some((e: any) => e.aiModel === selectedAiModel) ? <Check size={12} className="shrink-0 text-purple-400" /> : null}
+                  </div>
                 </button>
               ))}
             </div>
@@ -170,6 +202,8 @@ export function AiModelSelector({
                       setIsDropdownOpen(false);
                     }}
                     className={`w-full text-left px-3 py-2.5 text-[11px] font-extrabold transition-colors flex items-center justify-between gap-1 ${
+                      isChatHud ? 'border-t border-purple-800/40' : ''
+                    } ${
                       isSelected ? 'bg-purple-800/80' : 'bg-[#3b1a53]'
                     } hover:bg-purple-700/80`}
                   >
@@ -180,7 +214,7 @@ export function AiModelSelector({
                       </span>
                     </div>
                     {/* 사진에 있던 우측 작은 아이콘(v 형태)과 유사한 표시를 위해 ChevronDown 사용 */}
-                    <ChevronDown size={10} className="text-purple-500/70 shrink-0" />
+                    {!isChatHud && <ChevronDown size={10} className="text-purple-500/70 shrink-0" />}
                   </button>
                 );
               })}
