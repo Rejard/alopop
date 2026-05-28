@@ -118,52 +118,59 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
 
   useEffect(() => {
     if (isOpen) {
-      const timeoutId = window.setTimeout(() => {
       setActiveLayerTab('ai');
-      loadSettings();
-      
-      // 개별 방 정책 적용: 모달이 열린 방의 현재 스폰서 설정을 불러옵니다.
-      if (currentRoom) {
-        setRoomPolicy(currentRoom.sponsorMode ? 'sponsor' : 'individual');
-        setSponsorPrice(currentRoom.sponsorPrice || 0);
-        setSponsorModelId(currentRoom.sponsorModel || '');
-      } else {
-        setRoomPolicy('individual');
-        setSponsorPrice(0);
-      }
-      }, 0);
-      return () => window.clearTimeout(timeoutId);
     }
-  }, [currentRoom, isOpen, loadSettings]);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
       const timeoutId = window.setTimeout(() => {
-      // 내가 게스트로 방에 들어가있고 방장이 스폰서 모드를 켰다면? 그 모델로 탭을 강제고정!
-      let locked = false;
-      if (currentRoom && parsedUser) {
-        // 현재 내가 게스트이면서, 방의 sponsorMode가 켜져 있다면
-        if (!isAmIHost && currentRoom.sponsorMode) {
-          locked = true;
-          setHostSponsorLocked({ isLocked: true, modelName: currentRoom.sponsorModel || 'openai' });
-          setActiveTab((currentRoom.sponsorModel || 'openai') as AIProvider);
-        }
-      }
+        loadSettings();
+        
+        // 로컬스토리지에서 최신 provider 값을 직접 조회 (loadSettings 호출 직후 틱 대응)
+        const currentProvider = (localStorage.getItem('alo_ai_provider') as AIProvider) || 'gemini-free';
 
-      if (!locked) {
-        setHostSponsorLocked({ isLocked: false });
-        if (selectedProvider === 'gemini-free') {
-           setActiveTab('gemini');
-           setRoomPolicy('free');
+        // 개별 방 정책 적용: 모달이 열린 방의 현재 스폰서 설정을 불러옵니다.
+        let initialPolicy: 'individual' | 'sponsor' | 'free' = 'individual';
+        if (currentRoom) {
+          initialPolicy = currentRoom.sponsorMode ? 'sponsor' : 'individual';
+          setRoomPolicy(initialPolicy);
+          setSponsorPrice(currentRoom.sponsorPrice || 0);
+          setSponsorModelId(currentRoom.sponsorModel || '');
         } else {
-           setActiveTab(selectedProvider || 'openai');
-           if (roomPolicy === 'free') setRoomPolicy('individual'); // gemini가 아닌 경우 free 락 풀기
+          setRoomPolicy('individual');
+          setSponsorPrice(0);
         }
-      }
+
+        // 내가 게스트로 방에 들어가있고 방장이 스폰서 모드를 켰다면? 그 모델로 탭을 강제고정!
+        let locked = false;
+        if (currentRoom && parsedUser) {
+          // 현재 내가 게스트이면서, 방의 sponsorMode가 켜져 있다면
+          if (!isAmIHost && currentRoom.sponsorMode) {
+            locked = true;
+            setHostSponsorLocked({ isLocked: true, modelName: currentRoom.sponsorModel || 'openai' });
+            setActiveTab((currentRoom.sponsorModel || 'openai') as AIProvider);
+          }
+        }
+
+        if (!locked) {
+          setHostSponsorLocked({ isLocked: false });
+          if (currentProvider === 'gemini-free') {
+            setActiveTab('gemini');
+            setRoomPolicy('free');
+          } else {
+            setActiveTab(currentProvider);
+            // gemini가 아닌 경우 free 락 풀기
+            if (roomPolicy === 'free' && currentProvider !== 'gemini') {
+              setRoomPolicy('individual');
+            }
+          }
+        }
       }, 0);
       return () => window.clearTimeout(timeoutId);
     }
-  }, [currentRoom, isAmIHost, isOpen, parsedUser, roomPolicy, selectedProvider]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, currentRoom?.id, currentRoom?.sponsorMode, currentRoom?.sponsorPrice, currentRoom?.sponsorModel, isAmIHost, parsedUser?.id, loadSettings]);
 
   const fetchHiddenBlockedFriends = useCallback(async () => {
     try {
@@ -350,7 +357,7 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
 
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-dark-bg/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-dark-bg/80 backdrop-blur-md">
       <div className="w-full max-w-sm bg-surface-container border border-outline-variant/15 rounded-lg shadow-ambient p-6 relative animate-in fade-in zoom-in duration-200">
 
         <button

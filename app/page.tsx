@@ -346,7 +346,7 @@ export default function Home() {
   };
 
   const chatStore = useChatStore();
-  const { setIsOpen: setSettingsOpen, selectedProvider, apiKeys, loadSettings, setSelectedProvider } = useSettingsStore();
+  const { isOpen, setIsOpen: setSettingsOpen, selectedProvider, apiKeys, loadSettings, setSelectedProvider } = useSettingsStore();
 
   // 앱 최초 로드 시 로컬 스토리지의 AI 설정을 스토어에 즉시 동기화
   useEffect(() => {
@@ -464,18 +464,22 @@ export default function Home() {
 
   useEffect(() => {
     if (!aiModelsLoaded) return;
-    const providerValue = selectedProvider || 'openai';
+    const providerValue = selectedProvider === 'gemini-free' ? 'gemini' : (selectedProvider || 'openai');
     const list = aiModels[providerValue] || [];
     const savedModel = localStorage.getItem('alo_ai_model') || selectedAiModel;
 
-    if (!savedModel || !list.some(m => m.id === savedModel)) {
+    const isEventModel = activeEvents.some(e => e.eventType === 'FREE_AI' && e.aiModel === savedModel && !exhaustedFreeEvents[e.id]);
+
+    // 제공사를 바꿨을 때, 이전 제공사의 모델이 남아있으면 안 되므로 롤백 수행. 
+    // 단, 선택된 모델이 '이벤트 모델'인 경우는 제공사가 달라도 절대 롤백하지 않음 (유저 의도 존중)
+    if (!savedModel || (!list.some(m => m.id === savedModel) && !isEventModel)) {
       const defaultModel = providerValue === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (providerValue === 'openai' ? 'gpt-5.4-mini' : list[0]?.id || 'gpt-5.4');
       setSelectedAiModel(defaultModel);
       localStorage.setItem('alo_ai_model', defaultModel);
     } else if (selectedAiModel !== savedModel) {
       setSelectedAiModel(savedModel);
     }
-  }, [selectedProvider, selectedAiModel, aiModels, aiModelsLoaded]);
+  }, [selectedProvider, selectedAiModel, aiModels, aiModelsLoaded, activeEvents, exhaustedFreeEvents]);
 
   // 로컬 스토리지에서 인증 정보 확인
   useEffect(() => {
@@ -1349,12 +1353,13 @@ export default function Home() {
   const sponsorPrice = currentRoom?.sponsorPrice || 0;
   const hasSetupAi = Object.values(apiKeys).some(key => key.trim().length > 0);
   const freeAiEvents = activeEvents.filter(e => e.eventType === 'FREE_AI' && !exhaustedFreeEvents[e.id]);
-  const isFreeAiActiveForModel = !!freeAiEvents.find(e => e.aiProvider === selectedProvider && e.aiModel === selectedAiModel);
+  const isFreeAiActiveForModel = !!freeAiEvents.find(e => e.aiModel === selectedAiModel);
   const hasSetupForProvider = !!apiKeys[selectedProvider]?.trim();
-  const showAiWarning = !isSponsorLocked && !hasSetupForProvider && !isFreeAiActiveForModel;
+  const showAiWarning = !isSponsorLocked && !hasSetupForProvider && freeAiEvents.length === 0;
 
   // Auto fallback to free AI event if API keys are missing
   useEffect(() => {
+    if (isOpen) return; // 설정창이 열려있을 때는 자동 롤백을 수행하지 않습니다.
     const hasAnySetup = Object.values(apiKeys).some(key => key.trim().length > 0);
     if (!hasAnySetup && freeAiEvents.length > 0) {
       if (!isFreeAiActiveForModel && !isSponsorLocked) {
@@ -1365,7 +1370,7 @@ export default function Home() {
         localStorage.setItem('alo_ai_model', targetEvent.aiModel);
       }
     }
-  }, [apiKeys, freeAiEvents.length, selectedProvider, selectedAiModel, isSponsorLocked]);
+  }, [apiKeys, freeAiEvents.length, selectedProvider, selectedAiModel, isSponsorLocked, isOpen]);
 
 
   if (!user) {
@@ -2780,7 +2785,18 @@ export default function Home() {
                             : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
                           }`}
                       >
-                        <span className="truncate max-w-[90px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                        {(() => {
+                          let displayModelName = selectedAiModel || 'AI 선택';
+                          const selectedEvent = freeAiEvents.find((e: any) => e.aiModel === selectedAiModel);
+                          if (isSponsorLocked) {
+                            displayModelName = lockedModelName;
+                          } else if (selectedEvent) {
+                            displayModelName = aiModels[selectedEvent.aiProvider === 'gemini-free' ? 'gemini' : selectedEvent.aiProvider]?.find((m) => m.id === selectedEvent.aiModel)?.name || selectedEvent.aiModel;
+                          } else {
+                            displayModelName = aiModels[selectedProvider === 'gemini-free' ? 'gemini' : selectedProvider]?.find(m => m.id === selectedAiModel)?.name || selectedAiModel || 'AI 선택';
+                          }
+                          return <span className="truncate max-w-[90px]">{displayModelName}</span>;
+                        })()}
                         {isFreeAiActiveForModel && !isSponsorLocked && <span className="bg-emerald-500 text-dark-bg px-1 rounded text-[8px] font-bold tracking-tighter">EVENT</span>}
                         {!isSponsorLocked && <ChevronDown size={10} className="opacity-70" />}
                       </button>
@@ -2814,23 +2830,59 @@ export default function Home() {
                       </button>
                     )}
                     {isAiModelDropdownOpen && !showAiWarning && (
-                      <div className="absolute top-full left-0 mt-1.5 w-40 bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100">
-                        {aiModels[selectedProvider]?.map(model => (
-                          <button
-                            key={model.id}
-                            onClick={() => {
-                              setSelectedAiModel(model.id);
-                              localStorage.setItem('alo_ai_model', model.id);
-                              setIsAiModelDropdownOpen(false);
-                            }}
-                            className={`w-full text-left px-2.5 py-2 text-xs transition-colors ${selectedAiModel === model.id ? 'bg-purple-600/20 text-purple-400 font-bold' : 'text-zinc-300 hover:bg-zinc-700'}`}
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="truncate pr-1">{model.name}</span>
-                              {selectedAiModel === model.id ? <Check size={12} className="shrink-0" /> : null}
-                            </div>
-                          </button>
-                        ))}
+                      <div className="absolute top-full left-0 mt-1.5 w-40 bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100 flex flex-col">
+                        {/* 유저 모델 리스트 */}
+                        {(() => {
+                          const allProviderModels = aiModels[selectedProvider === 'gemini-free' ? 'gemini' : selectedProvider] || [];
+                          const hasProviderKey = selectedProvider === 'gemini-free' || !!apiKeys[selectedProvider];
+                          const userModels = hasProviderKey ? allProviderModels : [];
+                          const filteredUserModels = userModels.filter(m => !freeAiEvents.some((e: any) => e.aiModel === m.id));
+                          
+                          return filteredUserModels.map(model => (
+                            <button
+                              key={model.id}
+                              onClick={() => {
+                                setSelectedAiModel(model.id);
+                                localStorage.setItem('alo_ai_model', model.id);
+                                setIsAiModelDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 text-[11px] transition-colors ${selectedAiModel === model.id ? 'bg-purple-900/30 text-purple-300' : 'text-zinc-300 hover:bg-zinc-700'}`}
+                            >
+                              <div className="flex justify-between items-center">
+                                <span className="truncate pr-1">{model.name}</span>
+                                {selectedAiModel === model.id ? <Check size={12} className="shrink-0 text-purple-400" /> : null}
+                              </div>
+                            </button>
+                          ));
+                        })()}
+
+                        {/* 무료 이벤트 모델 리스트 (마지막 리스트 보라색 박스 스타일) */}
+                        {freeAiEvents.map((event: any) => {
+                          const modelName = aiModels[event.aiProvider === 'gemini-free' ? 'gemini' : event.aiProvider]?.find((m) => m.id === event.aiModel)?.name || event.aiModel;
+                          const isSelected = selectedAiModel === event.aiModel;
+                          
+                          return (
+                            <button
+                              key={`event-${event.id}`}
+                              onClick={() => {
+                                setSelectedAiModel(event.aiModel);
+                                localStorage.setItem('alo_ai_model', event.aiModel);
+                                setIsAiModelDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2.5 text-[11px] font-extrabold transition-colors flex items-center justify-between gap-1 border-t border-purple-800/40 ${
+                                isSelected ? 'bg-purple-800/80' : 'bg-[#3b1a53]'
+                              } hover:bg-purple-700/80`}
+                            >
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="truncate text-purple-300">{modelName}</span>
+                                <span className="bg-emerald-500 text-black px-1.5 py-0.5 rounded text-[8px] font-black tracking-tighter shrink-0 leading-none">
+                                  EVENT
+                                </span>
+                              </div>
+                              <ChevronDown size={10} className="text-purple-500/70 shrink-0" />
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2887,7 +2939,7 @@ export default function Home() {
                           : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/50'
                         }`}
                     >
-                      <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
+                      <span className="truncate max-w-[100px]">{isSponsorLocked ? lockedModelName : (aiModels[selectedProvider === 'gemini-free' ? 'gemini' : selectedProvider]?.find(m => m.id === selectedAiModel)?.name || '기본 AI')}</span>
                       {isFreeAiActiveForModel && !isSponsorLocked && <span className="bg-emerald-500 text-dark-bg px-1.5 py-0.5 rounded text-[9px] font-bold tracking-tighter">EVENT</span>}
                       {!isSponsorLocked && <ChevronDown size={12} className="opacity-70" />}
                     </button>
@@ -2922,7 +2974,7 @@ export default function Home() {
                   )}
                   {isAiModelDropdownOpen && !showAiWarning && (
                     <div className="absolute top-full right-0 mt-1.5 w-44 bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100">
-                      {aiModels[selectedProvider]?.map(model => (
+                      {aiModels[selectedProvider === 'gemini-free' ? 'gemini' : selectedProvider]?.map(model => (
                         <button
                           key={model.id}
                           onClick={() => {
@@ -3547,7 +3599,15 @@ export default function Home() {
               {/* AI 스튜디오 탭 */}
               {currentTab === 'aistudio' && (
                 <div className="flex-1 w-full h-full flex flex-col relative bg-transparent overflow-hidden">
-                  <AiStudioPanel user={user} markRoomAsRead={markRoomAsRead} />
+                  <AiStudioPanel 
+                    user={user} 
+                    markRoomAsRead={markRoomAsRead}
+                    selectedAiModel={selectedAiModel}
+                    setSelectedAiModel={setSelectedAiModel}
+                    aiModels={aiModels}
+                    activeEvents={activeEvents}
+                    exhaustedFreeEvents={exhaustedFreeEvents}
+                  />
                 </div>
               )}
 

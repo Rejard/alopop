@@ -3,12 +3,14 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { motion, LayoutGroup } from 'framer-motion';
 import { useChatStore } from '@/store/useChatStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
+import { AiModelSelector } from './AiModelSelector';
 import { 
   Bot, Gamepad2, Scale, Music, Trash2, Plus, 
   Send, Paperclip, X, Copy, Download, RefreshCw, 
   ExternalLink, Play, Server, ShieldCheck, HelpCircle, 
   ChevronRight, Building2, User, Sparkles, AlertCircle,
-  ChevronLeft, FolderOpen, ArrowLeft
+  ChevronLeft, FolderOpen, ArrowLeft, ChevronDown, Check
 } from 'lucide-react';
 
 // ==========================================
@@ -918,9 +920,22 @@ function Agent({ name, svgContent, showDesk = false, isAbsent = false, status, l
 interface AiStudioPanelProps {
   user: any;
   markRoomAsRead: (roomId: string) => Promise<void>;
+  selectedAiModel: string;
+  setSelectedAiModel: React.Dispatch<React.SetStateAction<string>>;
+  aiModels: Record<string, { id: string, name: string }[]>;
+  activeEvents?: any[];
+  exhaustedFreeEvents?: Record<string, boolean>;
 }
 
-export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
+export function AiStudioPanel({ 
+  user, 
+  markRoomAsRead,
+  selectedAiModel,
+  setSelectedAiModel,
+  aiModels,
+  activeEvents = [],
+  exhaustedFreeEvents = {}
+}: AiStudioPanelProps) {
   const { socket } = useChatStore();
 
   const [studios, setStudios] = useState<any[]>([]);
@@ -929,6 +944,49 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
   // 현재 가상 에이전트 사무실 상태 및 말풍선 로그
   const [agentState, setAgentState] = useState<Record<string, { status: string; room: string; log: string }>>({});
   const [isWorking, setIsWorking] = useState(false);
+
+  // 💻 [공용 연결] useSettingsStore 상태와 props를 통해 채팅창과 100% 동일하게 Reactive 연동
+  const { 
+    selectedProvider: globalProvider, 
+    setSelectedProvider: setGlobalProvider, 
+    apiKeys, 
+    setIsOpen: setSettingsOpen 
+  } = useSettingsStore();
+
+  const [isAiModelDropdownOpen, setIsAiModelDropdownOpen] = useState(false);
+  const [isCreateModalAiDropdownOpen, setIsCreateModalAiDropdownOpen] = useState(false);
+
+  // 100% 채팅창과 호환되는 globalModel 변수 매핑 및 동적 변수 유도
+  const globalModel = selectedAiModel;
+  const freeAiEvents = useMemo(() => activeEvents.filter((e: any) => e.eventType === 'FREE_AI' && !exhaustedFreeEvents[e.id]), [activeEvents, exhaustedFreeEvents]);
+  const isFreeAiActiveForModel = useMemo(() => !!freeAiEvents.find((e: any) => e.aiProvider === globalProvider && e.aiModel === selectedAiModel), [freeAiEvents, globalProvider, selectedAiModel]);
+  const showAiWarning = globalProvider !== 'gemini-free' && !apiKeys[globalProvider];
+
+  // 💻 각기 다른 스튜디오마다 각기 다른 AI 모델 선택/적용을 보관하고 복원하는 로직
+  useEffect(() => {
+    if (!selectedStudio?.id) return;
+
+    // 1. 해당 스튜디오 전용으로 저장된 모델 설정 로드
+    const studioModel = localStorage.getItem(`alo_ai_model_studio_${selectedStudio.id}`);
+    const studioProvider = localStorage.getItem(`alo_ai_provider_studio_${selectedStudio.id}`);
+
+    if (studioModel && studioProvider) {
+      // 스튜디오 전용 모델 설정이 있는 경우 즉시 반영
+      setSelectedAiModel(studioModel);
+      setGlobalProvider(studioProvider as any);
+      localStorage.setItem('alo_ai_model', studioModel);
+      localStorage.setItem('alo_ai_provider', studioProvider);
+    } else {
+      // 없는 경우, 전역 공용 기본값 반영하고 해당 스튜디오 전용 키로도 세이브
+      const currentGlobalModel = localStorage.getItem('alo_ai_model') || 'gemini-3.5-flash';
+      const currentGlobalProvider = localStorage.getItem('alo_ai_provider') || 'gemini';
+      
+      setSelectedAiModel(currentGlobalModel);
+      setGlobalProvider(currentGlobalProvider as any);
+      localStorage.setItem(`alo_ai_model_studio_${selectedStudio.id}`, currentGlobalModel);
+      localStorage.setItem(`alo_ai_provider_studio_${selectedStudio.id}`, currentGlobalProvider);
+    }
+  }, [selectedStudio?.id, setSelectedAiModel, setGlobalProvider]);
 
   // 💻 5인 이상 스튜디오를 위한 동기식 실시간 책상 배정 및 위치 고정(재정렬 금지) 헬퍼 세션 엔진 (1 틱 딜레이 해결로 점프 이동 완벽 차단)
   const deskAssignments = useMemo(() => {
@@ -1305,25 +1363,29 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs.length]);
 
-  // 4.5. AI 스튜디오 조직 추천 설정 함수 (브라우저에서 직접 Gemini API 호출)
+  // 4.5. AI 스튜디오 조직 추천 설정 함수 (선택한 동적 AI 모델로 호출)
   const handleRecommendConfig = async () => {
     if (!newStudioDesc.trim()) {
       alert('설립 목적 및 업무 지시 개요를 먼저 입력해주세요.');
       return;
     }
     
-    // 로컬 스토리지에서 유저의 개인 Gemini API Key 추출
-    let geminiApiKey = '';
+    // 1. 추천용 AI 제공사 및 모델 확보
+    const provider = globalProvider === 'gemini-free' ? 'gemini' : globalProvider;
+    
+    // 2. 해당 제공사의 로컬 API Key 추출
+    let providerApiKey = '';
     try {
       const keysStr = localStorage.getItem('alo_api_keys');
       if (keysStr) {
         const keys = JSON.parse(keysStr);
-        geminiApiKey = keys['gemini'] || '';
+        providerApiKey = keys[provider] || '';
       }
     } catch (e) { /* ignore */ }
 
-    if (!geminiApiKey) {
-      alert('AI 추천 설정을 사용하려면 [설정]에서 개인 Gemini API Key를 먼저 등록해주세요.');
+    if (!providerApiKey) {
+      alert(`AI 추천 설정을 사용하려면 [설정]에서 개인 ${provider.toUpperCase()} API Key를 먼저 등록해주세요.`);
+      setSettingsOpen(true, true); // 설정 모달창을 오픈
       return;
     }
     
@@ -1344,25 +1406,66 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
 반드시 아래 JSON 포맷으로만 응답하세요 (마크다운 코드블록 제외, 순수 JSON만):
 {"agentCount": 숫자, "agentsConfig": [{"name": "성함", "role": "부서", "expertise": "전문성 설명"}, ...]}`;
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.9 }
-          })
-        }
-      );
+      let res;
+      if (provider === 'gemini') {
+        res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${globalModel}:generateContent?key=${providerApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.9 }
+            })
+          }
+        );
+      } else if (provider === 'openai') {
+        res = await fetch(
+          `https://api.openai.com/v1/chat/completions`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${providerApiKey}`
+            },
+            body: JSON.stringify({
+              model: globalModel,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0.9
+            })
+          }
+        );
+      } else {
+        // Anthropic: CORS 회피용 로컬 백엔드 프록시 호출
+        res = await fetch(
+          `/api/aistudio/proxy-anthropic`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiKey: providerApiKey,
+              model: globalModel,
+              prompt: prompt
+            })
+          }
+        );
+      }
       
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`Gemini API 호출 실패 (HTTP ${res.status}): ${errText.substring(0, 200)}`);
+        throw new Error(`${provider.toUpperCase()} API 호출 실패 (HTTP ${res.status}): ${errText.substring(0, 200)}`);
       }
 
       const result = await res.json();
-      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      let rawText = '';
+      
+      if (provider === 'gemini') {
+        rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      } else if (provider === 'openai') {
+        rawText = result?.choices?.[0]?.message?.content || '';
+      } else if (provider === 'anthropic') {
+        rawText = result?.content?.[0]?.text || '';
+      }
       
       // JSON 파싱 (마크다운 코드블록 제거)
       let cleanJson = rawText.replace(/```(?:json)?\s*\n?/gi, '').replace(/\n?```/g, '').trim();
@@ -1662,18 +1765,23 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
   // 로컬 스튜디오 자가 구동 AI 오케스트레이션 엔진
   // =============================================
   const runLocalStudioOrchestration = async (studio: any, task: string) => {
-    // Gemini API Key 추출
-    let geminiApiKey = '';
+    // 1. 현재 연산용 AI 프로바이더 및 모델명 확보
+    // globalProvider가 'gemini-free'이면 gemini 프로바이더로 처리
+    const provider = globalProvider === 'gemini-free' ? 'gemini' : globalProvider;
+    
+    // 2. 해당 프로바이더의 로컬 API Key 추출
+    let providerApiKey = '';
     try {
       const keysStr = localStorage.getItem('alo_api_keys');
       if (keysStr) {
         const keys = JSON.parse(keysStr);
-        geminiApiKey = keys['gemini'] || '';
+        providerApiKey = keys[provider] || '';
       }
     } catch (e) { /* ignore */ }
 
-    if (!geminiApiKey) {
-      alert('업무를 수행하려면 [설정]에서 개인 Gemini API Key를 먼저 등록해주세요.');
+    if (!providerApiKey) {
+      alert(`업무를 수행하려면 [설정]에서 개인 ${provider.toUpperCase()} API Key를 먼저 등록해주세요.`);
+      setSettingsOpen(true, true); // 바로 설정창을 열어줌
       return;
     }
 
@@ -1684,7 +1792,7 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
       return logEntry;
     };
 
-    addLog('대표님', `[신규 업무 발주] "${task}"`);
+    addLog('대표님', `[신규 업무 발주] AI 모델: ${globalModel} | "${task}"`);
 
     try {
       // 현재 로컬 에이전트 상태에서 파이프라인 구성
@@ -1702,9 +1810,9 @@ export function AiStudioPanel({ user, markRoomAsRead }: AiStudioPanelProps) {
         // 에이전트 상태 업데이트: thinking
         currentState[agentName] = { ...currentState[agentName], status: 'thinking', room: 'DevRoom', log: '업무 문서 작성 중...' };
         setAgentState({ ...currentState });
-        addLog(agentName, `${role} 업무 처리를 시작합니다...`);
+        addLog(agentName, `${role} 업무 처리를 시작합니다... (AI: ${globalModel})`);
 
-        // Gemini API 직접 호출
+        // 프롬프트 생성
         const prompt = `당신은 "${studio.name}" 소속의 ${role} '${agentName}'입니다.
 전문성 및 페르소나: ${expertise}
 대표님의 핵심 지시: "${task}"
@@ -1717,23 +1825,67 @@ ${accumulatedDoc}
 오직 한국어(Korean)로 실무 마크다운 결과물만 완벽하게 출력하세요 (사담 금지, 불필요한 마크다운 코드 블록 백틱은 씌우지 마세요).`;
 
         try {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7 }
-              })
-            }
-          );
+          let res;
+          if (provider === 'gemini') {
+            res = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${globalModel}:generateContent?key=${providerApiKey}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }],
+                  generationConfig: { temperature: 0.7 }
+                })
+              }
+            );
+          } else if (provider === 'openai') {
+            res = await fetch(
+              `https://api.openai.com/v1/chat/completions`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${providerApiKey}`
+                },
+                body: JSON.stringify({
+                  model: globalModel,
+                  messages: [{ role: 'user', content: prompt }],
+                  temperature: 0.7
+                })
+              }
+            );
+          } else {
+            // Anthropic: CORS 회피용 로컬 백엔드 프록시 호출
+            res = await fetch(
+              `/api/aistudio/proxy-anthropic`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  apiKey: providerApiKey,
+                  model: globalModel,
+                  prompt: prompt
+                })
+              }
+            );
+          }
 
           if (res.ok) {
             const result = await res.json();
-            const resultText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            let resultText = '';
+            
+            if (provider === 'gemini') {
+              resultText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            } else if (provider === 'openai') {
+              resultText = result?.choices?.[0]?.message?.content || '';
+            } else if (provider === 'anthropic') {
+              resultText = result?.content?.[0]?.text || '';
+            }
+
             accumulatedDoc += `\n### [${agentName} - ${role}의 자문/기획]\n${resultText}\n`;
           } else {
+            const errBody = await res.text();
+            console.error('API Call Failed:', errBody);
             addLog(agentName, `⚠️ API 호출 실패 (HTTP ${res.status}). 다음 에이전트로 넘어갑니다.`);
           }
         } catch (apiErr: any) {
@@ -2116,7 +2268,7 @@ ${accumulatedDoc}
               
               {/* 타이틀HUD */}
               <div className="flex justify-between items-center z-20 w-full flex-shrink-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-[50px]">
                   {isMobile && (
                     <button
                       onClick={() => setActiveMobileView('list')}
@@ -2126,13 +2278,20 @@ ${accumulatedDoc}
                       목록
                     </button>
                   )}
-                  <div className="flex items-center gap-2 bg-[#1b1227]/90 px-3 py-1.5 rounded-full border border-purple-800/30 shadow-md">
-                    <Sparkles size={12} className="text-purple-400 animate-spin" style={{ animationDuration: '4s' }} />
-                    <span className="text-[10px] font-extrabold text-purple-300 tracking-widest">{selectedStudio.name} 시뮬레이터</span>
-                  </div>
                 </div>
+
+                {/* 🤖 분석용 AI 모델 셀렉터 (최상축 중간 배치 - 항시 노출 및 채팅창 100% 공용 연결) */}
+                <AiModelSelector
+                  selectedAiModel={selectedAiModel}
+                  setSelectedAiModel={setSelectedAiModel}
+                  aiModels={aiModels}
+                  activeEvents={activeEvents}
+                  exhaustedFreeEvents={exhaustedFreeEvents}
+                  disabled={isWorking}
+                  studioId={selectedStudio?.id}
+                />
                 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 min-w-[50px] justify-end">
                   <button
                     onClick={() => isMobile ? setActiveMobileView('archive') : setShowDesktopArchive(prev => !prev)}
                     className={`relative p-1.5 rounded-lg border transition-all shadow-sm flex items-center gap-1 text-[10px] font-bold ${(!isMobile && showDesktopArchive) ? 'bg-purple-800/80 text-white border-purple-600' : 'bg-purple-900/30 text-purple-300 border-purple-800/40 hover:bg-purple-800/60 hover:text-white'}`}
@@ -2744,6 +2903,19 @@ ${accumulatedDoc}
             {/* 입력 폼 */}
             <div className="flex flex-col gap-4">
               
+              {/* 🤖 AI 모델 선택 리스트바 (채팅창 & HUD와 100% 동일하게 완벽 연동) */}
+              <div className="flex items-center justify-between bg-[#1b1227]/40 p-3 rounded-xl border border-purple-800/10">
+                <span className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">추천/설정 AI 모델</span>
+                <AiModelSelector
+                  selectedAiModel={selectedAiModel}
+                  setSelectedAiModel={setSelectedAiModel}
+                  aiModels={aiModels}
+                  activeEvents={activeEvents}
+                  exhaustedFreeEvents={exhaustedFreeEvents}
+                  disabled={isRecommending}
+                />
+              </div>
+
               {/* 스튜디오 이름 */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">회사 (스튜디오) 이름</label>
@@ -2760,6 +2932,7 @@ ${accumulatedDoc}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest">설립 목적 및 업무 지시 개요</label>
+                  
                   <button
                     type="button"
                     disabled={!newStudioDesc.trim() || isRecommending}
