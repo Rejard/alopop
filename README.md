@@ -29,87 +29,62 @@ In today's hyper-connected society, messengers have become the fastest conduits 
 
 Alopop provides a robust, highly customizable ecosystem built on top of our fact-checking core engine.
 
-### 1. Server-Side Autonomous Sponsored AI Economy (BYOK)
+### 1. Multi-Domain Personal AI Studio & Orchestration 🛠️
+Alopop transcends standard chat interfaces by providing dedicated **Multi-Domain Personal AI Studios** for every user.
+- **Dedicated Workspaces**: Upon onboarding, users are automatically granted 4 independent professional studios: Game Development, Event/Concert Planning, Law Firm, and Tax/Accounting Firm.
+- **Multi-Agent Pipeline**: Each studio is powered by a dynamic pipeline of domain-specific agents (e.g., PM, Designer, Developer, QA for games). These agents collaborate in real-time via WebSockets to autonomously fulfill complex project requests.
+- **Auto-Healing Architecture**: The system dynamically seeds and self-heals corrupted agent configurations using a resilient template engine (`studio_templates.json`), guaranteeing zero downtime.
 
-![BYOK Architecture](./public/feature-byok.svg)
+### 2. Per-Studio Dynamic AI Model Selection (Advanced BYOK) 🧠
+Why settle for a single AI model? Alopop's `AiModelSelector` allows unparalleled granular control over your AI infrastructure.
+- **Studio-Level Modularity**: Users can assign entirely different AI models to each of their personal studios (e.g., OpenAI `gpt-4o` for the Law Firm, Anthropic `claude-3.5-sonnet` for Game Development, and Google `gemini-1.5-pro` for Fact-Checking).
+- **Decoupled Key Management**: The BYOK (Bring Your Own Key) architecture securely maps the correct API keys per provider on-the-fly, ensuring maximum cost-efficiency and model specialization.
 
-You do not need to pay the platform to run heavy fact-checking inference. Alopop returns the sovereignty of LLM infrastructure and monetization entirely to the user.
-- **BYOK (Bring Your Own Key)**: Users can directly input their own API keys (OpenAI, Gemini, Anthropic) into the system and enjoy unlimited access to the core engine with zero platform markup.
-- **24/7 Autonomous AI Revenue (Pay-Per-Use)**: Chatroom hosts can register their AI persona and API key to the DB. Regardless of whether the host's app is open or closed, the **Node.js server seamlessly processes all guest fact-check requests in the background 24/7, automatically charging guests in-app coins and depositing them into the host's wallet**. A massive Web3-style passive income paradigm.
-- **Military-Grade DB Encryption**: External API keys submitted by users are NEVER stored as plain text. They are heavily encrypted using an **AES-256-CBC cypher** coupled with randomized initialization vectors, shielding high-limit commercial keys from any potential master DB breach.
+### 3. Pet365Care Integrated Ecosystem 🐾
+Previously a standalone service, the **Pet365Care** health and social management platform is now seamlessly integrated directly into the Alopop Next.js ecosystem.
+- Features real-time pet health tracking, hospital synchronization, and a fully functional social feed for pet owners—all leveraging Alopop's underlying core infrastructure.
 
-### 2. Hyper-Personalized AI Persona (MBTI Engine)
+### 4. Server-Side Autonomous Sponsored AI Economy (BYOK)
+You do not need to pay the platform to run heavy inference. Alopop returns the sovereignty of LLM infrastructure and monetization entirely to the user.
+- **24/7 Autonomous AI Revenue (Pay-Per-Use)**: Chatroom hosts can register their AI persona and API key to the DB. The **Node.js server seamlessly processes all guest fact-check requests in the background 24/7, automatically charging guests in-app coins and depositing them into the host's wallet**.
+- **Military-Grade DB Encryption**: External API keys submitted by users are NEVER stored as plain text. They are heavily encrypted using an **AES-256-CBC cypher**, shielding high-limit commercial keys from any potential master DB breach.
 
-![AI Persona](./public/feature-persona.svg)
-
+### 5. Hyper-Personalized AI Persona (MBTI Engine)
 Going far beyond a generic chatbot, Alopop allows you to engineer a highly personalized AI companion that actively participates in your chatrooms.
-- **Precision MBTI Injection**: Customize your unique conversation partner by defining their **16-personality MBTI type, age, gender, occupation, and specific tone of voice (e.g., sarcastic, empathetic)** via system prompts.
-- This bespoke AI friend resides in your chat room, seamlessly fact-checking ongoing conversations while blending perfectly into the context—offering witty comebacks or deep empathy exactly according to their defined persona.
+- **Precision MBTI Injection**: Customize your unique conversation partner by defining their **16-personality MBTI type, age, gender, occupation, and specific tone of voice**.
+- This bespoke AI friend seamlessly fact-checks ongoing conversations while blending perfectly into the context.
 
-### 3. P2P Smart Coin Economy & Real-Time Remittance
-
-![Coin Pooling](./public/feature-pooling.svg)
-
-Why should the room host bear the entire cost of API inference? Alopop introduces granular cost-sharing policies directly within the chatroom utilizing its internal virtual coin ledger.
+### 6. P2P Smart Coin Economy & Real-Time Remittance
+Alopop introduces granular cost-sharing policies directly within the chatroom utilizing its internal virtual coin ledger.
 - **Zero-Fee Peer-to-Peer Transfers**: Integrated with a virtual in-app 'Coin' wallet system, chat participants can send tips, pay for information, or fund AI requests with zero transaction fees via web sockets.
-- **Unprecedented Billing Flexibility**: Chatrooms can operate in distinct economic modes: 
-   1) **Individual Routing**: Everyone uses their standalone keys.
-   2) **Pay-Per-Use Sponsored Mode**: Guests automatically pay a host-defined 'coin toll' to use the host's AI engine.
-   3) **P2P Coin Pooling**: Participants crowdfund tokens via split-billing to collectively fund heavy multimodality requests.
+- **Unprecedented Billing Flexibility**: Individual Routing, Pay-Per-Use Sponsored Mode, or P2P Coin Pooling for heavy multimodality requests.
 
-### 4. Admin-Sponsored "Free AI Events" & CMS Dashboard 👑
-
+### 7. Admin-Sponsored "Free AI Events" & CMS Dashboard 👑
 Alopop breaks the entry barrier for new users lacking API keys by empowering administrators with a full-fledged robust **CMS (Content Management System) Dashboard**.
-- **Frictionless Onboarding (Free AI Events)**: Admins can dynamically issue "Free AI Events" for specific models (e.g. Gemini 1.5 Pro). The system automatically detects new users without BYOK setup, grants them a Daily Quota of free AI inferences paid by the Admin's configured vault, and displays interactive `[EVENT]` purple UI badges. Once exhausted, it cleanly falls back to BYOK requirements.
-- **Real-Time Global Announcements**: Admins can instantly broadcast global server announcements using the real-time Dashboard, managing the toggling and lifecycle of system-wide popups effortlessly.
+- **Frictionless Onboarding (Free AI Events)**: Admins can dynamically issue "Free AI Events". The system automatically detects new users, grants them a Daily Quota of free AI inferences paid by the Admin's configured vault, and displays interactive `[EVENT]` purple UI badges.
 
-### 5. Local-First Architecture & Optimistic UI ⚡
-
-![Local First PWA](./public/feature-offline.svg)
-
-- Alopop is not your average sluggish messenger completely reliant on a Socket.io backend.
+### 8. Local-First Architecture & Optimistic UI ⚡
 - By embedding an **IndexedDB (Dexie.js) Caching Engine**, messages are proactively persisted to the browser's local database, ensuring immediate Optimistic UI updates. Even under severe network degradation, it guarantees a blazing-fast, zero-lag scrolling experience.
 
-### 5. Seamless PWA & Native Offline Push (Web Push) 📲
-- **Offline Message Queue**: Messages sent during network unreachability are safely cached and automatically synchronized via background queues.
-- **VAPID Web Push**: Through robust Service Worker implementations, users receive OS-level native push notifications instantly on their devices, achieving app-like retention without the friction of App Store installations.
+### 9. Seamless PWA & Native Offline Push (Web Push) 📲
+- **Offline Message Queue**: Messages sent during network unreachability are safely cached and automatically synchronized.
+- **VAPID Web Push**: Users receive OS-level native push notifications instantly on their devices.
 
-### 6. Hybrid Soft-Onboarding 🌐
-- We completely dismantled the registration barrier. Upon initial access, users enter as **"Guests (Anonymous)"**, allowing them to freely experience all features, including chat and coin wallets, with zero friction.
-- Whenever they are ready, they can use the "Hybrid Account Binding" feature in the settings to permanently migrate and bind their anonymous local state to a registered user account.
+### 10. Hybrid Soft-Onboarding & 21-Mini-Game Portal 🎮
+- **Guest Access**: Users enter as "Guests (Anonymous)", allowing them to freely experience all features. They can bind their account later.
+- **Game Portal**: Beyond messaging, Alopop embeds a portal containing **21 high-quality HTML5 mini-games** running securely isolated as PM2 processes perfectly fused via a Next.js proxy network.
 
-### 7. Integrated 21-Mini-Game Portal Ecosystem 🎮
-- Beyond just messaging, Alopop fully embeds a portal containing **21 high-quality HTML5 mini-games (e.g., Block Blast, Tetris, 2048)** to enjoy seamlessly with friends during chats.
-- **Next.js Reverse Proxy Architecture**: Each game runs securely isolated as an independent PM2 process (Ports 3001-3021) and perfectly fuses into the Alopop ecosystem via Next.js proxy network (`/game-proxy/:port`) without CORS or Mixed Content errors.
-- Features auto-correction for absolute path collisions, bundler (`Vite`, `Webpack`) rendering error fixes, and mobile/PC immersive full-screen UI optimizations, ensuring a pristine gaming experience.
+### 11. Ghost Delegate: Hybrid P2P Edge & Serverless Architecture ♾️
+- **Zero-Ping Shadow Leader Election**: Thousands of peers can instantly and unanimously elect a "Ghost Delegate" (Temporary Brain) in 1 millisecond without firing a single ping by sorting active WebSocket UUIDs.
+- **BYOK P2P Tunneling**: Guest A's smartphone calculates the heavy AI context (Edge Orchestration), but the payload is routed to securely decrypt Offline Host B's API vault.
 
-### 8. Ghost Delegate: Hybrid P2P Edge & Serverless Architecture ♾️
-To architecturally support massive scale (millions of Concurrent Users - CCU) with virtually zero server overload, Alopop transparently combines proven industry-standard networking with our own world-first native innovations.
+### 12. Redis-Free 10k CCU Infrastructure & Chaos Monkey 💥
+- **In-Memory Rate Limiting**: A lightweight custom rate limiter shields the expensive APIs from malicious floods.
+- **Integrated Chaos Monkey**: Administrators can deploy hundreds of automated "Ghost Agents" that mercilessly spam sockets to validate infrastructure stability.
 
-#### 💡 Built on Proven Industry Standards
-- **Serverless Client-Server Routing**: Utilizing standard Serverless Edge functions (Vercel) for explicit manual tasks (e.g., Image Fact-Checking) to eliminate P2P network instability and guarantee instant API execution.
-- **WebSocket Presence Syncing**: Tracking online users in real-time within a chatroom—a widely adopted standard in modern collaborative platforms.
-- **Client-Side Edge Computing**: Offloading UI rendering and basic computations to the client's browser (Edge) to reduce centralized server dependency.
-
-#### 🚀 Alopop's Original Innovations (World-First)
-- **Zero-Ping Shadow Leader Election**: Traditional distributed systems use heavy consensus algorithms (e.g., Raft, Paxos) causing network overhead. Alopop invented a zero-network deterministic algorithm: simply by sorting active WebSocket UUIDs alphabetically, thousands of peers can instantly and unanimously elect a "Ghost Delegate" (Temporary Brain) in 1 millisecond without firing a single ping.
-- **BYOK (Bring Your Own Key) P2P Tunneling**: In conventional Web3 or Edge AI, the user donating computation also pays the API toll. Alopop pioneered a decoupled economic tunnel: **Guest A's smartphone** calculates the heavy AI context (Edge Orchestration), but the payload is routed to securely decrypt **Offline Host B's API vault**. Computation is distributed (crowd-sourced), but billing remains sovereign.
-- **Decentralized AI Auto-Reply Engine**: By combining the technologies above, the heaviest server load—processing thousands of chat messages to calculate the exact timing for an AI to intervene—is 100% shifted to the P2P Ghost Delegate. This results in unprecedented O(1) server cost parity per room, even under infinite message velocity.
-
-### 9. Redis-Free 10k CCU Infrastructure & Chaos Monkey 💥
-To support up to 10,000 concurrent users without the operational overhead of external caching layers like Redis, Alopop employs a highly optimized internal architecture.
-- **DB-Backed Offline Queue**: Prevents Node.js memory leaks by persisting undelivered offline messages directly to the database, bypassing RAM entirely.
-- **In-Memory Rate Limiting**: A lightweight custom rate limiter (3 requests/sec) shields the expensive AI Sponsor APIs from malicious bot floods or DDOS attempts, completely independent of external dependencies.
-- **Integrated Chaos Monkey**: The Admin Dashboard features a built-in 'Chaos Monkey' training ground. Administrators can deploy hundreds of automated "Ghost Agents" that mercilessly spam sockets and APIs to continuously validate infrastructure stability and ensure zero downtime.
-
-### 10. Fully Autonomous AI Agent Integration (OpenClaw Bridge) 💻
-Going beyond traditional chat, Alopop features a built-in **OpenClaw AI Agent** bridge capable of linking directly to the user's local PC to autonomously perform coding tasks, browser automation, and system operations—all controllable via the Alopop chat interface.
-- **One-Line Deployment**: A single semicolon-separated PowerShell command downloads the latest bridge script, connects to the Alopop server, and establishes a persistent WebSocket link to the local OpenClaw Gateway—zero configuration required.
-- **Browser Automation**: The agent can autonomously navigate websites, fill forms, search products, and perform complex multi-step browser workflows using the integrated Chromium CDP bridge.
-- **Real-Time Socket/UI Rendering**: The agent's task lifecycle (start, progress, and completion reports) is instantly rendered to the chat UI via sockets, including input-box indicators and native message bubbles.
-- **Message Cleaning Engine**: A robust filtering pipeline strips accumulated system noise and stale context from chat history, ensuring the agent always receives clean, actionable user commands.
-- **Auto-Timeout Recovery**: If the agent stalls (e.g., due to model API hangs), a 5-minute inactivity watchdog automatically kills the stuck process and frees the bridge for new commands. Users can also manually send `!중지` (stop) in the chat to force-kill at any time.
-- **Physical Sandbox Isolation**: A hardcoded physical sandbox is enforced at the local agent script level. While it allows free path traversal for reading/listing files, **all write/modify/delete operations are strictly quarantined** to the user-designated 'working directory', guaranteeing a 100% safe autonomous AI control environment.
+### 13. Fully Autonomous AI Agent Integration (OpenClaw Bridge) 💻
+Features a built-in **OpenClaw AI Agent** bridge capable of linking directly to the user's local PC to autonomously perform coding tasks and browser automation via the chat interface.
+- **Physical Sandbox Isolation**: A hardcoded sandbox quarantines all write operations, guaranteeing a 100% safe autonomous AI control environment.
 
 ---
 
