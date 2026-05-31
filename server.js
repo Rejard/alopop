@@ -828,6 +828,28 @@ app.prepare().then(() => {
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
+  expressApp.use('/output', (req, res, next) => {
+    // HTML 파일 요청에 대해 theme-manager.js 동적 인젝션 (한글 파일명 복호화 지원)
+    try {
+      const reqPath = decodeURIComponent(req.path);
+      if (reqPath.endsWith('.html') || reqPath === '/' || !path.extname(reqPath)) {
+        const fileName = (reqPath === '/' || reqPath === '') ? 'index.html' : (reqPath.endsWith('.html') ? reqPath : reqPath + '.html');
+        const filePath = path.join(outputDir, fileName);
+        if (fs.existsSync(filePath)) {
+          let html = fs.readFileSync(filePath, 'utf8');
+          if (html.includes('</body>')) {
+            const injectScript = '\n<script src="/game-proxy/3000/shared/theme-manager.js"></script>\n';
+            html = html.replace('</body>', injectScript + '</body>');
+          }
+          res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+          return res.send(html);
+        }
+      }
+    } catch (e) {
+      console.error('[Dynamic HTML Injection Error]:', e);
+    }
+    next();
+  });
   expressApp.use('/output', express.static(outputDir));
 
   // AI 스튜디오 전용 Gemini API Key 결정 헬퍼 함수

@@ -13,10 +13,6 @@ const nextConfig = {
         destination: 'http://127.0.0.1:3000/api/highscore/:gameId'
       },
       {
-        source: '/game-proxy/3090/:path*',
-        destination: 'http://127.0.0.1:3090/:path*'
-      },
-      {
         source: '/game-proxy/3000/:path*',
         destination: 'http://127.0.0.1:3000/:path*'
       },
