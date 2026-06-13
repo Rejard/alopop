@@ -160,8 +160,8 @@ function connectClaw() {
           id: "1",
           method: "connect",
           params: {
-            minProtocol: 3,
-            maxProtocol: 3,
+            minProtocol: 4,
+            maxProtocol: 4,
             client: { id: "gateway-client", version: "1.0.0", platform: process.platform, mode: "backend" },
             role: "operator",
             scopes: ["operator.read", "operator.write", "operator.admin"],

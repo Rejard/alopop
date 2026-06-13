@@ -9,6 +9,7 @@ type Agent = {
   username: string;
   createdAt: string;
   agentToken: string;
+  agentPath?: string | null;
 };
 
 export default function AgentSetupPage() {
@@ -44,8 +45,8 @@ export default function AgentSetupPage() {
     }
   };
 
-  const commandFor = (token: string) =>
-    `cd 'c:\\home'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=$([DateTimeOffset]::Now.ToUnixTimeSeconds())' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${token}`;
+  const commandFor = (token: string, path?: string | null) =>
+    `cd '${path || 'c:\\home'}'; Invoke-WebRequest -Uri 'https://alopop.alonics.com/openclaw-bridge.js?v=$([DateTimeOffset]::Now.ToUnixTimeSeconds())' -OutFile openclaw-bridge.js -UseBasicParsing; node openclaw-bridge.js --server=https://alopop.alonics.com --token=${token}`;
 
   return (
     <main className="alo-mobile-shell overflow-y-auto">
@@ -94,7 +95,7 @@ export default function AgentSetupPage() {
             </div>
           )}
           {agents.map((agent) => {
-            const command = commandFor(agent.agentToken);
+            const command = commandFor(agent.agentToken, agent.agentPath);
             return (
               <article key={agent.id} className="alo-card p-5">
                 <div className="mb-4 flex items-start justify-between gap-3">

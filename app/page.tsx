@@ -680,6 +680,9 @@ export default function Home() {
         }
         return prev;
       });
+      if (pendingAiReplyRef.current[userId]) {
+        pendingAiReplyRef.current[userId] = false;
+      }
     };
 
     const handleClawCanvasUpdate = (e: any) => {
@@ -1095,6 +1098,7 @@ export default function Home() {
 
       // AI 응답 실행 함수 (독립 분리)
       const executeAiReply = (startDelayMs: number) => {
+        let isAgentTaskDelegated = false;
         // 이미 답변 대기열에 들어갔다면 스킵
         if (pendingAiReplyRef.current[aiUser.id]) return;
 
@@ -1203,6 +1207,9 @@ export default function Home() {
                 return aiResponse.json();
               })
               .then((resData: any) => {
+                if (aiUser.isAgent) {
+                  isAgentTaskDelegated = true;
+                }
                 if (resData && resData.reply) {
                   const aiReplyContent = resData.reply;
 
@@ -1237,6 +1244,9 @@ export default function Home() {
                 }
               })
               .finally(() => {
+                if (isAgentTaskDelegated) {
+                  return;
+                }
                 pendingAiReplyRef.current[aiUser.id] = false;
 
                 const { socket } = useChatStore.getState();
