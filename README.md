@@ -133,17 +133,15 @@ Features a built-in **OpenClaw AI Agent** bridge capable of linking directly to 
 
 ## ⚖️ License & Commercial Inquiries
 
-**Alopop** is fully open-sourced to encourage technical contributions and educational use within the community. To rigorously protect our intellectual property, this project operates under a strict **Dual License Policy**.
+**Alopop** is provided under a **Dual License Policy** to ensure compliance with open-source licensing and rights preservation.
 
-### 1. Non-Commercial & Open Source Use
-Open-source contributors and individual developers are free to view, modify, and use the source code for non-commercial purposes under the `AGPL-3.0 License`. However, any derivative work or service built upon this code must also be publicly released as open-source under the identical license.
+### 1. Open Source Use under AGPL-3.0 License
+The AGPL-3.0 License does not restrict commercial use itself. Anyone is free to use the software for commercial purposes as long as they comply with the terms of the AGPL-3.0 License (such as the obligation to disclose the full source code of any modified versions).
 
-### 2. Commercial Use & Integrations
-If enterprises, startups, or individuals intend to use Alopop for **any commercial or proprietary purposes (e.g., launching a commercial service, integrating into internal corporate solutions, or reselling)**, the AGPL-3.0 license is strictly insufficient. **You must obtain explicit prior consent and acquire a separate 'Commercial License' from the original author (Rejard).**
+### 2. Commercial License and Integration (Commercial Use)
+The Alopop project adopts a dual licensing policy where the copyright holder provides a separate commercial license. If you wish to use the software for proprietary commercial services or exclusive use without complying with the AGPL obligations, you must obtain a separate Commercial License from the original author (Rejard).
 
-If you wish to integrate Alopop's architecture into a commercial product or require enterprise-level technical support, please reach out via the email below to discuss a Commercial License.
+If you wish to integrate the Alopop architecture into a commercial proprietary product or require dedicated technical support, please contact us at the email below.
 
-*Acquiring a commercial license waives the obligation to open-source your proprietary code modifications and opens the door for dedicated technical support.*
-
-* 📫 **Commercial & Technical Inquiries:** lemaiii@alonics.com
-* **Copyright:** © 2026 Alonics Inc. All Rights Reserved.
+- 📬 **Commercial & Technical Inquiries:** lemaiii@alonics.com
+- **Copyright:** © 2026 Alonics Inc. All Rights Reserved.
