@@ -3773,7 +3773,7 @@ export default function Home() {
                 </div>
               )}
               <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,.pdf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
+                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,.pdf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.html" />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
