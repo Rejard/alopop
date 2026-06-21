@@ -71,8 +71,7 @@ function powershellScreenshot() {
   return new Promise((resolve, reject) => {
     const tmpFile = path.join(os.tmpdir(), `alopop_screen_${Date.now()}.jpg`);
     const psFile = path.join(os.tmpdir(), `alopop_capture.ps1`);
-    // PowerShell 스크립트를 파일로 저장 (명령줄 파싱 문제 방지)
-    const savePath = tmpFile.replace(/\\/g, '/'); // forward slash로 변환 (Windows도 지원)
+    const savePath = tmpFile.replace(/\\/g, '/');
     const psScript = [
       'Add-Type -AssemblyName System.Windows.Forms',
       'Add-Type -AssemblyName System.Drawing',
@@ -83,22 +82,52 @@ function powershellScreenshot() {
       `$b.Save("${savePath}", [System.Drawing.Imaging.ImageFormat]::Jpeg)`,
       '$g.Dispose(); $b.Dispose()'
     ].join('\n');
-    fs.writeFileSync(psFile, psScript, 'utf8');
+
+    try {
+      fs.writeFileSync(psFile, psScript, 'utf8');
+    } catch (err) {
+      return reject(new Error(`PS 스크립트 작성 실패: ${err.message}`));
+    }
 
     let stderrData = '';
-    const child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', psFile]);
+    let child;
+    try {
+      child = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', psFile]);
+    } catch (err) {
+      try { fs.unlinkSync(psFile); } catch (e) {}
+      return reject(new Error(`PowerShell 프로세스 생성 실패: ${err.message}`));
+    }
+
+    child.on('error', (err) => {
+      console.error("❌ PowerShell child process error:", err);
+      try { fs.unlinkSync(psFile); } catch (e) {}
+      reject(err);
+    });
+
     child.stderr.on('data', (d) => { stderrData += d.toString(); });
     child.on('close', (code) => {
       try { fs.unlinkSync(psFile); } catch(e) {}
-      if (code === 0 && fs.existsSync(tmpFile)) {
-        const buf = fs.readFileSync(tmpFile);
-        try { fs.unlinkSync(tmpFile); } catch(e) {}
-        resolve(buf);
+      let fileExists = false;
+      try {
+        fileExists = fs.existsSync(tmpFile);
+      } catch (e) {
+        console.error("❌ tmpFile 존재 확인 실패:", e);
+      }
+
+      if (code === 0 && fileExists) {
+        try {
+          const buf = fs.readFileSync(tmpFile);
+          try { fs.unlinkSync(tmpFile); } catch(e) {}
+          resolve(buf);
+        } catch (err) {
+          try { fs.unlinkSync(tmpFile); } catch(e) {}
+          reject(new Error(`PS 캡처 파일 읽기 실패: ${err.message}`));
+        }
       } else {
+        try { fs.unlinkSync(tmpFile); } catch(e) {}
         reject(new Error(`PS 캡처 실패 (code:${code}) ${stderrData.trim().substring(0, 100)}`));
       }
     });
-    child.on('error', reject);
   });
 }
 
@@ -131,16 +160,10 @@ function sendScreenshot() {
 
 function connectClaw() {
   if (clawRetryCount >= CLAW_MAX_RETRIES) {
-    console.error(`\n❌ OpenClaw Gateway 연결 실패! (${CLAW_MAX_RETRIES}회 시도)`);
-    console.error(`\n   게이트웨이가 실행 중이지 않습니다.`);
-    console.error(`   아래 방법 중 하나로 게이트웨이를 먼저 실행해 주세요:\n`);
-    console.error(`   [방법 1] 서비스 설치 (권장, 1회만):`);
-    console.error(`     openclaw gateway install`);
-    console.error(`     openclaw gateway start\n`);
-    console.error(`   [방법 2] 수동 실행 (PowerShell 새 창):`);
-    console.error(`     openclaw gateway run\n`);
-    console.error(`   게이트웨이 실행 후 이 명령어를 다시 실행하세요.\n`);
-    process.exit(1);
+    console.warn(`⚠️ OpenClaw Gateway 연결 지속 실패 (${clawRetryCount}회 시도). 10초 후 재연결 시도...`);
+    clawRetryCount++;
+    setTimeout(connectClaw, 10000);
+    return;
   }
   clawRetryCount++;
   console.log(`🔌 Connecting to local OpenClaw Gateway (${clawRetryCount}/${CLAW_MAX_RETRIES}): ${clawUrl}...`);
@@ -186,16 +209,13 @@ function connectClaw() {
 
   clawSocket.on("close", () => {
     isClawConnected = false;
-    clearInterval(canvasInterval);
-    canvasInterval = null;
-    if (clawRetryCount < CLAW_MAX_RETRIES) {
-      console.log(`❌ OpenClaw Gateway 연결 끊김. 5초 후 재시도...`);
-      setTimeout(connectClaw, 5000);
-    } else {
-      console.error(`\n❌ OpenClaw Gateway 연결이 끊어지고 재시도에 실패했습니다.`);
-      console.error(`   게이트웨이 상태를 확인하세요: openclaw gateway status\n`);
-      process.exit(1);
+    if (canvasInterval) {
+      clearInterval(canvasInterval);
+      canvasInterval = null;
     }
+    const delay = clawRetryCount >= CLAW_MAX_RETRIES ? 10000 : 5000;
+    console.log(`❌ OpenClaw Gateway 연결 끊김. ${delay / 1000}초 후 재시도...`);
+    setTimeout(connectClaw, delay);
   });
 
   clawSocket.on("error", (err) => {
@@ -333,17 +353,30 @@ alopopSocket.on("agent_task", (data) => {
   console.log(`🧠 세션: ${sessionId.substring(0, 8)}... (방: ${roomId || 'none'})`);
 
   let child;
-  if (process.platform === 'win32') {
-    try {
-      const npmRoot = execSync('npm root -g').toString().trim();
-      const openclawScript = path.join(npmRoot, 'openclaw', 'openclaw.mjs');
-      child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'medium', '--verbose', 'on', '-m', finalMessage]);
-    } catch (err) {
-      console.log("⚠️ Could not find global openclaw.mjs. Falling back to openclaw.cmd...");
-      child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--session-id", sessionId, "--timeout", "600", "--thinking", "medium", "--verbose", "on", "-m", finalMessage], { shell: true });
+  try {
+    if (process.platform === 'win32') {
+      try {
+        const npmRoot = execSync('npm root -g').toString().trim();
+        const openclawScript = path.join(npmRoot, 'openclaw', 'openclaw.mjs');
+        child = spawn('node', [openclawScript, 'agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'medium', '--verbose', 'on', '-m', finalMessage]);
+      } catch (err) {
+        console.log("⚠️ Could not find global openclaw.mjs. Falling back to openclaw.cmd...");
+        child = spawn('openclaw.cmd', ["agent", "--agent", "main", "--session-id", sessionId, "--timeout", "600", "--thinking", "medium", "--verbose", "on", "-m", finalMessage], { shell: true });
+      }
+    } else {
+      child = spawn('openclaw', ['agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'medium', '-m', finalMessage]);
     }
-  } else {
-    child = spawn('openclaw', ['agent', '--agent', 'main', '--session-id', sessionId, '--timeout', '600', '--thinking', 'medium', '-m', finalMessage]);
+  } catch (spawnErr) {
+    console.error("❌ Failed to spawn OpenClaw agent:", spawnErr);
+    if (roomId) alopopSocket.emit("claw_task_complete", { roomId, finalOutput: `❌ 에이전트 프로세스 생성 실패: ${spawnErr.message}` });
+    return;
+  }
+
+  if (child) {
+    child.on("error", (err) => {
+      console.error("❌ OpenClaw Agent process runtime error:", err);
+      alopopSocket.emit("claw_message", { content: `❌ 에이전트 실행 오류: ${err.message}\n` });
+    });
   }
 
   // 🖥️ 에이전트 작업 중 실시간 스크린 스트리밍 시작 (gateway 불필요)
@@ -500,4 +533,13 @@ process.on("exit", () => {
 
 alopopSocket.on("execute_claw", (data, callback) => {
   if (callback) callback({ success: true, message: "Use agent_task for actual commands." });
+});
+
+// Crash Guard: Prevent bridge process from crashing on unexpected errors
+process.on("uncaughtException", (err) => {
+  console.error("🚨 [Crash Guard] Uncaught Exception 발생:", err);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("🚨 [Crash Guard] Unhandled Rejection 발생. 사유:", reason);
 });

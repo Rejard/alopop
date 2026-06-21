@@ -13,6 +13,7 @@ const ALLOWED_UPLOAD_TYPES = new Map([
   ['video/webm', '.webm'],
   ['application/pdf', '.pdf'],
   ['text/plain', '.txt'],
+  ['text/html', '.html'],
 ]);
 
 export async function POST(request: Request) {
