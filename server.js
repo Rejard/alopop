@@ -297,8 +297,6 @@ app.prepare().then(() => {
   async function sendWebPush(targetUserId, messageData) {
     if (!publicVapidKey || !privateVapidKey) return;
     try {
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
       const subscriptions = await prisma.pushSubscription.findMany({
         where: { userId: targetUserId }
       });

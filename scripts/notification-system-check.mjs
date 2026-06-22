@@ -75,6 +75,10 @@ const checks = [
     name: 'pwa registry no longer requests permission at boot',
     pass: !/useEffect\([\s\S]*Notification\.requestPermission\(\)/s.test(pwaRegistry),
   },
+  {
+    name: 'sendWebPush reuses the shared prisma client',
+    pass: !/async function sendWebPush[\s\S]*new PrismaClient\(\)/s.test(server),
+  },
 ];
 
 let failed = false;
