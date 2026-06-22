@@ -305,9 +305,13 @@ app.prepare().then(() => {
       if (!subscriptions || subscriptions.length === 0) return;
       
       const payload = JSON.stringify({
-        title: '?뚮줈??- 새 메시지',
-        body: '새 메시지가 도착했습니다.',
-        url: `/`
+        title: `${messageData.senderName || 'Alopop'}\ub2d8\uc758 \uc0c8 \uba54\uc2dc\uc9c0`,
+        body: typeof messageData.content === 'string' && messageData.content.trim()
+          ? messageData.content.slice(0, 80)
+          : '\uc0c8 \uba54\uc2dc\uc9c0\uac00 \ub3c4\ucc29\ud588\uc2b5\ub2c8\ub2e4.',
+        roomId: messageData.receiverId,
+        url: `/?roomId=${encodeURIComponent(messageData.receiverId || '')}`,
+        kind: 'chat_message'
       });
 
       const pushPromises = subscriptions.map(async (sub) => {

@@ -5,6 +5,8 @@ const schema = fs.readFileSync('prisma/schema.prisma', 'utf8');
 const store = fs.readFileSync('store/useChatStore.ts', 'utf8');
 const page = fs.readFileSync('app/page.tsx', 'utf8');
 const pet365Notify = fs.readFileSync('app/api/pet365care/notify/route.ts', 'utf8');
+const pwaRegistry = fs.readFileSync('components/PwaRegistry.tsx', 'utf8');
+const sw = fs.readFileSync('public/sw.js', 'utf8');
 const vibeCoder = fs.readFileSync('scripts/vibeCoder.mjs', 'utf8');
 
 const checks = [
@@ -60,6 +62,18 @@ const checks = [
   {
     name: 'page rebuilds unread state from restored offline messages',
     pass: page.includes("offline_messages_restored"),
+  },
+  {
+    name: 'web push payload includes room-aware destination',
+    pass: /roomId/.test(server) && /url:\s*`\/\?roomId=/.test(server),
+  },
+  {
+    name: 'service worker opens the notification target url',
+    pass: sw.includes("event.notification.data.url"),
+  },
+  {
+    name: 'pwa registry no longer requests permission at boot',
+    pass: !/useEffect\([\s\S]*Notification\.requestPermission\(\)/s.test(pwaRegistry),
   },
 ];
 

@@ -7,30 +7,30 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let data = { title: '새 메시지', body: 'Alopop 알림이 도착했습니다.', url: '/' };
+  let data = { title: 'Alopop', body: '새 알림이 도착했습니다.', url: '/' };
   try {
     if (event.data) {
       data = event.data.json();
     }
-  } catch(e) {}
-  
+  } catch (e) {}
+
   const options = {
-    body: data.body,
+    body: data.body || '새 알림이 도착했습니다.',
     icon: '/favicon.svg',
     badge: '/favicon.svg',
     vibrate: [200, 100, 200],
-    data: { url: data.url || '/' }
+    data: { url: data.url || '/' },
   };
-  
+
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(data.title || 'Alopop', options)
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const urlToOpen = new URL(event.notification.data.url, self.location.origin).href;
-  
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       let matchingClient = null;
@@ -43,9 +43,8 @@ self.addEventListener('notificationclick', (event) => {
       }
       if (matchingClient) {
         return matchingClient.focus();
-      } else {
-        return clients.openWindow(urlToOpen);
       }
+      return clients.openWindow(urlToOpen);
     })
   );
 });
