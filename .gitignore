@@ -71,3 +71,4 @@ type.ps1
 chaos_log.txt
 /public/output/
 /scratch/
+.worktrees/
