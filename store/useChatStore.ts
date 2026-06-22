@@ -144,9 +144,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       window.dispatchEvent(new CustomEvent('claw_log_update', { detail: payload }));
     });
 
-    // 오프라인 상태에서 밀린 큐 메시지 뭉치 수신 이벤트
-    socket.on('offline_activity_summary', (summary: { rooms: Array<{ roomId: string; count: number; latestAt: number }> }) => {
-      window.dispatchEvent(new CustomEvent('offline_activity_summary', { detail: summary }));
+    socket.on('receive_offline_messages', async (payload: { messages: ChatMessage[] }) => {
+      const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+      if (messages.length === 0) return;
+
+      const deduped: ChatMessage[] = [];
+      for (const message of messages) {
+        if (!message?.messageId) continue;
+        const msgToSave = { ...message } as any;
+        delete msgToSave.id;
+
+        const exists = await db.messages.where('messageId').equals(msgToSave.messageId).first();
+        if (!exists) {
+          deduped.push(msgToSave);
+        }
+      }
+
+      if (deduped.length === 0) return;
+
+      await db.messages.bulkPut(deduped as any[]);
+      window.dispatchEvent(new CustomEvent('offline_messages_restored', { detail: { messages: deduped } }));
     });
 
     set({ socket });

@@ -469,6 +469,18 @@ export default function Home() {
           // api/rooms/user 응답은 최상위 배열로 오기 때문에 바로 세팅
           setRooms(Array.isArray(roomsData) ? roomsData : []);
 
+          const searchParams = new URLSearchParams(window.location.search);
+          const initialRoomId = searchParams.get('roomId');
+          if (initialRoomId) {
+            const targetRoom = Array.isArray(roomsData)
+              ? roomsData.find((room: any) => room.id === initialRoomId)
+              : null;
+            setCurrentTab('chats');
+            if (targetRoom) {
+              setCurrentRoom(targetRoom);
+            }
+          }
+
           const readTimesDict: Record<string, Record<string, number>> = {};
           if (Array.isArray(roomsData)) {
             roomsData.forEach((r: any) => {
@@ -779,31 +791,31 @@ export default function Home() {
       setActiveRoomUsers(activeUsers);
     };
 
-    const handleOfflineActivitySummary = (e: any) => {
-      const rooms = Array.isArray(e.detail?.rooms) ? e.detail.rooms : [];
-      if (rooms.length === 0) return;
+    const handleOfflineMessagesRestored = (e: any) => {
+      const messages = Array.isArray(e.detail?.messages) ? e.detail.messages : [];
+      if (messages.length === 0) return;
 
       setLatestMessageTimes(prev => {
         const next = { ...prev };
-        rooms.forEach((item: any) => {
-          if (!item?.roomId) return;
-          next[item.roomId] = Math.max(next[item.roomId] || 0, item.latestAt || Date.now());
+        messages.forEach((message: any) => {
+          if (!message?.receiverId) return;
+          next[message.receiverId] = Math.max(next[message.receiverId] || 0, message.createdAt || Date.now());
         });
         return next;
       });
 
       setUnreadCounts(prev => {
         const next = { ...prev };
-        rooms.forEach((item: any) => {
-          if (!item?.roomId || currentRoom?.id === item.roomId) return;
-          next[item.roomId] = Math.max(next[item.roomId] || 0, item.count || 1);
+        messages.forEach((message: any) => {
+          if (!message?.receiverId || currentRoomRef.current?.id === message.receiverId) return;
+          next[message.receiverId] = (next[message.receiverId] || 0) + 1;
         });
         return next;
       });
     };
 
     window.addEventListener('new_chat_message', handleNewMessage);
-    window.addEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
+    window.addEventListener('offline_messages_restored', handleOfflineMessagesRestored as EventListener);
     window.addEventListener('room_read_update', handleReadUpdateEvent);
     window.addEventListener('room_name_updated', handleRoomNameUpdated as EventListener);
     window.addEventListener('typing_start', handleHumanTypingStart as EventListener);
@@ -818,7 +830,7 @@ export default function Home() {
 
     return () => {
       window.removeEventListener('new_chat_message', handleNewMessage);
-      window.removeEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
+      window.removeEventListener('offline_messages_restored', handleOfflineMessagesRestored as EventListener);
       window.removeEventListener('room_read_update', handleReadUpdateEvent);
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
       window.visualViewport?.removeEventListener('scroll', handleViewportResize);

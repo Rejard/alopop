@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const server = fs.readFileSync('server.js', 'utf8');
 const schema = fs.readFileSync('prisma/schema.prisma', 'utf8');
 const store = fs.readFileSync('store/useChatStore.ts', 'utf8');
+const page = fs.readFileSync('app/page.tsx', 'utf8');
 const pet365Notify = fs.readFileSync('app/api/pet365care/notify/route.ts', 'utf8');
 const vibeCoder = fs.readFileSync('scripts/vibeCoder.mjs', 'utf8');
 
@@ -49,8 +50,16 @@ const checks = [
       && /urgency:\s*'normal'/.test(vibeCoder),
   },
   {
-    name: 'client is not yet bulk-adding offline replay batches',
-    pass: !/socket\.on\('receive_offline_messages'[\s\S]*bulk(Add|Put)/s.test(store),
+    name: 'client stores replayed offline messages',
+    pass: /socket\.on\('receive_offline_messages'[\s\S]*db\.messages\.bulkPut/s.test(store),
+  },
+  {
+    name: 'page reads roomId from query params for notification entry',
+    pass: page.includes("searchParams.get('roomId')"),
+  },
+  {
+    name: 'page rebuilds unread state from restored offline messages',
+    pass: page.includes("offline_messages_restored"),
   },
 ];
 
