@@ -36,7 +36,7 @@ async function getEnhancedColumns() {
   return new Set(columns.map((column) => column.name));
 }
 
-async function findLatestNotice(receiverId, sourceMessageId) {
+async function findLatestReplay(receiverId, sourceMessageId) {
   const rows = await prisma.$queryRawUnsafe(
     `SELECT id, receiverId, payload, status, expiresAt, deliveredAt, attemptCount
      FROM OfflineMessage
@@ -46,7 +46,7 @@ async function findLatestNotice(receiverId, sourceMessageId) {
     receiverId
   );
 
-  return rows.find((row) => row.payload.includes(`offline_notice_${sourceMessageId}`));
+  return rows.find((row) => row.payload.includes(sourceMessageId));
 }
 
 function assert(condition, message) {
@@ -117,16 +117,16 @@ try {
   assert(relayResponse.ok, `Relay failed with HTTP ${relayResponse.status}`);
 
   const relayBody = await relayResponse.json();
-  assert(relayBody.delivered === false, 'Relay should queue notice while test socket is offline');
+  assert(relayBody.delivered === false, 'Relay should queue replay while test socket is offline');
 
-  const queued = await findLatestNotice(user.id, sourceMessageId);
-  assert(queued, 'Queued offline notice was not found');
-  assert(queued.status === 'PENDING', 'Queued offline notice should be PENDING');
-  assert(queued.expiresAt && queued.expiresAt !== '1970-01-01T00:00:00.000Z', 'Queued notice must have a real expiry');
-  assert(!queued.payload.includes(SECRET_MARKER), 'Queued notice leaked raw message content');
+  const queued = await findLatestReplay(user.id, sourceMessageId);
+  assert(queued, 'Queued offline replay was not found');
+  assert(queued.status === 'PENDING', 'Queued offline replay should be PENDING');
+  assert(queued.expiresAt && queued.expiresAt !== '1970-01-01T00:00:00.000Z', 'Queued replay must have a real expiry');
+  assert(queued.payload.includes(SECRET_MARKER), 'Queued replay should retain raw message content');
 
   const token = createSessionToken(user.id);
-  const summary = await new Promise((resolve, reject) => {
+  const replay = await new Promise((resolve, reject) => {
     const socket = io(BASE_URL, {
       transports: ['websocket'],
       extraHeaders: {
@@ -137,10 +137,10 @@ try {
 
     const timeout = setTimeout(() => {
       socket.close();
-      reject(new Error('Timed out waiting for offline_activity_summary'));
+      reject(new Error('Timed out waiting for receive_offline_messages'));
     }, 8000);
 
-    socket.on('offline_activity_summary', (payload) => {
+    socket.on('receive_offline_messages', (payload) => {
       clearTimeout(timeout);
       socket.close();
       resolve(payload);
@@ -163,18 +163,19 @@ try {
     });
   });
 
-  assert(Array.isArray(summary.rooms), 'Offline summary payload should include rooms');
-  assert(summary.rooms.some((item) => item.roomId === room.id && item.count >= 1), 'Offline summary did not include the queued room');
+  assert(Array.isArray(replay.messages), 'Offline replay payload should include messages');
+  assert(replay.messages.some((item) => item.messageId === sourceMessageId), 'Offline replay did not include the queued message');
+  assert(replay.messages.some((item) => item.content === SECRET_MARKER), 'Offline replay lost message content');
 
   const delivered = await waitForDelivered(queued.id);
-  assert(delivered[0]?.status === 'DELIVERED', 'Notice should be marked DELIVERED after reconnect summary');
-  assert(delivered[0]?.deliveredAt, 'Delivered notice should record deliveredAt');
-  assert(Number(delivered[0]?.attemptCount || 0) >= 1, 'Delivered notice should increment attemptCount');
+  assert(delivered[0]?.status === 'DELIVERED', 'Replay should be marked DELIVERED after reconnect delivery');
+  assert(delivered[0]?.deliveredAt, 'Delivered replay should record deliveredAt');
+  assert(Number(delivered[0]?.attemptCount || 0) >= 1, 'Delivered replay should increment attemptCount');
 
   console.log('PASS notification hard test');
   console.log(`Test user: ${TEST_EMAIL}`);
   console.log(`Queued notice id: ${queued.id}`);
-  console.log(`Summary rooms: ${summary.rooms.length}`);
+  console.log(`Replay messages: ${replay.messages.length}`);
 } finally {
   if (sourceMessageId) {
     try {

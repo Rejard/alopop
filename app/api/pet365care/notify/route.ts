@@ -27,7 +27,7 @@ function emojiToAvatarUrl(emoji: string): string {
 
 function createOfflineNotice(message: { messageId?: string; receiverId?: string; createdAt?: number }) {
   return JSON.stringify({
-    messageId: `offline_notice_${message.messageId || Date.now()}`,
+    messageId: `offline_replay_${message.messageId || Date.now()}`,
     senderId: 'system',
     senderName: 'System',
     receiverId: message.receiverId || null,
@@ -65,6 +65,36 @@ async function saveOfflineNotice(receiverId: string, message: { messageId?: stri
       kind: 'NOTICE',
       status: 'PENDING',
       payload: createOfflineNotice(message),
+      expiresAt: new Date(Date.now() + OFFLINE_NOTICE_TTL_MS),
+      attemptCount: 0,
+    },
+  });
+}
+
+function serializeOfflineReplay(message: unknown) {
+  return JSON.stringify(message);
+}
+
+async function saveOfflineMessage(receiverId: string, message: { messageId?: string; receiverId?: string; createdAt?: number }) {
+  if (await hasEnhancedOfflineQueue()) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO OfflineMessage (id, receiverId, kind, status, payload, createdAt, expiresAt, attemptCount)
+       VALUES (?, ?, 'REPLAY', 'PENDING', ?, ?, ?, 0)`,
+      uuidv4(),
+      receiverId,
+      serializeOfflineReplay(message),
+      new Date().toISOString(),
+      new Date(Date.now() + OFFLINE_NOTICE_TTL_MS).toISOString()
+    );
+    return;
+  }
+
+  await prisma.offlineMessage.create({
+    data: {
+      receiverId,
+      kind: 'REPLAY',
+      status: 'PENDING',
+      payload: serializeOfflineReplay(message),
       expiresAt: new Date(Date.now() + OFFLINE_NOTICE_TTL_MS),
       attemptCount: 0,
     },
@@ -170,7 +200,7 @@ export async function POST(request: Request) {
       });
     } catch (relayErr) {
       console.error('[Pet365Care Notify] Relay error:', relayErr);
-      await saveOfflineNotice(currentUser.id, chatMessage);
+      await saveOfflineMessage(currentUser.id, chatMessage);
     }
 
     return NextResponse.json({

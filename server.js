@@ -111,6 +111,18 @@ app.prepare().then(() => {
     }
   }
 
+  function serializeOfflineReplay(message) {
+    return JSON.stringify(message);
+  }
+
+  function parseOfflineReplay(payload) {
+    try {
+      return JSON.parse(payload);
+    } catch {
+      return null;
+    }
+  }
+
   let offlineQueueColumns = null;
 
   async function hasEnhancedOfflineQueue() {
@@ -151,6 +163,25 @@ app.prepare().then(() => {
       new Date().toISOString(),
       new Date(Date.now() + OFFLINE_NOTICE_TTL_MS).toISOString()
     ).catch(e => console.error('Offline notice save err:', e));
+  }
+
+  async function saveOfflineMessage(receiverId, message) {
+    if (!receiverId || !message) return null;
+    if (!(await hasEnhancedOfflineQueue())) {
+      return prisma.offlineMessage.create({
+        data: { receiverId, payload: serializeOfflineReplay(message) }
+      }).catch(e => console.error('Offline replay save err:', e));
+    }
+
+    return prisma.$executeRawUnsafe(
+      `INSERT INTO OfflineMessage (id, receiverId, kind, status, payload, createdAt, expiresAt, attemptCount)
+       VALUES (?, ?, 'REPLAY', 'PENDING', ?, ?, ?, 0)`,
+      crypto.randomUUID(),
+      receiverId,
+      serializeOfflineReplay(message),
+      new Date().toISOString(),
+      new Date(Date.now() + OFFLINE_NOTICE_TTL_MS).toISOString()
+    ).catch(e => console.error('Offline replay save err:', e));
   }
 
   async function getAuthenticatedSocketUser(socket) {
@@ -224,20 +255,13 @@ app.prepare().then(() => {
           orderBy: { createdAt: 'asc' },
         });
       if (records.length > 0) {
-        const rooms = new Map();
-        for (const record of records) {
-          const notice = parseOfflineNotice(record.payload);
-          if (!notice?.receiverId) continue;
-          const room = rooms.get(notice.receiverId) || { roomId: notice.receiverId, count: 0, latestAt: 0 };
-          room.count += 1;
-          room.latestAt = Math.max(room.latestAt, notice.createdAt || new Date(record.createdAt).getTime());
-          rooms.set(notice.receiverId, room);
-        }
+        const messages = records
+          .map((record) => parseOfflineReplay(record.payload))
+          .filter((message) => !!message?.messageId);
 
-        const summary = Array.from(rooms.values());
-        if (summary.length > 0) {
-          socket.emit('offline_activity_summary', { rooms: summary });
-          console.log(`Emitted offline activity summary for ${summary.length} rooms to ${userId}`);
+        if (messages.length > 0) {
+          socket.emit('receive_offline_messages', { messages });
+          console.log(`Emitted ${messages.length} offline replay messages to ${userId}`);
         }
         
         const ids = records.map(r => r.id);
@@ -503,11 +527,11 @@ app.prepare().then(() => {
           if (roomSet && roomSet.size > 0) {
             io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
-                await saveOfflineNotice(targetId, message);
+                await saveOfflineMessage(targetId, message);
               }
             });
           } else {
-            saveOfflineNotice(targetId, message);
+            saveOfflineMessage(targetId, message);
           }
         });
       }
@@ -564,7 +588,7 @@ app.prepare().then(() => {
               io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                 if (err || !responses || Object.keys(responses).length === 0) {
                   console.log(`?좑툘 ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
-                  await saveOfflineNotice(targetId, message);
+                  await saveOfflineMessage(targetId, message);
                   
                   sendWebPush(targetId, message).catch(console.error); // 鍮꾨룞湲?Fire-and-forget
                 } else {
@@ -573,7 +597,7 @@ app.prepare().then(() => {
               });
             } else {
               // ?ㅽ봽?쇱씤?대㈃ DB???곴뎄 蹂닿? (?쒕쾭 ?ъ떆???κ린 誘몄젒????硫붾え由??꾩닔 諛⑹?)
-              saveOfflineNotice(targetId, message).then(() => {
+              saveOfflineMessage(targetId, message).then(() => {
                 console.log(`?뱿 Paused message for offline member ${targetId} into DB`);
               });
               
@@ -637,7 +661,7 @@ app.prepare().then(() => {
             io.to(receiverId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
                 console.log(`?좑툘 ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
-                await saveOfflineNotice(receiverId, message);
+                await saveOfflineMessage(receiverId, message);
                 
                 sendWebPush(receiverId, message).catch(console.error);
               } else {
@@ -645,7 +669,7 @@ app.prepare().then(() => {
               }
             });
           } else {
-            saveOfflineNotice(receiverId, message).then(() => {
+            saveOfflineMessage(receiverId, message).then(() => {
               console.log(`?뱿 Paused message for offline destination ${receiverId} into DB`);
             });
             
@@ -2327,7 +2351,7 @@ app.listen(PORT, () => {
         io.to(targetUserId).timeout(3000).emit('receive_message', message, async (err, responses) => {
           if (err || !responses || Object.keys(responses).length === 0) {
             console.log(`[Pet365-Relay] ?좑툘 ACK timeout for ${targetUserId}, treating as offline`);
-            await saveOfflineNotice(targetUserId, message);
+            await saveOfflineMessage(targetUserId, message);
             sendWebPush(targetUserId, message).catch(console.error);
             return res.json({ delivered: false });
           }
@@ -2341,7 +2365,7 @@ app.listen(PORT, () => {
     } else {
       // ?좎?媛 ?ㅽ봽?쇱씤 ??OfflineMessage DB?????+ ?몄떆 ?뚮┝
       console.log(`[Pet365-Relay] ?뱿 User ${targetUserId} is offline`);
-      await saveOfflineNotice(targetUserId, message);
+      await saveOfflineMessage(targetUserId, message);
       sendWebPush(targetUserId, message).catch(console.error);
       return res.json({ delivered: false });
     }
@@ -2437,13 +2461,13 @@ app.listen(PORT, () => {
                 // Online
                 io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                   if (err || !responses || Object.keys(responses).length === 0) {
-                    await saveOfflineNotice(targetId, message);
+                    await saveOfflineMessage(targetId, message);
                     sendWebPush(targetId, message).catch(console.error);
                   }
                 });
               } else {
                 // Offline
-                saveOfflineNotice(targetId, message);
+                saveOfflineMessage(targetId, message);
                 sendWebPush(targetId, message).catch(console.error);
               }
             });
