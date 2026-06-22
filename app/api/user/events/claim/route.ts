@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
     const userId = currentUser.id;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -102,6 +105,13 @@ export async function POST(request: Request) {
           })
         ]);
 
+        await logUserActivity({
+          userId: userId,
+          activityType: 'EVENT_CLAIM',
+          status: 'SUCCESS',
+          metadata: { eventId: event.id, title: event.title, reward: event.reward },
+        });
+
         claimedEvents.push({
           eventId: event.id,
           title: event.title,
@@ -113,6 +123,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, claimedEvents });
   } catch (error) {
     console.error('Claim events error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'EVENT_CLAIM',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

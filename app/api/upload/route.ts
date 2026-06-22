@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import { requireCurrentUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = new Map([
@@ -17,9 +18,11 @@ const ALLOWED_UPLOAD_TYPES = new Map([
 ]);
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -51,6 +54,13 @@ export async function POST(request: Request) {
     if (file.type.startsWith('image/')) type = 'IMAGE';
     else if (file.type.startsWith('video/')) type = 'VIDEO';
 
+    await logUserActivity({
+      userId: currentUser.id,
+      activityType: 'FILE_UPLOAD',
+      status: 'SUCCESS',
+      metadata: { size: file.size, type },
+    });
+
     return NextResponse.json({
       success: true,
       url: publicUrl,
@@ -59,6 +69,12 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('File upload error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'FILE_UPLOAD',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 });
   }
 }

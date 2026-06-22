@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { encryptKey } from '@/lib/crypto';
 import { requireCurrentUser } from '@/lib/auth';
 import { z } from 'zod';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const SaveKeySchema = z.object({
   userId: z.string().min(1).optional(),
@@ -11,9 +12,12 @@ const SaveKeySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
+  let prov: string | null = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const body = await request.json();
     const parseResult = SaveKeySchema.safeParse(body);
@@ -22,6 +26,7 @@ export async function POST(request: Request) {
     }
 
     const { userId, provider, apiKey } = parseResult.data;
+    prov = provider;
     if (userId && userId !== currentUser.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -45,6 +50,13 @@ export async function POST(request: Request) {
       },
     });
 
+    await logUserActivity({
+      userId: currentUser.id,
+      activityType: 'USER_API_KEY_UPDATE',
+      status: 'SUCCESS',
+      metadata: { provider, hasKey: !!apiKey },
+    });
+
     return NextResponse.json({
       success: true,
       flags: {
@@ -55,6 +67,12 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('Save API key error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'USER_API_KEY_UPDATE',
+      status: 'FAILED',
+      metadata: { provider: prov, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Failed to save API key' }, { status: 500 });
   }
 }

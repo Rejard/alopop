@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdminUser } from '@/lib/auth';
 import { z } from 'zod';
+import { logUserActivity } from '@/lib/auditLogger';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,9 +48,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let currentUser: any = null;
+  let eventTitle: string = '';
   try {
     const { user: adminUser, response } = await requireAdminUser(request);
     if (!adminUser) return response;
+    currentUser = adminUser;
 
     const parseResult = CreateEventSchema.safeParse(await request.json());
     if (!parseResult.success) {
@@ -69,6 +73,7 @@ export async function POST(request: Request) {
       eventApiKey,
       dailyLimit,
     } = parseResult.data;
+    eventTitle = title;
 
     const startDate = startsAt ? new Date(startsAt) : new Date();
     const endDate = endsAt ? new Date(endsAt) : null;
@@ -92,17 +97,33 @@ export async function POST(request: Request) {
       },
     });
 
+    await logUserActivity({
+      userId: adminUser.id,
+      activityType: 'ADMIN_EVENT_CREATE',
+      status: 'SUCCESS',
+      metadata: { eventId: event.id },
+    });
+
     return NextResponse.json({ success: true, event });
   } catch (error) {
     console.error('Create event error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'ADMIN_EVENT_CREATE',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function PUT(request: Request) {
+  let currentUser: any = null;
+  let targetId: string = '';
   try {
     const { user: adminUser, response } = await requireAdminUser(request);
     if (!adminUser) return response;
+    currentUser = adminUser;
 
     const parseResult = UpdateEventSchema.safeParse(await request.json());
     if (!parseResult.success) {
@@ -110,6 +131,7 @@ export async function PUT(request: Request) {
     }
 
     const { eventId } = parseResult.data;
+    targetId = eventId;
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
@@ -119,20 +141,38 @@ export async function PUT(request: Request) {
       where: { id: eventId },
       data: { isActive: !event.isActive },
     });
+
+    await logUserActivity({
+      userId: adminUser.id,
+      activityType: 'ADMIN_EVENT_TOGGLE',
+      status: 'SUCCESS',
+      metadata: { eventId, isActive: updatedEvent.isActive },
+    });
+
     return NextResponse.json({ success: true, event: updatedEvent });
   } catch (error) {
     console.error('Update event error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'ADMIN_EVENT_TOGGLE',
+      status: 'FAILED',
+      metadata: { eventId: targetId, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request) {
+  let currentUser: any = null;
+  let targetId: string = '';
   try {
     const { user: adminUser, response } = await requireAdminUser(request);
     if (!adminUser) return response;
+    currentUser = adminUser;
 
     const { searchParams } = new URL(request.url);
     const eventId = searchParams.get('eventId');
+    targetId = eventId || '';
     if (!eventId) {
       return NextResponse.json({ error: 'eventId is required' }, { status: 400 });
     }
@@ -141,9 +181,22 @@ export async function DELETE(request: Request) {
       where: { id: eventId },
     });
 
+    await logUserActivity({
+      userId: adminUser.id,
+      activityType: 'ADMIN_EVENT_DELETE',
+      status: 'SUCCESS',
+      metadata: { eventId },
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Delete event error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'ADMIN_EVENT_DELETE',
+      status: 'FAILED',
+      metadata: { eventId: targetId, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

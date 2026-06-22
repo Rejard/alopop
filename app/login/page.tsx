@@ -189,7 +189,7 @@ export default function LoginPage() {
           </div>
 
           <div className="w-fit rounded-full border border-[rgba(204,151,255,0.22)] bg-[rgba(204,151,255,0.16)] px-3 py-2 text-xs font-black text-[#ead7ff]">
-            No-Log AI 채팅
+            강력한 보안 AI 채팅
           </div>
           <h1 aria-label="단톡방에 AI 친구를 초대하세요" className="mt-5 text-[42px] font-black leading-[0.98] tracking-[-0.07em] text-white">
             단톡방에<br />AI 친구를<br />초대하세요
@@ -213,7 +213,7 @@ export default function LoginPage() {
         <section className="grid grid-cols-2 gap-3 pb-8">
           <FeatureCard icon="✓" title="팩트체크" desc="수상한 말과 이미지만 빠르게 표시" />
           <FeatureCard icon="AI" title="AI 친구" desc="성격 있는 봇을 채팅방에 초대" />
-          <FeatureCard icon="🔒" title="No-Log" desc="대화 기록은 서버에 저장하지 않음" />
+          <FeatureCard icon="🔒" title="암호화 보관" desc="7일간 군사급 암호화 보관 및 노-로그 비밀방" />
           <FeatureCard icon="G" title="간편 시작" desc="Google 계정으로 바로 입장" />
         </section>
       </div>

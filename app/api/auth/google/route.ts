@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { OAuth2Client } from 'google-auth-library';
 import crypto from 'crypto';
 import { setSessionCookie } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const client = new OAuth2Client(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 
@@ -134,11 +135,22 @@ export async function POST(request: Request) {
       });
     }
 
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'LOGIN_GOOGLE',
+      status: 'SUCCESS',
+    });
+
     const response = NextResponse.json(user);
     setSessionCookie(response, user.id);
     return response;
   } catch (error) {
     console.error('Google Auth Error:', error);
+    await logUserActivity({
+      activityType: 'LOGIN_GOOGLE',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

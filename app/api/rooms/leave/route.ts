@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { z } from 'zod';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const LeaveRoomSchema = z.object({
   roomId: z.string().min(1),
@@ -9,9 +10,11 @@ const LeaveRoomSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const parseResult = LeaveRoomSchema.safeParse(await request.json());
     if (!parseResult.success) {
@@ -95,9 +98,22 @@ export async function POST(request: Request) {
       }
     }
 
+    await logUserActivity({
+      userId: currentUser.id,
+      activityType: 'ROOM_LEAVE',
+      status: 'SUCCESS',
+      metadata: { roomId, isGroup: room.isGroup },
+    });
+
     return NextResponse.json({ success: true, message: 'Left the room' });
   } catch (error) {
     console.error('Leave Room Error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'ROOM_LEAVE',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

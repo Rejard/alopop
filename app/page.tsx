@@ -3468,7 +3468,7 @@ export default function Home() {
               )}
               <div className="flex justify-center mb-6 mt-2">
                 <div className="bg-surface-container-high px-4 py-2 rounded-full text-xs text-on-surface-variant border border-outline-variant/15 text-center shadow-sm font-mono tracking-tight">
-                  이전 대화 내역이 로컬 기기에 암호화되어 보관됩니다. (No-Log)<br />
+                  이전 대화 내역은 서버에 7일간 군사급으로 암호화되어 안전하게 보관됩니다. (비밀방 제외)<br />
                   /송금 [금액] 명령어로 지갑을 테스트 해보세요!
                 </div>
               </div>

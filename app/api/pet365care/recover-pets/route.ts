@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 /**
  * 반려동물 봇 채팅방에서 펫 정보 복구 API
@@ -9,9 +10,11 @@ import { requireCurrentUser } from '@/lib/auth';
  * 클라이언트 localStorage에 등록할 수 있도록 반환합니다.
  */
 export async function GET(request: Request) {
+  let currentUser: any = null;
   try {
     const { user, response } = await requireCurrentUser(request);
     if (!user) return response;
+    currentUser = user;
 
     // 현재 유저가 소유한 Pet365Care 봇 유저들 조회
     const botUsers = await prisma.user.findMany({
@@ -44,6 +47,13 @@ export async function GET(request: Request) {
       };
     });
 
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'PET365_RECOVER_PETS',
+      status: 'SUCCESS',
+      metadata: { count: pets.length },
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -53,6 +63,12 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('[Pet365Care] Recover pets error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'PET365_RECOVER_PETS',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ success: false, error: '복구 실패' }, { status: 500 });
   }
 }

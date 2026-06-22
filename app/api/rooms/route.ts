@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { z } from 'zod';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const CreateRoomSchema = z.object({
   name: z.string().max(80).nullable().optional(),
@@ -27,9 +28,11 @@ const roomInclude = {
 };
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const parseResult = CreateRoomSchema.safeParse(await request.json());
     if (!parseResult.success) {
@@ -67,6 +70,13 @@ export async function POST(request: Request) {
         const myMember = matchedRoom.members.find((member) => member.userId === currentUser.id);
         if (myMember) myMember.isHidden = false;
 
+        await logUserActivity({
+          userId: currentUser.id,
+          activityType: 'ROOM_RESTORE',
+          status: 'SUCCESS',
+          metadata: { roomId: matchedRoom.id },
+        });
+
         return NextResponse.json(matchedRoom);
       }
     }
@@ -85,9 +95,22 @@ export async function POST(request: Request) {
       include: roomInclude,
     });
 
+    await logUserActivity({
+      userId: currentUser.id,
+      activityType: 'ROOM_CREATE',
+      status: 'SUCCESS',
+      metadata: { roomId: newRoom.id, isGroup: newRoom.isGroup },
+    });
+
     return NextResponse.json(newRoom);
   } catch (error) {
     console.error('Failed to create room:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'ROOM_CREATE',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Failed to create room' }, { status: 500 });
   }
 }

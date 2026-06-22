@@ -21,7 +21,7 @@ In today's hyper-connected society, messengers have become the fastest conduits 
   - **🤖 AI-Generated Image Badge**: Visualizes the probability that a submitted photo is an AI-manipulated or synthesized deepfake.
   - **🚨 Fake News Alert Badge**: Instantly attaches a red warning badge when phishing attempts, fake news, or distorted facts are detected, preventing the spread of misinformation.
   - **🔍 Real-Time Evidence Pop-up**: Clicking the badge reveals a detailed pop-up containing the **Reasoning (Evidence)** acquired through real-time cross-validation, along with the **AI Confidence Score (%)**, empowering users to make informed judgments.
-- **Zero-Trust No-Log Architecture**: Operating entirely as a socket-relay mechanism without persistent centralized chat storage, Alopop guarantees absolute privacy and data sovereignty.
+- **Military-Grade Encrypted Storage & Secret Rooms**: Messages are securely stored on the server for 7 days encrypted with military-grade AES-256-GCM. For absolute privacy without traces, users can optionally use the complete No-Log secret rooms.
 
 ---
 

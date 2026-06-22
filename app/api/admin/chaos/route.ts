@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import { requireAdminUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 export async function GET(request: Request) {
   try {
@@ -26,9 +27,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let currentUser: any = null;
   try {
     const { user: adminUser, response } = await requireAdminUser(request);
     if (!adminUser) return response;
+    currentUser = adminUser;
 
     const { userCount, durationSec } = await request.json();
     
@@ -53,8 +56,21 @@ export async function POST(request: Request) {
     
     p.unref();
 
+    await logUserActivity({
+      userId: adminUser.id,
+      activityType: 'ADMIN_CHAOS_START',
+      status: 'SUCCESS',
+      metadata: { userCount: count, durationSec: duration },
+    });
+
     return NextResponse.json({ success: true, message: 'Chaos started', userCount: count, durationSec: duration });
   } catch (error) {
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'ADMIN_CHAOS_START',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Failed to start chaos' }, { status: 500 });
   }
 }

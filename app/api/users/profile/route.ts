@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { z } from 'zod';
+import { logUserActivity } from '@/lib/auditLogger';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,9 +61,11 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const body = await request.json();
     const parseResult = UpdateProfileSchema.safeParse(body);
@@ -87,9 +90,22 @@ export async function PUT(request: Request) {
       },
     });
 
+    await logUserActivity({
+      userId: currentUser.id,
+      activityType: 'USER_PROFILE_UPDATE',
+      status: 'SUCCESS',
+      metadata: { hasStatusMessage: !!statusMessage },
+    });
+
     return NextResponse.json({ success: true, user: updatedUser });
   } catch (error) {
     console.error('Update profile error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'USER_PROFILE_UPDATE',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

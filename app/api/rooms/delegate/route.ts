@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { z } from 'zod';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const DelegateHostSchema = z.object({
   roomId: z.string().min(1),
@@ -10,9 +11,13 @@ const DelegateHostSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
+  let targetId: string | null = null;
+  let rId: string | null = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const parseResult = DelegateHostSchema.safeParse(await request.json());
     if (!parseResult.success) {
@@ -20,6 +25,8 @@ export async function POST(request: Request) {
     }
 
     const { roomId, targetUserId, requesterId } = parseResult.data;
+    targetId = targetUserId;
+    rId = roomId;
     if (requesterId && requesterId !== currentUser.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -52,9 +59,24 @@ export async function POST(request: Request) {
       }),
     ]);
 
+    await logUserActivity({
+      userId: currentUser.id,
+      targetUserId,
+      activityType: 'ROOM_DELEGATE_HOST',
+      status: 'SUCCESS',
+      metadata: { roomId },
+    });
+
     return NextResponse.json({ success: true, newHostId: targetUserId });
   } catch (error) {
     console.error('Failed to delegate host:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      targetUserId: targetId,
+      activityType: 'ROOM_DELEGATE_HOST',
+      status: 'FAILED',
+      metadata: { roomId: rId, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Failed to delegate host' }, { status: 500 });
   }
 }

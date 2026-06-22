@@ -19,6 +19,7 @@ self.addEventListener('push', (event) => {
     icon: '/favicon.svg',
     badge: '/favicon.svg',
     vibrate: [200, 100, 200],
+    silent: false,
     data: { url: data.url || '/' }
   };
   

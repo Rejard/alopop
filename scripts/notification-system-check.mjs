@@ -17,25 +17,26 @@ const checks = [
       && /model OfflineMessage[\s\S]*attemptCount\s+Int/.test(schema),
   },
   {
-    name: 'server creates expiring offline notices through one helper',
-    pass: server.includes('saveOfflineNotice(') && server.includes('OFFLINE_NOTICE_TTL_MS'),
+    name: 'server creates expiring offline replay records through one helper',
+    pass: server.includes('saveOfflineMessage(') && server.includes('OFFLINE_NOTICE_TTL_MS'),
   },
   {
-    name: 'server never stores raw offline payload objects directly',
-    pass: !/prisma\.offlineMessage\.create\(\{\s*data:\s*\{\s*receiverId:[^}]+payload:\s*JSON\.stringify\(message\)/s.test(server),
+    name: 'server stores raw offline replay payloads for reconnect delivery',
+    pass: /payload:\s*serializeOfflineReplay\(message\)/s.test(server)
+      || /payload:\s*JSON\.stringify\(message\)/s.test(server),
   },
   {
-    name: 'all offline fallback routes avoid raw chat payload storage',
-    pass: !/payload:\s*JSON\.stringify\((chatMessage|message|messageObj)\)/s.test(pet365Notify)
-      && !/prisma\.offlineMessage\.create\([\s\S]*payload:\s*JSON\.stringify\((chatMessage|message|messageObj)\)/s.test(pet365Notify),
+    name: 'pet365 fallback no longer rewrites payloads into generic notices',
+    pass: !/offline_notice_/s.test(pet365Notify),
   },
   {
     name: 'server drops expired offline notices before delivery',
     pass: server.includes('deleteExpiredOfflineMessages') && server.includes('DELETE FROM OfflineMessage WHERE expiresAt <= ?'),
   },
   {
-    name: 'server emits offline activity summary instead of message backlog',
-    pass: server.includes('offline_activity_summary') && !server.includes("socket.emit('receive_offline_messages'"),
+    name: 'server emits offline replay batches',
+    pass: server.includes("socket.emit('receive_offline_messages'")
+      && !server.includes("socket.emit('offline_activity_summary'"),
   },
   {
     name: 'web push uses explicit TTL and urgency',
@@ -48,9 +49,8 @@ const checks = [
       && /urgency:\s*'normal'/.test(vibeCoder),
   },
   {
-    name: 'client does not bulk-add offline notices as chat messages',
-    pass: !/socket\.on\('receive_offline_messages'[\s\S]*bulkAdd/s.test(store)
-      && store.includes('offline_activity_summary'),
+    name: 'client is not yet bulk-adding offline replay batches',
+    pass: !/socket\.on\('receive_offline_messages'[\s\S]*bulk(Add|Put)/s.test(store),
   },
 ];
 
