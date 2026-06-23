@@ -105,3 +105,6 @@ chaos_log.txt
 /scripts/sponsor-system-check.mjs
 /scripts/vibeCoder.mjs
 
+
+# reports
+/public/repoart/
