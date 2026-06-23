@@ -29,19 +29,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid localTimestamp' }, { status: 400 });
     }
 
-    const roomMember = await prisma.roomMember.update({
-      where: {
-        userId_roomId: {
-          userId: currentUser.id,
-          roomId,
-        },
-      },
-      data: {
-        lastReadAt: readAtDate,
-      },
+    // Buffer read receipt for 1-minute batch processing
+    const bufferMap = (global as any).readReceiptBuffer || new Map();
+    const key = `${currentUser.id}:${roomId}`;
+    bufferMap.set(key, {
+      userId: currentUser.id,
+      roomId,
+      lastReadAt: readAtDate,
     });
+    (global as any).readReceiptBuffer = bufferMap;
 
-    return NextResponse.json({ success: true, lastReadAt: roomMember.lastReadAt });
+    return NextResponse.json({ success: true, buffered: true, lastReadAt: readAtDate });
   } catch (err) {
     console.error('Room read error:', err);
     return NextResponse.json({ error: 'Failed to update read timestamp' }, { status: 500 });

@@ -75,6 +75,41 @@ function verifySessionToken(token) {
   }
 }
 
+// --- AES-256-GCM Encryption for Chat Messages ---
+const ALGO = 'aes-256-gcm';
+const IV_LEN = 12;
+const KEY_LEN = 32;
+
+function getEncryptionKey() {
+  const secret = process.env.ENCRYPTION_KEY || process.env.SESSION_SECRET || internalApiSecret || 'ALO_POP_ENCRYPTION_SECRET_DEFAULT';
+  return crypto.createHash('sha256').update(String(secret)).digest().subarray(0, KEY_LEN);
+}
+
+function encryptText(plainText) {
+  if (!plainText) return '';
+  const iv = crypto.randomBytes(IV_LEN);
+  const cipher = crypto.createCipheriv(ALGO, getEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(plainText), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ['v1', iv.toString('base64'), tag.toString('base64'), encrypted.toString('base64')].join(':');
+}
+
+function decryptText(payload) {
+  if (!payload) return '';
+  if (!payload.startsWith('v1:')) return payload; // Fallback for plain text
+  const [version, ivB64, tagB64, encryptedB64] = String(payload).split(':');
+  if (version !== 'v1' || !ivB64 || !tagB64 || !encryptedB64) return payload; // Cannot parse
+  try {
+    const decipher = crypto.createDecipheriv(ALGO, getEncryptionKey(), Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    return Buffer.concat([decipher.update(Buffer.from(encryptedB64, 'base64')), decipher.final()]).toString('utf8');
+  } catch (err) {
+    console.error('Decryption error:', err);
+    return '[Encrypted message cannot be read]';
+  }
+}
+// -------------------------------------------------
+
 // Next.js ??珥덇린??
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -89,19 +124,71 @@ app.prepare().then(() => {
   const expressApp = express();
   const { PrismaClient } = require('@prisma/client');
   const prisma = new PrismaClient();
+  const { logSocketAudit } = require('./lib/auditLogger');
 
-  function createOfflineNotice(message) {
-    return JSON.stringify({
-      messageId: `offline_notice_${message?.messageId || Date.now()}`,
-      senderId: 'system',
-      senderName: 'System',
-      receiverId: message?.receiverId || null,
-      messageType: 'SYSTEM',
-      content: '새 메시지가 도착했습니다. 다시 접속해 확인해 주세요.',
-      createdAt: message?.createdAt || Date.now(),
-      offlineNotice: true,
-    });
+  // 인메모리 벌크 배치 버퍼 초기화
+  global.readReceiptBuffer = global.readReceiptBuffer || new Map();
+  global.studioLogBuffer = global.studioLogBuffer || [];
+
+  // 1분 주기 대화방 읽음 일괄 처리
+  setInterval(async () => {
+    if (!global.readReceiptBuffer || global.readReceiptBuffer.size === 0) return;
+    const items = Array.from(global.readReceiptBuffer.values());
+    global.readReceiptBuffer.clear();
+    console.log(`[ReadReceipt Batch] Processing ${items.length} items...`);
+    try {
+      await prisma.$transaction(
+        items.map(item =>
+          prisma.roomMember.upsert({
+            where: {
+              userId_roomId: {
+                userId: item.userId,
+                roomId: item.roomId,
+              }
+            },
+            update: {
+              lastReadAt: item.lastReadAt,
+            },
+            create: {
+              userId: item.userId,
+              roomId: item.roomId,
+              lastReadAt: item.lastReadAt,
+            }
+          })
+        )
+      );
+      console.log(`[ReadReceipt Batch] Successfully updated ${items.length} read receipts.`);
+    } catch (error) {
+      console.error(`[ReadReceipt Batch] Error updating batch:`, error);
+      items.forEach(item => {
+        const key = `${item.userId}:${item.roomId}`;
+        if (!global.readReceiptBuffer.has(key)) {
+          global.readReceiptBuffer.set(key, item);
+        }
+      });
+    }
+  }, 60 * 1000);
+
+  // 30초 주기 AI 스튜디오 실행 로그 일괄 처리 및 플러시 함수
+  async function flushStudioLogs() {
+    if (!global.studioLogBuffer || global.studioLogBuffer.length === 0) return;
+    const logs = [...global.studioLogBuffer];
+    global.studioLogBuffer = [];
+    console.log(`[StudioLog Batch] Flushing ${logs.length} logs...`);
+    try {
+      await prisma.studioLog.createMany({
+        data: logs
+      });
+      console.log(`[StudioLog Batch] Successfully flushed ${logs.length} logs.`);
+    } catch (error) {
+      console.error(`[StudioLog Batch] Error flushing logs:`, error);
+      global.studioLogBuffer = logs.concat(global.studioLogBuffer);
+    }
   }
+
+  setInterval(flushStudioLogs, 30 * 1000);
+
+  // createOfflineNotice is no longer used since we serialize the whole message
 
   function parseOfflineNotice(payload) {
     try {
@@ -126,19 +213,31 @@ app.prepare().then(() => {
         'DELETE FROM OfflineMessage WHERE expiresAt <= ?',
         new Date().toISOString()
       );
-      return;
+    } else {
+      await prisma.offlineMessage.deleteMany({
+        where: { createdAt: { lte: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) } }
+      });
     }
 
-    await prisma.offlineMessage.deleteMany({
-      where: { createdAt: { lte: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) } }
-    });
+    // TTL 7일이 지난 Message 파기
+    try {
+      const deleted = await prisma.message.deleteMany({
+        where: { expiresAt: { lte: new Date() } }
+      });
+      if (deleted.count > 0) {
+        console.log(`[TTL] Deleted ${deleted.count} expired messages from DB`);
+      }
+    } catch (e) {
+      console.error('Failed to delete expired TTL messages:', e);
+    }
   }
 
-  async function saveOfflineNotice(receiverId, message) {
+  async function saveOfflineMessage(receiverId, message) {
     if (!receiverId || !message) return null;
+    const payload = JSON.stringify(message);
     if (!(await hasEnhancedOfflineQueue())) {
       return prisma.offlineMessage.create({
-        data: { receiverId, payload: createOfflineNotice(message) }
+        data: { receiverId, payload }
       }).catch(e => console.error('Offline notice save err:', e));
     }
 
@@ -147,7 +246,7 @@ app.prepare().then(() => {
        VALUES (?, ?, 'NOTICE', 'PENDING', ?, ?, ?, 0)`,
       crypto.randomUUID(),
       receiverId,
-      createOfflineNotice(message),
+      payload,
       new Date().toISOString(),
       new Date(Date.now() + OFFLINE_NOTICE_TTL_MS).toISOString()
     ).catch(e => console.error('Offline notice save err:', e));
@@ -225,19 +324,31 @@ app.prepare().then(() => {
         });
       if (records.length > 0) {
         const rooms = new Map();
+        const offlineMessages = [];
         for (const record of records) {
-          const notice = parseOfflineNotice(record.payload);
-          if (!notice?.receiverId) continue;
-          const room = rooms.get(notice.receiverId) || { roomId: notice.receiverId, count: 0, latestAt: 0 };
-          room.count += 1;
-          room.latestAt = Math.max(room.latestAt, notice.createdAt || new Date(record.createdAt).getTime());
-          rooms.set(notice.receiverId, room);
+          const messageObj = parseOfflineNotice(record.payload);
+          if (!messageObj) continue;
+          
+          offlineMessages.push(messageObj);
+
+          const destRoomId = messageObj.roomId || messageObj.receiverId;
+          if (destRoomId) {
+             const room = rooms.get(destRoomId) || { roomId: destRoomId, count: 0, latestAt: 0 };
+             room.count += 1;
+             room.latestAt = Math.max(room.latestAt, messageObj.createdAt || new Date(record.createdAt).getTime());
+             rooms.set(destRoomId, room);
+          }
         }
 
         const summary = Array.from(rooms.values());
         if (summary.length > 0) {
           socket.emit('offline_activity_summary', { rooms: summary });
           console.log(`Emitted offline activity summary for ${summary.length} rooms to ${userId}`);
+        }
+
+        if (offlineMessages.length > 0) {
+          socket.emit('receive_offline_messages', { messages: offlineMessages });
+          console.log(`Emitted ${offlineMessages.length} offline messages to ${userId}`);
         }
         
         const ids = records.map(r => r.id);
@@ -332,6 +443,7 @@ app.prepare().then(() => {
   // Socket.io ?듭떊 泥섎━
   io.on('connection', async (socket) => {
     console.log('?뵕 User connected:', socket.id);
+    logSocketAudit({ socketId: socket.id, event: 'CONNECT', details: `Transport: ${socket.conn.transport.name}` });
     let socketUser = null;
     const agentToken = socket.handshake.auth?.token;
     
@@ -363,6 +475,7 @@ app.prepare().then(() => {
       socket.userId = socketUser.id;
       socket.join(socket.userId);
       console.log(`User ${socket.userId} registered and joined their personal room`);
+      logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'REGISTER' });
 
       // ?묒냽 ???ㅽ봽?쇱씤 ?먯뿉 蹂닿???硫붿떆吏媛 ?덈떎硫?利됱떆 ?잛븘??(洹몃━怨???젣)
       deliverOfflineMessages(socket);
@@ -387,6 +500,7 @@ app.prepare().then(() => {
         io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
       }
       console.log(`?슞 Socket ${socket.id} (User: ${socket.userId}) joined room ${roomId}`);
+      logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'JOIN_ROOM', details: roomId });
     });
 
     socket.on('leave_room', async (roomId) => {
@@ -411,6 +525,7 @@ app.prepare().then(() => {
         }
       }
       console.log(`?슞 Socket ${socket.id} (User: ${socket.userId}) left room ${roomId}`);
+      logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'LEAVE_ROOM', details: roomId });
     });
 
     // 3. 梨꾪똿諛??대쫫 ?ㅼ떆媛?蹂寃?釉뚮줈?쒖틦?ㅽ듃
@@ -503,11 +618,11 @@ app.prepare().then(() => {
           if (roomSet && roomSet.size > 0) {
             io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
-                await saveOfflineNotice(targetId, message);
+                await saveOfflineMessage(targetId, message);
               }
             });
           } else {
-            saveOfflineNotice(targetId, message);
+            saveOfflineMessage(targetId, message);
           }
         });
       }
@@ -535,6 +650,22 @@ app.prepare().then(() => {
             return;
           }
           message.senderId = requestedSenderId;
+          
+          // [TTL 7일 저장] 비밀방이 아닌 경우 암호화하여 Message DB에 보관
+          if (!room.isSecret && message.messageType !== 'SYSTEM') {
+            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+            prisma.message.create({
+              data: {
+                messageId: message.messageId,
+                roomId: room.id,
+                senderId: message.senderId,
+                type: message.messageType || 'TEXT',
+                content: encryptText(message.content),
+                createdAt: new Date(message.createdAt || Date.now()),
+                expiresAt
+              }
+            }).catch(err => console.error('Failed to store TTL message:', err));
+          }
 
           if (!room.isGroup) {
             // 1:1 諛⑹씪 寃쎌슦 ?섍컮???④? 泥섎━?? ?좎? ?먮룞 遺??Re-join) 濡쒖쭅 泥섎━
@@ -564,7 +695,7 @@ app.prepare().then(() => {
               io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                 if (err || !responses || Object.keys(responses).length === 0) {
                   console.log(`?좑툘 ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
-                  await saveOfflineNotice(targetId, message);
+                  await saveOfflineMessage(targetId, message);
                   
                   sendWebPush(targetId, message).catch(console.error); // 鍮꾨룞湲?Fire-and-forget
                 } else {
@@ -573,7 +704,7 @@ app.prepare().then(() => {
               });
             } else {
               // ?ㅽ봽?쇱씤?대㈃ DB???곴뎄 蹂닿? (?쒕쾭 ?ъ떆???κ린 誘몄젒????硫붾え由??꾩닔 諛⑹?)
-              saveOfflineNotice(targetId, message).then(() => {
+              saveOfflineMessage(targetId, message).then(() => {
                 console.log(`?뱿 Paused message for offline member ${targetId} into DB`);
               });
               
@@ -637,7 +768,7 @@ app.prepare().then(() => {
             io.to(receiverId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
                 console.log(`?좑툘 ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
-                await saveOfflineNotice(receiverId, message);
+                await saveOfflineMessage(receiverId, message);
                 
                 sendWebPush(receiverId, message).catch(console.error);
               } else {
@@ -645,7 +776,7 @@ app.prepare().then(() => {
               }
             });
           } else {
-            saveOfflineNotice(receiverId, message).then(() => {
+            saveOfflineMessage(receiverId, message).then(() => {
               console.log(`?뱿 Paused message for offline destination ${receiverId} into DB`);
             });
             
@@ -654,6 +785,42 @@ app.prepare().then(() => {
         }
       } catch (err) {
         console.error('Error handling send_message routing:', err);
+      }
+    });
+
+    socket.on('sync_messages', async (payload) => {
+      const { roomId, lastSyncTime } = payload;
+      const userId = socket.userId;
+      if (!roomId || !userId) return;
+
+      try {
+        const room = await getRoomWithMembers(roomId);
+        // 비밀방이거나 방 멤버가 아니면 동기화 안 함
+        if (!room || room.isSecret || !isRoomMember(room, userId)) return;
+
+        const messages = await prisma.message.findMany({
+          where: { 
+            roomId, 
+            createdAt: { gt: new Date(lastSyncTime || 0) } 
+          },
+          orderBy: { createdAt: 'asc' }
+        });
+
+        if (messages.length > 0) {
+          const decryptedMessages = messages.map(msg => ({
+            messageId: msg.messageId,
+            roomId: msg.roomId,
+            senderId: msg.senderId,
+            receiverId: msg.receiverId,
+            messageType: msg.type,
+            content: decryptText(msg.content),
+            createdAt: msg.createdAt.getTime(),
+          }));
+
+          socket.emit('sync_messages_result', { roomId, messages: decryptedMessages });
+        }
+      } catch (err) {
+        console.error('Error handling sync_messages:', err);
       }
     });
 
@@ -680,8 +847,9 @@ app.prepare().then(() => {
       }
     });
 
-    socket.on('disconnect', async () => {
+    socket.on('disconnect', async (reason) => {
       console.log('?뵶 User disconnected:', socket.id, socket.userId);
+      logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'DISCONNECT', details: reason || 'unknown' });
       if (socket.currentRoom && socket.userId && roomPresence.has(socket.currentRoom)) {
         const rId = socket.currentRoom;
         try {
@@ -928,19 +1096,20 @@ app.prepare().then(() => {
     
     const broadcastStudioLog = async (logObj) => {
       try {
-        const createdLog = await prisma.studioLog.create({
-          data: {
-            studioId,
-            agent: logObj.agent,
-            msg: logObj.msg,
-            error: !!logObj.error
-          }
+        const timestamp = new Date();
+        global.studioLogBuffer = global.studioLogBuffer || [];
+        global.studioLogBuffer.push({
+          studioId,
+          agent: logObj.agent,
+          msg: logObj.msg,
+          error: !!logObj.error,
+          createdAt: timestamp
         });
         io.to(studioId).emit('logStudio', {
-          agent: createdLog.agent,
-          msg: createdLog.msg,
-          error: createdLog.error,
-          createdAt: createdLog.createdAt
+          agent: logObj.agent,
+          msg: logObj.msg,
+          error: !!logObj.error,
+          createdAt: timestamp
         });
       } catch (e) {
         console.error('broadcastStudioLog error:', e);
@@ -1516,6 +1685,7 @@ ${accumulatedDoc}
         io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
         io.to(studioId).emit('syncStudioAgentState', agentState);
         io.to(studioId).emit('studioTaskFinished', { studioId, success: true });
+        await flushStudioLogs().catch(err => console.error('flushStudioLogs fail:', err));
       }
 
     } catch (error) {
@@ -1524,6 +1694,7 @@ ${accumulatedDoc}
       await broadcastStudioLog({ agent: '대표님', msg: `에러가 발생하여 연산이 중단되었습니다: ${error.message}`, error: true });
       io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
       io.to(studioId).emit('studioTaskFinished', { studioId, success: false });
+      await flushStudioLogs().catch(err => console.error('flushStudioLogs fail:', err));
     }
   }
 
@@ -1533,19 +1704,20 @@ ${accumulatedDoc}
 
     const broadcastStudioLog = async (logObj) => {
       try {
-        const createdLog = await prisma.studioLog.create({
-          data: {
-            studioId,
-            agent: logObj.agent,
-            msg: logObj.msg,
-            error: !!logObj.error
-          }
+        const timestamp = new Date();
+        global.studioLogBuffer = global.studioLogBuffer || [];
+        global.studioLogBuffer.push({
+          studioId,
+          agent: logObj.agent,
+          msg: logObj.msg,
+          error: !!logObj.error,
+          createdAt: timestamp
         });
         io.to(studioId).emit('logStudio', {
-          agent: createdLog.agent,
-          msg: createdLog.msg,
-          error: createdLog.error,
-          createdAt: createdLog.createdAt
+          agent: logObj.agent,
+          msg: logObj.msg,
+          error: !!logObj.error,
+          createdAt: timestamp
         });
       } catch (e) {
         console.error('broadcastStudioLog error:', e);
@@ -1661,12 +1833,14 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
       io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
       io.to(studioId).emit('syncStudioAgentState', agentStateQA2);
       io.to(studioId).emit('studioTaskFinished', { studioId, success: true });
+      await flushStudioLogs().catch(err => console.error('flushStudioLogs fail:', err));
     } catch (err) {
       console.error('runStudioManualQA err:', err);
       await prisma.studio.update({ where: { id: studioId }, data: { isWorking: false } });
       await broadcastStudioLog({ agent: 'Dave', msg: `수동 검사 오류 발생: ${err.message}`, error: true });
       io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
       io.to(studioId).emit('studioTaskFinished', { studioId, success: false });
+      await flushStudioLogs().catch(err => console.error('flushStudioLogs fail:', err));
     }
   }
 
@@ -2327,7 +2501,7 @@ app.listen(PORT, () => {
         io.to(targetUserId).timeout(3000).emit('receive_message', message, async (err, responses) => {
           if (err || !responses || Object.keys(responses).length === 0) {
             console.log(`[Pet365-Relay] ?좑툘 ACK timeout for ${targetUserId}, treating as offline`);
-            await saveOfflineNotice(targetUserId, message);
+            await saveOfflineMessage(targetUserId, message);
             sendWebPush(targetUserId, message).catch(console.error);
             return res.json({ delivered: false });
           }
@@ -2341,7 +2515,7 @@ app.listen(PORT, () => {
     } else {
       // ?좎?媛 ?ㅽ봽?쇱씤 ??OfflineMessage DB?????+ ?몄떆 ?뚮┝
       console.log(`[Pet365-Relay] ?뱿 User ${targetUserId} is offline`);
-      await saveOfflineNotice(targetUserId, message);
+      await saveOfflineMessage(targetUserId, message);
       sendWebPush(targetUserId, message).catch(console.error);
       return res.json({ delivered: false });
     }
@@ -2437,13 +2611,13 @@ app.listen(PORT, () => {
                 // Online
                 io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                   if (err || !responses || Object.keys(responses).length === 0) {
-                    await saveOfflineNotice(targetId, message);
+                    await saveOfflineMessage(targetId, message);
                     sendWebPush(targetId, message).catch(console.error);
                   }
                 });
               } else {
                 // Offline
-                saveOfflineNotice(targetId, message);
+                saveOfflineMessage(targetId, message);
                 sendWebPush(targetId, message).catch(console.error);
               }
             });
@@ -2465,7 +2639,7 @@ app.listen(PORT, () => {
   httpServer.listen(port, (err) => {
     if (err) throw err;
     console.log(`> ?? Ready on http://${hostname}:${port}`);
-    console.log('> ?썳截?Custom Express Server with Socket.io running (No-Log Mode)');
+    console.log('> 🚀 Custom Express Server with Socket.io running (Encrypted 7-Day Storage Mode)');
     
     // ?붾젅洹몃옩 遊?珥덇린??
 

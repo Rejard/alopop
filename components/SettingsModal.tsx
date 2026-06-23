@@ -157,7 +157,9 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
           setHostSponsorLocked({ isLocked: false });
           if (currentProvider === 'gemini-free') {
             setActiveTab('gemini');
-            setRoomPolicy('free');
+            if (!currentRoom?.sponsorMode) {
+              setRoomPolicy('free');
+            }
           } else {
             setActiveTab(currentProvider);
             // gemini가 아닌 경우 free 락 풀기

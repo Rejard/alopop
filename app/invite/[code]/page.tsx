@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Check, Copy, LogIn, UserPlus } from 'lucide-react';
 
@@ -18,6 +18,12 @@ function getGoogleRedirectUri() {
 }
 
 function startGoogleRedirect(clientId: string, inviteCode: string) {
+  const currentUrl = window.location.href;
+  if (/KAKAOTALK/i.test(navigator.userAgent)) {
+    window.location.href = `kakaotalk://web/openExternalApp?url=${encodeURIComponent(currentUrl)}`;
+    return;
+  }
+
   const state = createOAuthState();
   const redirectUri = getGoogleRedirectUri();
   sessionStorage.setItem(GOOGLE_OAUTH_STATE_KEY, JSON.stringify({ state, redirectUri, inviteCode, createdAt: Date.now() }));
@@ -97,7 +103,16 @@ export default function InvitePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'SELECT' | 'NEW' | 'EXISTING'>('SELECT');
   const [copied, setCopied] = useState(false);
+  const [isInApp, setIsInApp] = useState(false);
   const currentUser = useSyncExternalStore(subscribeStoredUser, readStoredUser, () => null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isApp = /Telegram|KAKAOTALK|Line|Instagram|FB_IAB|FBAN|FBIOS|TrustWallet/i.test(navigator.userAgent) ||
+        (navigator.userAgent.includes('wv') || navigator.userAgent.includes('WebView'));
+      setIsInApp(isApp);
+    }
+  }, []);
 
   const handleCopyCode = async () => {
     try {
@@ -197,7 +212,15 @@ export default function InvitePage() {
                 {isLoading ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 py-4 text-center text-sm font-bold text-[var(--alo-accent-mint)]">처리 중...</div>
                 ) : clientId ? (
-                  <GoogleButton clientId={clientId} inviteCode={targetCode} disabled={isLoading} />
+                  <>
+                    <GoogleButton clientId={clientId} inviteCode={targetCode} disabled={isLoading} />
+                    {isInApp && (
+                      <p className="mt-3 text-center text-[11px] text-red-400 font-bold leading-normal">
+                        ⚠️ 카카오톡, 텔레그램, 인스타그램 등 인앱 브라우저에서는 구글 로그인 시 오류가 발생할 수 있습니다.<br />
+                        오류가 발생하면 화면 우측 상단 메뉴(⋮ 또는 ···)를 눌러 '다른 브라우저로 열기'를 선택해 주세요.
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-4 text-center text-sm font-bold text-red-200">
                     Google Client ID가 설정되지 않았습니다.

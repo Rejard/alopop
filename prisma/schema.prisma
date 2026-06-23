@@ -75,6 +75,8 @@ model Room {
   sponsorMode   Boolean  @default(false) // 개별 방장 스폰서 기능 활성화 여부
   sponsorModel  String?  // 방장이 스폰서용으로 선택한 개별 방 AI 모델명
   sponsorPrice  Int      @default(0)     // 개별 방 1회 팩트체크당 과금 금액 (코인)
+  
+  isSecret      Boolean  @default(false) // 비밀방(서버에 메시지 보관 안 함) 여부
 
   members RoomMember[]
 }
@@ -218,6 +220,22 @@ model OfflineMessage {
   attemptCount Int     @default(0)
   
   @@index([receiverId])
+  @@index([expiresAt])
+}
+
+// 7일(TTL) 보관용 중앙 메시지 저장소 (일반방 전용, E2EE 암호화됨)
+model Message {
+  id          String   @id @default(uuid())
+  messageId   String   @unique
+  roomId      String   
+  senderId    String
+  receiverId  String?
+  type        String   @default("TEXT")
+  content     String   // 암호화되어 저장됨 (AES-256-GCM)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime // 파기 예정 시간 (createdAt + 7일)
+
+  @@index([roomId, createdAt])
   @@index([expiresAt])
 }
 
@@ -400,5 +418,34 @@ model StudioArtifact {
   studio     Studio   @relation("StudioArtifacts", fields: [studioId], references: [id], onDelete: Cascade)
 
   @@index([studioId])
+  @@index([createdAt])
+}
+
+model SocketAuditLog {
+  id        String   @id @default(uuid())
+  socketId  String
+  userId    String?
+  event     String   // "CONNECT", "REGISTER", "DISCONNECT", "JOIN_ROOM", "LEAVE_ROOM"
+  details   String?  // disconnect reason, roomId 등
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([socketId])
+  @@index([event])
+  @@index([createdAt])
+}
+
+model UserActivityLog {
+  id           String   @id @default(uuid())
+  userId       String?  // 행위의 주체 (미가입 시 null)
+  targetUserId String?  // 상호작용 대상 유저 ID (친구 추가, 송금, 관리자 제어 등)
+  activityType String   // 세부 활동 타입 정의 참조
+  status       String   // "SUCCESS", "FAILED", "PENDING"
+  metadata     String?  // 비식별 상세 정보 JSON (예: {"roomId": "...", "amount": 1000})
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([targetUserId])
+  @@index([activityType])
   @@index([createdAt])
 }

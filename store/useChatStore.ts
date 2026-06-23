@@ -144,9 +144,70 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       window.dispatchEvent(new CustomEvent('claw_log_update', { detail: payload }));
     });
 
+    // 7일(TTL) 메시지 동기화 수신 (방 접속 시)
+    socket.on('sync_messages_result', async (payload: { roomId: string, messages: any[] }) => {
+      const { roomId, messages } = payload;
+      if (!messages || messages.length === 0) return;
+      try {
+        const msgsToSave = messages.map(msg => ({
+          messageId: msg.messageId,
+          senderId: msg.senderId,
+          senderName: 'Unknown', // UI에서 ID 기반으로 매핑
+          receiverId: msg.roomId, // 로컬 DB에서 receiverId는 방 ID 역할
+          content: msg.content,
+          messageType: msg.messageType,
+          createdAt: msg.createdAt,
+        }));
+
+        const messageIds = msgsToSave.map(m => m.messageId);
+        const existingMessages = await db.messages.where('messageId').anyOf(messageIds).toArray();
+        const existingMessageIds = new Set(existingMessages.map(m => m.messageId));
+        
+        const newMsgs = msgsToSave.filter(m => !existingMessageIds.has(m.messageId));
+
+        if (newMsgs.length > 0) {
+          await db.messages.bulkAdd(newMsgs);
+          console.log(`[DEBUG] 🟢 IndexedDB synced TTL messages (${newMsgs.length}) for room ${roomId}`);
+          // 기존 오프라인 복구 이벤트를 재활용하여 UI 업데이트 트리거
+          window.dispatchEvent(new CustomEvent('offline_messages_restored', { detail: newMsgs }));
+        }
+      } catch (err) {
+        console.error('[DEBUG] 🔴 IndexedDB sync save error:', err);
+      }
+    });
+
     // 오프라인 상태에서 밀린 큐 메시지 뭉치 수신 이벤트
     socket.on('offline_activity_summary', (summary: { rooms: Array<{ roomId: string; count: number; latestAt: number }> }) => {
       window.dispatchEvent(new CustomEvent('offline_activity_summary', { detail: summary }));
+    });
+
+    socket.on('receive_offline_messages', async ({ messages }: { messages: ChatMessage[] }) => {
+      console.log(`[DEBUG] 🔵 Socket.io received offline messages: ${messages.length}`);
+      if (!messages || messages.length === 0) return;
+
+      try {
+        const msgsToSave = messages.map(msg => {
+          const newMsg = { ...msg } as any;
+          delete newMsg.id;
+          return newMsg;
+        });
+        
+        const messageIds = msgsToSave.map(m => m.messageId);
+        const existingMessages = await db.messages.where('messageId').anyOf(messageIds).toArray();
+        const existingMessageIds = new Set(existingMessages.map(m => m.messageId));
+        
+        const newMsgs = msgsToSave.filter(m => !existingMessageIds.has(m.messageId));
+
+        if (newMsgs.length > 0) {
+          await db.messages.bulkAdd(newMsgs);
+          console.log(`[DEBUG] 🟢 IndexedDB bulk offline messages stored successfully (${newMsgs.length})`);
+          window.dispatchEvent(new CustomEvent('offline_messages_restored', { detail: newMsgs }));
+        } else {
+          console.log('[DEBUG] ⚠️ Offline messages already exist in DB, skipping');
+        }
+      } catch (err) {
+        console.error('[DEBUG] 🔴 IndexedDB bulk save error:', err);
+      }
     });
 
     set({ socket });
@@ -186,10 +247,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  joinRoom: (roomId: string) => {
+  joinRoom: async (roomId: string) => {
     const { socket } = get();
     if (socket) {
       socket.emit('join_room', roomId);
+      
+      // 방 접속 시 서버에 7일 보관된 최신 메시지 동기화 요청
+      try {
+        const msgs = await db.messages.where('receiverId').equals(roomId).toArray();
+        const lastSyncTime = msgs.length > 0 ? Math.max(...msgs.map(m => m.createdAt)) : 0;
+        socket.emit('sync_messages', { roomId, lastSyncTime });
+      } catch (e) {
+        socket.emit('sync_messages', { roomId, lastSyncTime: 0 });
+      }
     }
   }
 }));

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import proj4 from 'proj4';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const API_KEY = process.env.DATA_GO_KR_API_KEY;
 const BASE_URL = 'http://apis.data.go.kr/1741000/animal_hospitals/info';
@@ -30,9 +31,11 @@ export async function GET(request: Request) {
  * body: { region?: string, maxPages?: number, clear?: boolean }
  */
 export async function POST(request: Request) {
+  let currentUser: any = null;
   try {
     const { user, response } = await requireCurrentUser(request);
     if (!user) return response;
+    currentUser = user;
     if (!user.isAdmin) return NextResponse.json({ success: false, error: '관리자 권한 필요' }, { status: 403 });
     if (!API_KEY) return NextResponse.json({ success: false, error: 'DATA_GO_KR_API_KEY 미설정' }, { status: 400 });
 
@@ -110,9 +113,23 @@ export async function POST(request: Request) {
 
     const totalHospitals = await prisma.hospital.count();
     console.log(`[Hospital Sync] Done: inserted=${inserted}, updated=${updated}, skipped=${skipped}, total=${totalHospitals}`);
+
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'PET365_HOSPITAL_SYNC',
+      status: 'SUCCESS',
+      metadata: { inserted, updated, skipped, totalHospitals },
+    });
+
     return NextResponse.json({ success: true, data: { inserted, updated, skipped, totalHospitals } });
   } catch (error) {
     console.error('[Hospital Sync]', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'PET365_HOSPITAL_SYNC',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ success: false, error: '동기화 중 오류' }, { status: 500 });
   }
 }

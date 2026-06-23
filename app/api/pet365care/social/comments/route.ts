@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
-
-/**
- * 댓글 API
- * POST — 댓글 작성
- * DELETE — 댓글 삭제 (본인만)
- * GET — 게시물 댓글 목록
- */
+import { logUserActivity } from '@/lib/auditLogger';
 
 export async function GET(request: Request) {
   try {
@@ -45,11 +39,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let currentUser: any = null;
+  let targetPostId: string = '';
   try {
     const { user, response } = await requireCurrentUser(request);
     if (!user) return response;
+    currentUser = user;
 
     const { postId, content } = await request.json();
+    targetPostId = postId;
     if (!postId || !content?.trim()) {
       return NextResponse.json({ success: false, error: '필수 입력 누락' }, { status: 400 });
     }
@@ -58,10 +56,16 @@ export async function POST(request: Request) {
       data: { postId, authorId: user.id, content: content.trim() },
     });
 
-    // 댓글 수 증가
     await prisma.petPost.update({
       where: { id: postId },
       data: { commentCount: { increment: 1 } },
+    });
+
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'PET365_COMMENT_CREATE',
+      status: 'SUCCESS',
+      metadata: { commentId: comment.id, postId },
     });
 
     return NextResponse.json({
@@ -74,17 +78,27 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('[PetSocial] Comment POST error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'PET365_COMMENT_CREATE',
+      status: 'FAILED',
+      metadata: { postId: targetPostId, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ success: false, error: '작성 실패' }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request) {
+  let currentUser: any = null;
+  let targetId: string = '';
   try {
     const { user, response } = await requireCurrentUser(request);
     if (!user) return response;
+    currentUser = user;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    targetId = id || '';
     if (!id) return NextResponse.json({ success: false, error: 'ID 누락' }, { status: 400 });
 
     const comment = await prisma.petComment.findUnique({ where: { id } });
@@ -99,9 +113,22 @@ export async function DELETE(request: Request) {
       data: { commentCount: { decrement: 1 } },
     });
 
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'PET365_COMMENT_DELETE',
+      status: 'SUCCESS',
+      metadata: { commentId: id, postId: comment.postId },
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[PetSocial] Comment DELETE error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'PET365_COMMENT_DELETE',
+      status: 'FAILED',
+      metadata: { commentId: targetId, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ success: false, error: '삭제 실패' }, { status: 500 });
   }
 }

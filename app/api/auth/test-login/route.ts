@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { setSessionCookie } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const TEST_USERNAMES = [
   'test01',
@@ -69,9 +70,11 @@ async function ensureTestFriendNetwork() {
 }
 
 export async function POST(request: Request) {
+  let reqUsername = '';
   try {
     const body = await request.json();
     const username = normalizeUsername(body?.username);
+    reqUsername = username;
     const password = typeof body?.password === 'string' ? body.password : '';
 
     if (!TEST_USERS.has(username) || password !== '1234') {
@@ -84,11 +87,23 @@ export async function POST(request: Request) {
       where: { googleId: `test-login:${username}` },
     });
 
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'LOGIN_TEST',
+      status: 'SUCCESS',
+      metadata: { username },
+    });
+
     const response = NextResponse.json(user);
     setSessionCookie(response, user.id);
     return response;
   } catch (error) {
     console.error('Test Login Error:', error);
+    await logUserActivity({
+      activityType: 'LOGIN_TEST',
+      status: 'FAILED',
+      metadata: { username: reqUsername, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { requireAdminUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,9 +31,11 @@ function buildMetadata(input: {
 }
 
 export async function POST(request: Request) {
+  let currentUser: any = null;
   try {
     const { user: adminUser, response } = await requireAdminUser(request);
     if (!adminUser) return response;
+    currentUser = adminUser;
 
     const parseResult = WalletAdjustSchema.safeParse(await request.json());
     if (!parseResult.success) {
@@ -40,6 +43,7 @@ export async function POST(request: Request) {
     }
 
     const { targetUserId, amount, direction, reason } = parseResult.data;
+    let targetId = targetUserId;
     const result = await prisma.$transaction(async (tx) => {
       const target = await tx.user.findUnique({
         where: { id: targetUserId },
@@ -113,12 +117,34 @@ export async function POST(request: Request) {
     });
 
     if ('error' in result) {
+      await logUserActivity({
+        userId: adminUser.id,
+        targetUserId,
+        activityType: `ADMIN_WALLET_ADJUST_${direction}`,
+        status: 'FAILED',
+        metadata: { amount, reason, error: result.error },
+      });
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+
+    await logUserActivity({
+      userId: adminUser.id,
+      targetUserId,
+      activityType: `ADMIN_WALLET_ADJUST_${direction}`,
+      status: 'SUCCESS',
+      metadata: { amount, reason },
+    });
 
     return NextResponse.json(result);
   } catch (error) {
     console.error('Admin wallet adjust error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      targetUserId: null, // targetId cannot be reliably obtained if json parsing failed, or we can use targetId but it's not defined before JSON parse. To be safe, use null or handle manually
+      activityType: 'ADMIN_WALLET_ADJUST',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -29,6 +29,12 @@ function getGoogleRedirectUri() {
 }
 
 function startGoogleRedirect(clientId: string) {
+  const currentUrl = window.location.href;
+  if (/KAKAOTALK/i.test(navigator.userAgent)) {
+    window.location.href = `kakaotalk://web/openExternalApp?url=${encodeURIComponent(currentUrl)}`;
+    return;
+  }
+
   const state = createOAuthState();
   const redirectUri = getGoogleRedirectUri();
   sessionStorage.setItem(GOOGLE_OAUTH_STATE_KEY, JSON.stringify({ state, redirectUri, createdAt: Date.now() }));
@@ -79,7 +85,16 @@ function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc:
 export default function LoginPage() {
   const router = useRouter();
   const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [isInApp, setIsInApp] = useState(false);
   const handledAuthCodeRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isApp = /Telegram|KAKAOTALK|Line|Instagram|FB_IAB|FBAN|FBIOS|TrustWallet/i.test(navigator.userAgent) ||
+        (navigator.userAgent.includes('wv') || navigator.userAgent.includes('WebView'));
+      setIsInApp(isApp);
+    }
+  }, []);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -189,7 +204,7 @@ export default function LoginPage() {
           </div>
 
           <div className="w-fit rounded-full border border-[rgba(204,151,255,0.22)] bg-[rgba(204,151,255,0.16)] px-3 py-2 text-xs font-black text-[#ead7ff]">
-            No-Log AI 채팅
+            강력한 보안 AI 채팅
           </div>
           <h1 aria-label="단톡방에 AI 친구를 초대하세요" className="mt-5 text-[42px] font-black leading-[0.98] tracking-[-0.07em] text-white">
             단톡방에<br />AI 친구를<br />초대하세요
@@ -207,13 +222,20 @@ export default function LoginPage() {
           ) : (
             <CustomGoogleButton clientId={clientId} disabled={isAuthorizing} />
           )}
-          <p className="mt-3 text-center text-[11px] text-[var(--alo-text-soft)]">Google 로그인으로 바로 시작합니다.</p>
+          {isInApp ? (
+            <p className="mt-3 text-center text-[11px] text-red-400 font-bold leading-normal">
+              ⚠️ 카카오톡, 텔레그램, 인스타그램 등 인앱 브라우저에서는 구글 로그인 시 오류가 발생할 수 있습니다.<br />
+              오류가 발생하면 화면 우측 상단 메뉴(⋮ 또는 ···)를 눌러 '다른 브라우저로 열기'를 선택해 주세요.
+            </p>
+          ) : (
+            <p className="mt-3 text-center text-[11px] text-[var(--alo-text-soft)]">Google 로그인으로 바로 시작합니다.</p>
+          )}
         </section>
 
         <section className="grid grid-cols-2 gap-3 pb-8">
           <FeatureCard icon="✓" title="팩트체크" desc="수상한 말과 이미지만 빠르게 표시" />
           <FeatureCard icon="AI" title="AI 친구" desc="성격 있는 봇을 채팅방에 초대" />
-          <FeatureCard icon="🔒" title="No-Log" desc="대화 기록은 서버에 저장하지 않음" />
+          <FeatureCard icon="🔒" title="암호화 보관" desc="7일간 군사급 암호화 보관 및 노-로그 비밀방" />
           <FeatureCard icon="G" title="간편 시작" desc="Google 계정으로 바로 입장" />
         </section>
       </div>

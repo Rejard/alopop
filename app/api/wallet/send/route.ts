@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { z } from 'zod';
+import { logUserActivity } from '@/lib/auditLogger';
 
 const SendCoinsSchema = z.object({
   senderId: z.string().min(1).optional(),
@@ -11,9 +12,13 @@ const SendCoinsSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
+  let recvId: string | null = null;
+  let sendAmt: number | null = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const body = await request.json();
     const parseResult = SendCoinsSchema.safeParse(body);
@@ -22,6 +27,8 @@ export async function POST(request: Request) {
     }
 
     const { senderId, receiverId, amount, reason } = parseResult.data;
+    recvId = receiverId;
+    sendAmt = amount;
     if (senderId && senderId !== currentUser.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -85,12 +92,34 @@ export async function POST(request: Request) {
     });
 
     if ('error' in result) {
+      await logUserActivity({
+        userId: currentUser.id,
+        targetUserId: receiverId,
+        activityType: 'WALLET_TRANSFER',
+        status: 'FAILED',
+        metadata: { amount, error: result.error },
+      });
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+
+    await logUserActivity({
+      userId: currentUser.id,
+      targetUserId: receiverId,
+      activityType: 'WALLET_TRANSFER',
+      status: 'SUCCESS',
+      metadata: { amount, reason },
+    });
 
     return NextResponse.json({ success: true, balance: result.balance });
   } catch (error) {
     console.error('Wallet error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      targetUserId: recvId,
+      activityType: 'WALLET_TRANSFER',
+      status: 'FAILED',
+      metadata: { amount: sendAmt, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Failed to process transaction' }, { status: 500 });
   }
 }

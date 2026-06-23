@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 function safeFriendship(friendship: {
   friend: {
@@ -63,9 +64,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const { targetFriendId } = await request.json();
     if (!targetFriendId) {
@@ -140,12 +143,25 @@ export async function POST(request: Request) {
       return newFriend;
     });
 
+    await logUserActivity({
+      userId: currentUser.id,
+      targetUserId: targetUser.id,
+      activityType: 'FRIEND_ADD',
+      status: 'SUCCESS',
+    });
+
     return NextResponse.json({
       success: true,
       friendship: safeFriendship(result, currentUser.id),
     });
   } catch (error) {
     console.error('Add friend error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'FRIEND_ADD',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

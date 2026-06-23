@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const { subscription } = await request.json();
     if (!subscription || !subscription.endpoint || !subscription.keys) {
@@ -27,9 +30,21 @@ export async function POST(request: Request) {
       }
     });
 
+    await logUserActivity({
+      userId: currentUser.id,
+      activityType: 'PUSH_SUBSCRIBE',
+      status: 'SUCCESS',
+    });
+
     return NextResponse.json({ success: true, subscriptionId: saved.id });
   } catch (error) {
     console.error('Web Push Subscribe Error:', error);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'PUSH_SUBSCRIBE',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

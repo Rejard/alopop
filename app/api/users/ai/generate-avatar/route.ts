@@ -3,13 +3,18 @@ import fs from 'fs/promises';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { requireCurrentUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 export async function POST(request: Request) {
+  let currentUsr: any = null;
+  let provider: string | null = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
+    currentUsr = currentUser;
 
     const { mbti, gender, age, aiName, aiProvider, apiKey } = await request.json();
+    provider = aiProvider;
 
     if (!mbti || !gender || !age) {
       return NextResponse.json({ error: '필수 정보(MBTI, 성별, 연령대)가 누락되었습니다.' }, { status: 400 });
@@ -17,10 +22,24 @@ export async function POST(request: Request) {
 
     // 0순위: 무료 즉석 아바타 생성 (DiceBear / Robohash)
     if (aiProvider === 'dicebear') {
-      return NextResponse.json({ success: true, avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent((aiName || mbti) + Date.now())}` });
+      const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent((aiName || mbti) + Date.now())}`;
+      await logUserActivity({
+        userId: currentUser.id,
+        activityType: 'AI_AVATAR_GENERATE',
+        status: 'SUCCESS',
+        metadata: { aiProvider },
+      });
+      return NextResponse.json({ success: true, avatarUrl });
     }
     if (aiProvider === 'robohash') {
-      return NextResponse.json({ success: true, avatarUrl: `https://robohash.org/${encodeURIComponent((aiName || mbti) + Date.now())}?set=set4` });
+      const avatarUrl = `https://robohash.org/${encodeURIComponent((aiName || mbti) + Date.now())}?set=set4`;
+      await logUserActivity({
+        userId: currentUser.id,
+        activityType: 'AI_AVATAR_GENERATE',
+        status: 'SUCCESS',
+        metadata: { aiProvider },
+      });
+      return NextResponse.json({ success: true, avatarUrl });
     }
 
     let finalAvatarUrl: string | null = null;
@@ -121,7 +140,6 @@ export async function POST(request: Request) {
           
           let svgText = svgResponse.text || svgResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';
           
-          // Clean up potential markdown formatting
           svgText = svgText.replace(/```xml/gi, '').replace(/```svg/gi, '').replace(/```html/gi, '').replace(/```/g, '').trim();
           
           if (svgText.startsWith('<svg') && svgText.includes('</svg>')) {
@@ -165,6 +183,12 @@ export async function POST(request: Request) {
     // 3. 생성 실패 시 강제 우회하지 않고 명확한 에러 반환
     if (!isSuccess) {
       console.warn('[Avatar Generator] Generation attempt failed. No fallback triggered.');
+      await logUserActivity({
+        userId: currentUser.id,
+        activityType: 'AI_AVATAR_GENERATE',
+        status: 'FAILED',
+        metadata: { aiProvider, error: 'Generation failed or parameter missing' },
+      });
       if (aiProvider === 'openai') {
         return NextResponse.json({ success: false, error: 'OpenAI DALL-E 3 이미지 생성을 실패했습니다. 잔액이나 API 상태를 확인하세요.' }, { status: 400 });
       } else if (aiProvider === 'gemini' || aiProvider === 'gemini-free') {
@@ -174,9 +198,22 @@ export async function POST(request: Request) {
       }
     }
 
+    await logUserActivity({
+      userId: currentUser.id,
+      activityType: 'AI_AVATAR_GENERATE',
+      status: 'SUCCESS',
+      metadata: { aiProvider },
+    });
+
     return NextResponse.json({ success: true, avatarUrl: finalAvatarUrl });
   } catch (err) {
     console.error('Avatar Generation API Error:', err);
+    await logUserActivity({
+      userId: currentUsr?.id,
+      activityType: 'AI_AVATAR_GENERATE',
+      status: 'FAILED',
+      metadata: { aiProvider: provider, error: err instanceof Error ? err.message : String(err) },
+    });
     return NextResponse.json({ error: '프로필 사진 생성 중 오류가 발생했습니다.' }, { status: 500 });
   }
 }

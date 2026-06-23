@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
+import { logUserActivity } from '@/lib/auditLogger';
 
 type VerifiedRegionPayload = {
   name?: unknown;
@@ -225,9 +226,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let currentUser: any = null;
   try {
     const { user, response } = await requireCurrentUser(request);
     if (!user) return response;
+    currentUser = user;
 
     const payload = await request.json() as SocialPostPayload;
     const content = text(payload.content);
@@ -269,6 +272,13 @@ export async function POST(request: Request) {
       },
     });
 
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'PET365_POST_CREATE',
+      status: 'SUCCESS',
+      metadata: { postId: post.id, category },
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -300,17 +310,27 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('[PetSocial] POST error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'PET365_POST_CREATE',
+      status: 'FAILED',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ success: false, error: '작성 실패' }, { status: 500 });
   }
 }
 
 export async function PUT(request: Request) {
+  let currentUser: any = null;
+  let postId: string | null = null;
   try {
     const { user, response } = await requireCurrentUser(request);
     if (!user) return response;
+    currentUser = user;
 
     const payload = await request.json() as SocialPostPayload;
     const id = text(payload.id);
+    postId = id;
     const content = text(payload.content);
     if (!id) return NextResponse.json({ success: false, error: 'ID 누락' }, { status: 400 });
     if (!content) return NextResponse.json({ success: false, error: '내용을 입력해주세요' }, { status: 400 });
@@ -330,6 +350,13 @@ export async function PUT(request: Request) {
       },
     });
 
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'PET365_POST_UPDATE',
+      status: 'SUCCESS',
+      metadata: { postId: id },
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -342,17 +369,27 @@ export async function PUT(request: Request) {
     });
   } catch (error) {
     console.error('[PetSocial] PUT error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'PET365_POST_UPDATE',
+      status: 'FAILED',
+      metadata: { postId: postId, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ success: false, error: '수정 실패' }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request) {
+  let currentUser: any = null;
+  let postId: string | null = null;
   try {
     const { user, response } = await requireCurrentUser(request);
     if (!user) return response;
+    currentUser = user;
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    postId = id;
     if (!id) return NextResponse.json({ success: false, error: 'ID 누락' }, { status: 400 });
 
     const post = await prisma.petPost.findUnique({ where: { id } });
@@ -362,9 +399,23 @@ export async function DELETE(request: Request) {
     }
 
     await prisma.petPost.delete({ where: { id } });
+
+    await logUserActivity({
+      userId: user.id,
+      activityType: 'PET365_POST_DELETE',
+      status: 'SUCCESS',
+      metadata: { postId: id },
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[PetSocial] DELETE error:', error);
+    await logUserActivity({
+      userId: currentUser?.id,
+      activityType: 'PET365_POST_DELETE',
+      status: 'FAILED',
+      metadata: { postId: postId, error: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ success: false, error: '삭제 실패' }, { status: 500 });
   }
 }
