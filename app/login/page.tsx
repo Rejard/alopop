@@ -29,6 +29,12 @@ function getGoogleRedirectUri() {
 }
 
 function startGoogleRedirect(clientId: string) {
+  const currentUrl = window.location.href;
+  if (/KAKAOTALK/i.test(navigator.userAgent)) {
+    window.location.href = `kakaotalk://web/openExternalApp?url=${encodeURIComponent(currentUrl)}`;
+    return;
+  }
+
   const state = createOAuthState();
   const redirectUri = getGoogleRedirectUri();
   sessionStorage.setItem(GOOGLE_OAUTH_STATE_KEY, JSON.stringify({ state, redirectUri, createdAt: Date.now() }));
@@ -79,7 +85,16 @@ function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc:
 export default function LoginPage() {
   const router = useRouter();
   const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [isInApp, setIsInApp] = useState(false);
   const handledAuthCodeRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isApp = /Telegram|KAKAOTALK|Line|Instagram|FB_IAB|FBAN|FBIOS|TrustWallet/i.test(navigator.userAgent) ||
+        (navigator.userAgent.includes('wv') || navigator.userAgent.includes('WebView'));
+      setIsInApp(isApp);
+    }
+  }, []);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -207,7 +222,14 @@ export default function LoginPage() {
           ) : (
             <CustomGoogleButton clientId={clientId} disabled={isAuthorizing} />
           )}
-          <p className="mt-3 text-center text-[11px] text-[var(--alo-text-soft)]">Google 로그인으로 바로 시작합니다.</p>
+          {isInApp ? (
+            <p className="mt-3 text-center text-[11px] text-red-400 font-bold leading-normal">
+              ⚠️ 카카오톡, 텔레그램, 인스타그램 등 인앱 브라우저에서는 구글 로그인 시 오류가 발생할 수 있습니다.<br />
+              오류가 발생하면 화면 우측 상단 메뉴(⋮ 또는 ···)를 눌러 '다른 브라우저로 열기'를 선택해 주세요.
+            </p>
+          ) : (
+            <p className="mt-3 text-center text-[11px] text-[var(--alo-text-soft)]">Google 로그인으로 바로 시작합니다.</p>
+          )}
         </section>
 
         <section className="grid grid-cols-2 gap-3 pb-8">
