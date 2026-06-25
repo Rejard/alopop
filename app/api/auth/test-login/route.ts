@@ -3,6 +3,7 @@ import type { User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { setSessionCookie } from '@/lib/auth';
 import { logUserActivity } from '@/lib/auditLogger';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const TEST_USERNAMES = [
   'test01',
@@ -72,6 +73,11 @@ async function ensureTestFriendNetwork() {
 export async function POST(request: Request) {
   let reqUsername = '';
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    if (!checkRateLimit(`auth-test:${ip}`, 5, 60000)) {
+      return NextResponse.json({ error: 'Too many login attempts' }, { status: 429 });
+    }
+
     const body = await request.json();
     const username = normalizeUsername(body?.username);
     reqUsername = username;

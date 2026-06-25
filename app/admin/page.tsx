@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldAlert, Send, Save, ChevronLeft, Gift, Trash2, Power, PowerOff, Users } from 'lucide-react';
 import AdminMembersPanel from './AdminMembersPanel';
+import DiagnosticsPanel from './DiagnosticsPanel';
 
 type AdminUser = {
   id: string;
@@ -127,7 +128,7 @@ function ChaosPanel() {
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<AdminUser | null>(null);
-  const [activeTab, setActiveTab] = useState<'MEMBERS' | 'ANNOUNCEMENT' | 'EVENT' | 'SYSTEM' | 'CHAOS'>('MEMBERS');
+  const [activeTab, setActiveTab] = useState<'MEMBERS' | 'ANNOUNCEMENT' | 'EVENT' | 'SYSTEM' | 'CHAOS' | 'DIAGNOSTICS'>('MEMBERS');
 
   // Announcement States
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -403,6 +404,11 @@ export default function AdminDashboard() {
             onClick={() => setActiveTab('CHAOS')} 
             className={`px-4 py-3 text-sm font-semibold rounded-xl text-left whitespace-nowrap transition-all ${activeTab === 'CHAOS' ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]' : 'text-on-surface-variant hover:bg-surface-variant hover:text-red-400'}`}>
             ☠️ 시스템 훈련소
+          </button>
+          <button 
+            onClick={() => setActiveTab('DIAGNOSTICS')} 
+            className={`px-4 py-3 text-sm font-semibold rounded-xl text-left whitespace-nowrap transition-all ${activeTab === 'DIAGNOSTICS' ? 'bg-primary text-on-primary shadow-md' : 'text-on-surface-variant hover:bg-surface-variant hover:text-primary'}`}>
+            🛡️ 서버 자가진단
           </button>
         </div>
       </div>
@@ -766,6 +772,7 @@ export default function AdminDashboard() {
         )}
 
         {activeTab === 'CHAOS' && <ChaosPanel />}
+        {activeTab === 'DIAGNOSTICS' && <DiagnosticsPanel />}
       </div>
     </div>
   );

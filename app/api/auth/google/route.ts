@@ -4,6 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 import crypto from 'crypto';
 import { setSessionCookie } from '@/lib/auth';
 import { logUserActivity } from '@/lib/auditLogger';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const client = new OAuth2Client(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 
@@ -20,6 +21,11 @@ function generateInviteCode() {
 
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    if (!checkRateLimit(`auth-google:${ip}`, 10, 60000)) {
+      return NextResponse.json({ error: 'Too many login attempts' }, { status: 429 });
+    }
+
     const { credential, code, redirectUri } = await request.json();
 
     if (!credential && !code) {

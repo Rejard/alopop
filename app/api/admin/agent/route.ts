@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { prisma } from '@/lib/prisma';
-import { requireCurrentUser } from '@/lib/auth';
+import { requireAdminUser } from '@/lib/auth';
 
 type AgentUpdateData = {
   username: string;
@@ -11,7 +11,7 @@ type AgentUpdateData = {
 };
 
 export async function GET(request: Request) {
-  const { user, response } = await requireCurrentUser(request);
+  const { user, response } = await requireAdminUser(request);
   if (!user) return response;
 
   const agents = await prisma.user.findMany({
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireCurrentUser(request);
+  const { user, response } = await requireAdminUser(request);
   if (!user) return response;
 
   const { name, path, role } = await request.json();
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const { user, response } = await requireCurrentUser(request);
+  const { user, response } = await requireAdminUser(request);
   if (!user) return response;
 
   const { id, name, path, avatarUrl, role } = await request.json();
