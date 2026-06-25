@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { encryptKey } from '@/lib/crypto';
+import { encryptKey, decryptKey } from '@/lib/crypto';
 import { requireCurrentUser } from '@/lib/auth';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { z } from 'zod';
 import { logUserActivity } from '@/lib/auditLogger';
 
@@ -10,6 +11,43 @@ const SaveKeySchema = z.object({
   provider: z.enum(['openai', 'gemini', 'anthropic']),
   apiKey: z.string().nullable().optional(),
 });
+
+export async function GET(request: Request) {
+  try {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    if (!checkRateLimit(`keys-get:${ip}`, 10, 60000)) {
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
+
+    const { user: currentUser, response } = await requireCurrentUser(request);
+    if (!currentUser) return response;
+
+    const user = await prisma.user.findUnique({
+      where: { id: currentUser.id },
+      select: { openaiKey: true, geminiKey: true, anthropicKey: true },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      keys: {
+        openai: decryptKey(user.openaiKey) || '',
+        gemini: decryptKey(user.geminiKey) || '',
+        anthropic: decryptKey(user.anthropicKey) || '',
+      },
+      flags: {
+        hasOpenAiKey: !!user.openaiKey,
+        hasGeminiKey: !!user.geminiKey,
+        hasAnthropicKey: !!user.anthropicKey,
+      },
+    });
+  } catch (error) {
+    console.error('Get API keys error:', error);
+    return NextResponse.json({ error: 'Failed to get API keys' }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
   let currentUsr: any = null;
