@@ -208,7 +208,7 @@ export default function CarePage() {
     setSelectedPetId(pets.length > 0 ? pets[0].id : null); // 첫 번째 동물을 기본 선택
 
     const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
+    const img = new window.Image();
     
     img.onload = async () => {
       URL.revokeObjectURL(objectUrl); // 즉시 원본 메모리 해제
@@ -288,7 +288,7 @@ export default function CarePage() {
     
     files.forEach(file => {
       const objectUrl = URL.createObjectURL(file);
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
         const canvas = document.createElement("canvas");

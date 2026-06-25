@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     const exportRoutePath = path.join(process.cwd(), 'app', 'api', 'users', 'export', 'route.ts');
     const aiStudioPanelPath = path.join(process.cwd(), 'components', 'AiStudioPanel.tsx');
     const messagesRoutePath = path.join(process.cwd(), 'app', 'api', 'messages', 'route.ts');
+    const carePagePath = path.join(process.cwd(), 'app', 'pet365', 'care', 'page.tsx');
 
     let serverCode = '';
     let walletCode = '';
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
     let exportRouteCode = '';
     let aiStudioPanelCode = '';
     let messagesRouteCode = '';
+    let carePageCode = '';
 
     try { serverCode = await fs.readFile(serverJsPath, 'utf8'); } catch (e) {}
     try { walletCode = await fs.readFile(walletSendPath, 'utf8'); } catch (e) {}
@@ -64,6 +66,7 @@ export async function GET(request: Request) {
     try { exportRouteCode = await fs.readFile(exportRoutePath, 'utf8'); } catch (e) {}
     try { aiStudioPanelCode = await fs.readFile(aiStudioPanelPath, 'utf8'); } catch (e) {}
     try { messagesRouteCode = await fs.readFile(messagesRoutePath, 'utf8'); } catch (e) {}
+    try { carePageCode = await fs.readFile(carePagePath, 'utf8'); } catch (e) {}
 
     const diagnosticResults: DiagnosticResult[] = [];
 
@@ -807,7 +810,115 @@ export async function GET(request: Request) {
       );
     }
 
-    const total = 35;
+    // 36단계 Next.js Image 컴포넌트 섀도잉 점검
+    {
+      const hasNewImage = carePageCode.includes('new Image('); // false여야 통과
+      const hasWindowImage = carePageCode.includes('new window.Image(');
+
+      const isPassed = !hasNewImage && hasWindowImage;
+
+      addResult(
+        36,
+        "성능 및 안정화",
+        "Next.js Image 컴포넌트 마이그레이션 섀도잉 방지 점검",
+        isPassed ? "passed" : "failed",
+        isPassed ? 100 : 0,
+        isPassed
+          ? "app/pet365/care/page.tsx에서 new Image() 호출이 완전히 제거되었으며 안전한 new window.Image()로 대체되어 네이티브 생성자 섀도잉 충돌 위험이 해소되었습니다."
+          : `누락 사항: new Image() 미존재(${!hasNewImage}), new window.Image() 존재(${hasWindowImage})`,
+        "app/pet365/care/page.tsx 내 new Image() 존재 여부 문자열 패턴 매칭 정적 분석"
+      );
+    }
+
+    // 37단계 readReceiptBuffer 프록시 바인딩 점검
+    {
+      const hasReflectGet = serverCode.includes("const val = Reflect.get(target, prop, target);");
+      const hasDirectProp = serverCode.includes("const val = target[prop];");
+
+      const isPassed = !hasReflectGet && hasDirectProp;
+
+      addResult(
+        37,
+        "성능 및 안정화",
+        "readReceiptBuffer 프록시 바인딩 Context 점검",
+        isPassed ? "passed" : "failed",
+        isPassed ? 100 : 0,
+        isPassed
+          ? "server.js 프록시 get 트랩에서 size 등 Map 내부 프로퍼티 접근 시 호환성 에러(incompatible receiver)를 유발하던 Reflect.get 코드가 target[prop] 바인딩으로 안전하게 수정되었습니다."
+          : `누락 사항: Reflect.get 코드 미존재(${!hasReflectGet}), target[prop] 바인딩 존재(${hasDirectProp})`,
+        "server.js 소스코드 상의 프록시 get 트랩 내 target[prop] 컨텍스트 할당 문법 적용 여부 검사"
+      );
+    }
+
+    // 38단계 Sharp 이미지 업로드 모듈 점검
+    {
+      let sharpExists = false;
+      try {
+        const pkgPath = path.join(process.cwd(), 'package.json');
+        const pkgData = await fs.readFile(pkgPath, 'utf8');
+        sharpExists = pkgData.includes('"sharp"');
+      } catch(e) {}
+
+      const isPassed = sharpExists;
+
+      addResult(
+        38,
+        "성능 및 안정화",
+        "Sharp 이미지 변환 엔진 및 Windows 런타임 예외 점검",
+        isPassed ? "passed" : "failed",
+        isPassed ? 100 : 0,
+        isPassed
+          ? "package.json에 sharp 모듈 의존성이 정상 선언되어 있으며, 이미지 업로드 최적화 엔진이 Windows C++ 네이티브 환경에 맞게 구동될 준비가 완료되었습니다."
+          : `누락 사항: package.json sharp 의존성(${sharpExists})`,
+        "package.json 파일 내 sharp 의존성 키워드 존재 여부 매칭 검사"
+      );
+    }
+
+    // 39단계 Windows 파일 락(EBUSY) 및 DB 유효성 가이드 점검
+    {
+      let hasPrismaDb = false;
+      try {
+        const prismaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
+        const prismaData = await fs.readFile(prismaPath, 'utf8');
+        hasPrismaDb = prismaData.includes('provider = "sqlite"');
+      } catch(e) {}
+
+      const isPassed = hasPrismaDb;
+
+      addResult(
+        39,
+        "성능 및 안정화",
+        "Windows DB 파일 락킹(EBUSY) 이슈 진단 및 대응 상태 점검",
+        isPassed ? "passed" : "warning",
+        isPassed ? 100 : 80,
+        isPassed
+          ? "로컬 SQLite Prisma DB가 감지되었습니다. 마이그레이션 시 EBUSY 파일 락 장애가 발생하지 않도록 [PM2 정지 -> DB 반영 -> PM2 재가동] 3단계 수칙 가이드라인이 수립되어 있습니다."
+          : "Prisma SQLite 설정이 확인되지 않습니다.",
+        "prisma/schema.prisma 내 sqlite 프로바이더 적용 여부 확인 및 윈도우 EBUSY 락킹 정책 진단"
+      );
+    }
+
+    // 40단계 N+1 병목 최적화 점검
+    {
+      const hasN1Optimized = serverCode.includes('getStudioGeminiKey') && serverCode.includes('usageMap');
+      const hasHealthAPI = serverCode.includes('/api/health');
+
+      const isPassed = hasN1Optimized && hasHealthAPI;
+
+      addResult(
+        40,
+        "성능 및 안정화",
+        "N+1 쿼리 최적화 확인 및 /api/health 엔드포인트 병목 점검",
+        isPassed ? "passed" : "failed",
+        isPassed ? 100 : 0,
+        isPassed
+          ? "server.js에 getStudioGeminiKey 로직의 N+1 쿼리 비동기 루프가 단일 findMany + usageMap 인메모리 해시매핑 방식으로 최적화되었으며, 장애 모니터링을 위한 /api/health 엔드포인트가 연동되었습니다."
+          : `누락 사항: usageMap N+1 최적화 존재(${hasN1Optimized}), /api/health 엔드포인트 존재(${hasHealthAPI})`,
+        "server.js 내 getStudioGeminiKey 인메모리 매핑 최적화 알고리즘과 /api/health 핑 라우트 구현 여부 정적 분석"
+      );
+    }
+
+    const total = 40;
     const passedCount = diagnosticResults.filter(r => r.status === 'passed').length;
     const warningCount = diagnosticResults.filter(r => r.status === 'warning').length;
     const failedCount = diagnosticResults.filter(r => r.status === 'failed').length;

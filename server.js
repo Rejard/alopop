@@ -219,10 +219,7 @@ app.prepare().then(() => {
             return Reflect.apply(target.set, target, arguments);
           };
         }
-        if (prop === 'size') {
-          return target.size;
-        }
-        const val = Reflect.get(target, prop, target);
+        const val = target[prop];
         return typeof val === 'function' ? val.bind(target) : val;
       }
     };
