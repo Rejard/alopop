@@ -239,7 +239,7 @@ app.prepare().then(() => {
     let backupItems = [];
     if (fs.existsSync(backupPath)) {
       try {
-        const fileContent = fs.readFileSync(backupPath, 'utf8');
+        const fileContent = await fs.promises.readFile(backupPath, 'utf8');
         fs.unlinkSync(backupPath); // 즉시 파일 삭제하여 중복 처리 원천 차단
         const lines = fileContent.trim().split('\n');
         for (const line of lines) {
@@ -2060,7 +2060,7 @@ ${accumulatedDoc}
       const filePath = path.join(outputDir, filename);
       if (!fs.existsSync(filePath)) throw new Error('결과물 파일이 존재하지 않습니다.');
 
-      const currentHTML = fs.readFileSync(filePath, 'utf8');
+      const currentHTML = await fs.promises.readFile(filePath, 'utf8');
 
       await broadcastStudioLog({ agent: '대표님', msg: `[수동 품질 검수 지시] ${label} 게임의 문법/동작 정밀 검사를 수행해!` });
       const freshStudioQA = await prisma.studio.findUnique({ where: { id: studioId } });
@@ -2487,7 +2487,8 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
         const filename = path.basename(artifact.fileUrl);
         const filePath = path.join(outputDir, filename);
         if (fs.existsSync(filePath)) {
-          res.send(fs.readFileSync(filePath, 'utf8'));
+          const fileContent = await fs.promises.readFile(filePath, 'utf8');
+          res.send(fileContent);
         } else {
           res.status(404).send('HTML File not found on disk');
         }
@@ -2543,7 +2544,7 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
       const sourceHtmlPath = path.join(outputDir, fileName);
       if (!fs.existsSync(sourceHtmlPath)) return res.status(404).json({ error: '물리 게임 파일이 서버 디스크에 존재하지 않습니다.' });
 
-      const htmlContent = fs.readFileSync(sourceHtmlPath, 'utf8');
+      const htmlContent = await fs.promises.readFile(sourceHtmlPath, 'utf8');
 
       let port, appName, targetDir;
       await safeModifyEcosystemConfig(async () => {
@@ -2551,7 +2552,7 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
         const ecoPath = 'c:/seoha/ecosystem.config.js';
         if (!fs.existsSync(ecoPath)) throw new Error('c:/seoha/ecosystem.config.js 경로를 찾을 수 없습니다.');
         
-        let ecoContent = fs.readFileSync(ecoPath, 'utf8');
+        let ecoContent = await fs.promises.readFile(ecoPath, 'utf8');
         const nameRegex = /name:\s*["'](\d{2})-/g;
         let match;
         const usedIds = new Set();
@@ -2651,7 +2652,7 @@ app.listen(PORT, () => {
       if (fs.existsSync(ecoPath)) {
         let appName = null;
         await safeModifyEcosystemConfig(async () => {
-          let ecoContent = fs.readFileSync(ecoPath, 'utf8');
+          let ecoContent = await fs.promises.readFile(ecoPath, 'utf8');
           
           // 정규식으로 ecosystem.config.js에서 해당 app 제거
           const appRegex = new RegExp(`\\s*\\{\\s*name:\\s*["'](\\d{2})-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}["'][\\s\\S]*?\\},`, 'i');
