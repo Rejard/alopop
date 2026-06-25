@@ -194,18 +194,72 @@ app.prepare().then(() => {
   const { logSocketAudit } = require('./lib/auditLogger');
 
   // 인메모리 벌크 배치 버퍼 초기화
-  global.readReceiptBuffer = global.readReceiptBuffer || new Map();
+  if (!global.readReceiptBuffer) {
+    const MAX_RECEIPT_LIMIT = 5000;
+    const originalMap = new Map();
+    const readReceiptBufferProxy = {
+      get(target, prop, receiver) {
+        if (prop === 'set') {
+          return function(key, value) {
+            if (target.size >= MAX_RECEIPT_LIMIT && !target.has(key)) {
+              console.warn(`[ReadReceipt Buffer] Limit (${MAX_RECEIPT_LIMIT}) reached. Dumping excess items to disk.`);
+              try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                  fs.mkdirSync(logDir, { recursive: true });
+                }
+                const backupPath = path.join(logDir, 'read_receipt_backup.jsonl');
+                fs.appendFileSync(backupPath, JSON.stringify({ key, value }) + '\n', 'utf8');
+                return target;
+              } catch (err) {
+                console.error('[ReadReceipt Buffer] Failed to dump backup:', err);
+              }
+            }
+            return Reflect.apply(target.set, target, arguments);
+          };
+        }
+        const val = Reflect.get(target, prop, receiver);
+        return typeof val === 'function' ? val.bind(target) : val;
+      }
+    };
+    global.readReceiptBuffer = new Proxy(originalMap, readReceiptBufferProxy);
+  }
   global.studioLogBuffer = global.studioLogBuffer || [];
 
   // 1분 주기 대화방 읽음 일괄 처리
   setInterval(async () => {
-    if (!global.readReceiptBuffer || global.readReceiptBuffer.size === 0) return;
-    const items = Array.from(global.readReceiptBuffer.values());
-    global.readReceiptBuffer.clear();
-    console.log(`[ReadReceipt Batch] Processing ${items.length} items...`);
+    let items = [];
+    if (global.readReceiptBuffer && global.readReceiptBuffer.size > 0) {
+      items = Array.from(global.readReceiptBuffer.values());
+      global.readReceiptBuffer.clear();
+    }
+
+    // 디스크 백업 폴백 파일이 있다면 로드하여 병합
+    const backupPath = path.join(__dirname, 'logs', 'read_receipt_backup.jsonl');
+    let backupItems = [];
+    if (fs.existsSync(backupPath)) {
+      try {
+        const fileContent = fs.readFileSync(backupPath, 'utf8');
+        fs.unlinkSync(backupPath); // 즉시 파일 삭제하여 중복 처리 원천 차단
+        const lines = fileContent.trim().split('\n');
+        for (const line of lines) {
+          if (!line) continue;
+          const parsed = JSON.parse(line);
+          backupItems.push(parsed.value);
+        }
+        console.log(`[ReadReceipt Batch] Loaded ${backupItems.length} items from disk backup.`);
+      } catch (err) {
+        console.error('[ReadReceipt Batch] Failed to load disk backup:', err);
+      }
+    }
+
+    const allItems = [...items, ...backupItems];
+    if (allItems.length === 0) return;
+
+    console.log(`[ReadReceipt Batch] Processing ${allItems.length} items...`);
     try {
       await prisma.$transaction(
-        items.map(item =>
+        allItems.map(item =>
           prisma.roomMember.upsert({
             where: {
               userId_roomId: {
@@ -224,12 +278,12 @@ app.prepare().then(() => {
           })
         )
       );
-      console.log(`[ReadReceipt Batch] Successfully updated ${items.length} read receipts.`);
+      console.log(`[ReadReceipt Batch] Successfully updated ${allItems.length} read receipts.`);
     } catch (error) {
       console.error(`[ReadReceipt Batch] Error updating batch:`, error);
-      items.forEach(item => {
+      allItems.forEach(item => {
         const key = `${item.userId}:${item.roomId}`;
-        if (!global.readReceiptBuffer.has(key)) {
+        if (global.readReceiptBuffer && !global.readReceiptBuffer.has(key)) {
           global.readReceiptBuffer.set(key, item);
         }
       });
