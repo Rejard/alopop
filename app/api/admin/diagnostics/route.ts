@@ -251,7 +251,7 @@ export async function GET(request: Request) {
 
     // 12단계. Graceful Shutdown 핸들러 구현 (버퍼 플러시 및 락 정리)
     {
-      const isPassed = serverCode.includes("process.on('SIGTERM')") || serverCode.includes('process.on("SIGTERM")');
+      const isPassed = serverCode.includes("process.on('SIGTERM'") || serverCode.includes('process.on("SIGTERM"');
       addResult(
         12,
         "안정성 가드",
