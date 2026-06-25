@@ -166,16 +166,19 @@ export async function GET(request: Request) {
       );
     }
 
-    // 7단계. HTML 업로드/서빙 XSS 검증 (한계성 분석 리포트 대상)
+    // 7단계. HTML 업로드/서빙 XSS 검증 (Content-Security-Policy sandbox 적용 확인)
     {
+      const isPassed = serverCode.includes('Content-Security-Policy') && serverCode.includes('sandbox allow-scripts');
       addResult(
         7,
         "Express API",
         "정적 에셋 서빙 및 HTML 업로드 샌드박스",
-        "warning",
-        80,
-        "게임 및 스냅샷 내 인게임 스크립트 실행이 필수적이라 코드 단의 업로드 차단은 불가능합니다. 상시 Warning 상태로 관리되며, 안전을 위해 추후 에셋 전용 외부 도메인 분리나 iframe sandbox 사용을 권장합니다.",
-        "코드 필터링 한계로 인한 안전 가이드 및 상시 Warning (개선율 80% 고정) 처리"
+        isPassed ? "passed" : "failed",
+        isPassed ? 100 : 0,
+        isPassed 
+          ? "HTML 파일 서빙 시 Content-Security-Policy: sandbox 응답 헤더를 강제 주입하여, 파일 내부의 임의 스크립트가 세션 쿠키나 타 스토리지로 침투하는 XSS 탈취 위협을 브라우저 보안 격리 수준에서 완전 무력화했습니다."
+          : "게임 및 스냅샷 서빙 시 CSP sandbox 샌드박싱 처리가 누락되어 임의 스크립트 실행을 통한 세션 하이재킹 위험이 있습니다.",
+        "server.js 내 Content-Security-Policy 및 sandbox allow-scripts 키워드 유무 정적 분석"
       );
     }
 

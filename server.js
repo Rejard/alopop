@@ -1315,6 +1315,7 @@ app.prepare().then(() => {
               finalHtml = finalHtml.replace('</body>', injectScript + '</body>');
             }
             res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+            res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-downloads allow-forms allow-modals allow-popups;");
             return res.send(finalHtml);
           });
         });
@@ -2488,6 +2489,7 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
         const filePath = path.join(outputDir, filename);
         if (fs.existsSync(filePath)) {
           const fileContent = await fs.promises.readFile(filePath, 'utf8');
+          res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-downloads allow-forms allow-modals allow-popups;");
           res.send(fileContent);
         } else {
           res.status(404).send('HTML File not found on disk');
