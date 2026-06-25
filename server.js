@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { execSync, spawnSync, spawn } = require('child_process');
 const { loadEnvConfig } = require('@next/env');
+const cron = require('node-cron');
 
 function spawnAsync(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -2981,6 +2982,19 @@ app.listen(PORT, () => {
     .catch(err => console.error('[Startup] Failed to clean up expired messages on startup:', err));
     
     // ?붾젅洹몃옩 遊?珥덇린??
+
+    // 매일 새벽 3시 DB 자동 백업 크론잡
+    cron.schedule('0 3 * * *', () => {
+      try {
+        const { createBackup, rotateBackups } = require('./scripts/backup-db.js');
+        const result = createBackup();
+        const deleted = rotateBackups(7);
+        console.log(`[DB Backup Cron] Backup created: ${result.filename} (${result.size} bytes), rotated: ${deleted} old backups`);
+      } catch (err) {
+        console.error('[DB Backup Cron] Failed:', err);
+      }
+    });
+    console.log('[Startup] DB backup cron job scheduled (daily 03:00)');
 
   });
 
