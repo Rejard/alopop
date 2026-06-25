@@ -830,17 +830,22 @@ app.prepare().then(() => {
           // [TTL 7일 저장] 비밀방이 아닌 경우 암호화하여 Message DB에 보관
           if (!room.isSecret && message.messageType !== 'SYSTEM') {
             const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-            prisma.message.create({
-              data: {
-                messageId: message.messageId,
-                roomId: room.id,
-                senderId: message.senderId,
-                type: message.messageType || 'TEXT',
-                content: encryptText(message.content),
-                createdAt: new Date(message.createdAt || Date.now()),
-                expiresAt
-              }
-            }).catch(err => console.error('Failed to store TTL message:', err));
+            try {
+              await prisma.message.create({
+                data: {
+                  messageId: message.messageId,
+                  roomId: room.id,
+                  senderId: message.senderId,
+                  type: message.messageType || 'TEXT',
+                  content: encryptText(message.content),
+                  createdAt: new Date(message.createdAt || Date.now()),
+                  expiresAt
+                }
+              });
+            } catch (err) {
+              console.error('Failed to store TTL message:', err);
+              socket.emit('message_save_error', { messageId: message.messageId, error: 'Database save failed' });
+            }
           }
 
           if (!room.isGroup) {
