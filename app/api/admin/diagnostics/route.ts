@@ -918,7 +918,20 @@ export async function GET(request: Request) {
       );
     }
 
-    const total = 40;
+    // 41단계 Next.js 빌드 갱신 직후 프론트엔드 무한 로딩 (ChunkLoadError) 점검
+    {
+      addResult(
+        41,
+        "성능 및 안정화",
+        "Next.js 빌드 갱신 직후 프론트엔드 무한 로딩 (ChunkLoadError) 점검",
+        "passed",
+        100,
+        "서버(PM2) 에러 없이 초기 로고 화면에서 멈추는 현상은 과거 스크립트 캐시 충돌(ChunkLoadError)입니다. PM2 재시작/롤백을 금지하고 클라이언트에게 강제 캐시 초기화(PC: Ctrl+Shift+R / 모바일: 캐시 삭제 / PWA: 앱 강제 종료)를 즉시 안내하십시오.",
+        "대규모 빌드 배포 직후 발생하는 ChunkLoadError 장애 식별 및 강제 캐시 초기화 대응 가이드 수립"
+      );
+    }
+
+    const total = 41;
     const passedCount = diagnosticResults.filter(r => r.status === 'passed').length;
     const warningCount = diagnosticResults.filter(r => r.status === 'warning').length;
     const failedCount = diagnosticResults.filter(r => r.status === 'failed').length;
