@@ -1,15 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db";
+import React, { useState, useEffect } from "react";
 import { Loader2, LogOut, Send } from "lucide-react";
 
 export function WalletTransactionList() {
   const [activeTxTab, setActiveTxTab] = useState<'USAGE' | 'TRANSFER'>('USAGE');
-  const allTransactions = useLiveQuery(() => db.walletTx?.orderBy('createdAt').reverse().toArray());
+  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (!allTransactions) return <div className="text-zinc-500 text-xs text-center py-4 flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />로컬 장부 불러오는 중...</div>;
+  useEffect(() => {
+    fetch('/api/wallet/transactions?limit=100')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setAllTransactions(data.transactions || []); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="text-zinc-500 text-xs text-center py-4 flex items-center justify-center gap-2"><Loader2 size={12} className="animate-spin" />거래 내역 불러오는 중...</div>;
 
   const transactions = allTransactions.filter((tx: any) =>
     activeTxTab === 'TRANSFER' ? tx.category === 'P2P_TRANSFER' : tx.category !== 'P2P_TRANSFER'

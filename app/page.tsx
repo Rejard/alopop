@@ -4,8 +4,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Terminal, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2, PawPrint, Home as HomeIcon, ShieldPlus, Sprout } from 'lucide-react';
 import QRCode from 'react-qr-code';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, ChatMessage } from '@/lib/db';
+import { ChatMessage } from '@/lib/db';
 import { useChatStore } from '@/store/useChatStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -191,12 +190,10 @@ export default function Home() {
     // 디바이스간 시간(Clock)이 안 맞는 경우(상대방 시간이 내 폰 시간보다 미래일 때)
     // 현재 읽고 있는 시점의 시간이 메시지 발송 시간보다 작아져서 읽음 표시가 안 지워지는 버그(1 안사라짐) 방어
     let maxMsgTime = 0;
-    try {
-      const msgs = await db.messages.where('receiverId').equals(roomId).toArray();
-      if (msgs.length > 0) {
-        maxMsgTime = Math.max(...msgs.map(m => m.createdAt || 0));
-      }
-    } catch (err) { }
+    const msgs = useChatStore.getState().roomMessages[roomId] || [];
+    if (msgs.length > 0) {
+      maxMsgTime = Math.max(...msgs.map(m => m.createdAt || 0));
+    }
 
     const now = Math.max(Date.now(), maxMsgTime + 100); // 확보한 최신 메시지 시간보다 무조건 약간 미래로 마크
 
@@ -876,15 +873,16 @@ export default function Home() {
       const times: Record<string, number> = {};
       const unreads: Record<string, number> = {};
 
-      await Promise.all(rooms.map(async (r) => {
-        const msgs = await db.messages.where('receiverId').equals(r.id).toArray();
+      const { roomMessages: allRoomMsgs } = useChatStore.getState();
+      rooms.forEach((r) => {
+        const msgs = allRoomMsgs[r.id] || [];
         if (msgs.length > 0) {
           times[r.id] = Math.max(...msgs.map(m => m.createdAt));
 
           const myReadTime = roomMemberReadTimes[r.id]?.[user.id] || 0;
           unreads[r.id] = msgs.filter(m => m.senderId !== user.id && m.createdAt > myReadTime).length;
         }
-      }));
+      });
       setLatestMessageTimes(prev => ({ ...prev, ...times }));
       setUnreadCounts(prev => ({ ...prev, ...unreads }));
     };
@@ -897,14 +895,18 @@ export default function Home() {
     return bTime - aTime;
   });
 
-  // IndexedDB 메시지 실시간 쿼리 (현재 선택된 방 기준)
-  const messages = useLiveQuery(
-    () => db.messages.where('receiverId').equals(currentRoom?.id || 'none').sortBy('createdAt'),
-    [currentRoom?.id]
-  );
+  // Zustand 상태에서 현재 방 메시지 구독
+  const { roomMessages } = useChatStore();
+  const messages = roomMessages[currentRoom?.id || ''] || [];
 
-  // AI 통계 실시간 쿼리 및 월별 그룹화 (Stats Tab)
-  const aiStatsData = useLiveQuery(() => db.aiStats ? db.aiStats.toArray() : [], []) || [];
+  // AI 통계: 서버 API에서 fetch
+  const [aiStatsData, setAiStatsData] = useState<{date: string, count: number}[]>([]);
+  useEffect(() => {
+    fetch('/api/users/ai-usage')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setAiStatsData(data.usage.map((u: any) => ({ date: u.lastUsedDate, count: u.usedToday }))); })
+      .catch(() => {});
+  }, []);
 
   const monthlyStats = useMemo(() => {
     if (!aiStatsData || !aiStatsData.length) return {};
@@ -1166,10 +1168,8 @@ export default function Home() {
 
             // 최신 문맥을 다시 추출 (딜레이 동안 쌓인 메시지 반영)
             let currentContext = "";
-            db.messages
-              .where('receiverId').equals(currentRoom.id)
-              .sortBy('createdAt')
-              .then((allMsgs: any[]) => {
+            (() => {
+                const allMsgs = useChatStore.getState().roomMessages[currentRoom.id] || [];
                 currentContext = allMsgs.slice(-5).map((m: any) => `[${m.senderName}]: ${m.content}`).join('\n');
 
                 const realProvider = localStorage.getItem('alo_ai_provider') || 'openai';
@@ -1183,19 +1183,17 @@ export default function Home() {
                 localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, date: todayStr, used: newUsed }));
                 setTotalAiUsageCount(newUsed);
 
-                // Dexie 로컬 영구 DB에도 오늘 날짜로 기록 동기화
-                db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error("aiStats put 에러", e));
+                fetch('/api/users/ai-usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: 'ai_chat' }) }).catch(e => console.error("aiStats sync error", e));
 
                 // [신규] 스폰서 방이고, 현재 이 AI 모델이 실제 진짜 방장의 소유가 아니라 (게스트 소유)라면 과금 처리!
                 // (대리 연산자가 연산하더라도 수익은 무조건 원래 방장에게 귀속)
                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
 
-                return Promise.resolve().then(() => {
-                  const friendProvider = realProvider;
-                  const friendAiModel = localStorage.getItem('alo_ai_model') || '';
-                  const friendUseFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === friendProvider && e.aiModel === friendAiModel && !exhaustedFreeEvents[e.id]);
+                const friendProvider = realProvider;
+                const friendAiModel = localStorage.getItem('alo_ai_model') || '';
+                const friendUseFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === friendProvider && e.aiModel === friendAiModel && !exhaustedFreeEvents[e.id]);
 
-                  return fetch('/api/chat/friend', {
+                return fetch('/api/chat/friend', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     signal: controller.signal,
@@ -1213,9 +1211,8 @@ export default function Home() {
                       useFreeEvent: friendUseFreeEvent,
                       content: currentContext
                     })
-                  });
                 });
-              })
+              })()
               .then((aiResponse: any) => {
 
                 if (!aiResponse.ok) {
@@ -1310,20 +1307,21 @@ export default function Home() {
 
         const timeoutId = setTimeout(() => {
           // 침묵 시간 후, 여전히 마지막 메시지가 방금 검사했던 lastMsg인지 확인 (누구도 말하지 않음)
-          db.messages.where('receiverId').equals(currentRoom.id).sortBy('createdAt').then((allMsgs: any[]) => {
-            if (allMsgs.length === 0) return;
+          const allMsgs = useChatStore.getState().roomMessages[currentRoom.id] || [];
+            if (allMsgs.length > 0) {
             const absoluteLastMsg = allMsgs[allMsgs.length - 1];
 
             // 침묵이 깨졌거나 현재 누군가 치고 있다면 개입 포기 (정적이 아님)
             const hasLocalText = inputTextRef.current.trim().length > 0;
             const otherTypers = humanTypingRef.current[currentRoom.id] || [];
-            if (hasLocalText || otherTypers.length > 0) return;
+            if (!(hasLocalText || otherTypers.length > 0)) {
 
             if (absoluteLastMsg.messageId === lastMsg.messageId) {
               // 아무도 말 안했으므로 침묵 깨기 발동 (타이핑은 1~2초만 짧게 주고 바로 입력)
               executeAiReply(Math.floor(Math.random() * 1000) + 1000);
             }
-          });
+            }
+          }
         }, silenceDelayMs);
 
         aiTimeoutsRef.current[aiUser.id + "_silence"] = timeoutId;
@@ -1403,7 +1401,7 @@ export default function Home() {
         };
 
         // 낙관적 UI: 로컬 DB 즉시 추가 및 소켓 전송
-        await db.messages.add(newMessage);
+        useChatStore.getState().addLocalMessage(currentRoom.id, newMessage);
         setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
         const emitMessage = { ...newMessage } as any;
         delete emitMessage.id;
@@ -1450,7 +1448,7 @@ export default function Home() {
                 aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 서버 에러 (크레딧 부족 또는 용량 초과)' };
               }
 
-              await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+              useChatStore.getState().updateMessageAnalysis(msgId, aiAnalysisResult);
               if (socket) {
                 socket.emit('update_message', {
                   roomId: currentRoom?.id || 'global',
@@ -1471,7 +1469,7 @@ export default function Home() {
               });
               console.warn('AI Vision Analysis failed (skipped):', err);
               const aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 연결 실패' };
-              await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+              useChatStore.getState().updateMessageAnalysis(msgId, aiAnalysisResult);
               if (socket) socket.emit('update_message', { roomId: currentRoom?.id || 'global', messageId: msgId, aiAnalysis: aiAnalysisResult });
             }
           })();
@@ -1548,15 +1546,7 @@ export default function Home() {
         setMyProfile(prev => prev ? { ...prev, walletBalance: data.balance } : null);
 
         // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
-        await db.walletTx?.add({
-          type: 'SPEND',
-          category: 'P2P_TRANSFER',
-          amount,
-          counterpartyId: receiverId,
-          counterpartyName: targetName,
-          createdAt: Date.now(),
-          description: reason || `${targetName}님에게 금액 송금`
-        }).catch(err => console.error("로컬 장부 기록 실패:", err));
+
 
         const msgStr = `💸 [송금 알림] ${user.username}님이 ${targetName}님에게 ${amount} 원을 송금했습니다.`;
         await chatStore.sendMessage(currentRoom?.id || 'global', msgStr, user.id, user.username);
@@ -1586,7 +1576,7 @@ export default function Home() {
     };
 
     // 1️⃣ 로컬 스토어에 **즉시** 추가 (딜레이 0초)
-    await db.messages.add(newMessage);
+    useChatStore.getState().addLocalMessage(currentRoom?.id || 'global', newMessage);
     setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
 
     // 2️⃣ 소켓 릴레이 즉시 호출
@@ -1612,7 +1602,7 @@ export default function Home() {
           const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
           localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, date: todayStr, used: newUsed }));
           setTotalAiUsageCount(newUsed);
-          db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error(e));
+          fetch('/api/users/ai-usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: 'fact_check' }) }).catch(e => console.error(e));
 
           const useFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === selectedProvider && e.aiModel === selectedAiModel && !exhaustedFreeEvents[e.id]);
           const aiRes = await fetch('/api/chat', {
@@ -1632,7 +1622,7 @@ export default function Home() {
             const aiAnalysisResult = await aiRes.json();
 
             // 로컬 DB 사후 업데이트 (PK id 이슈 방지를 위해 messageId 기준 검색)
-            await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+            useChatStore.getState().updateMessageAnalysis(msgId, aiAnalysisResult);
 
             // 다른 참여자들에게도 AI 분석 결과 전파
             if (socket) {
@@ -1650,7 +1640,7 @@ export default function Home() {
               reasonText = '서버 무료 AI 미설정 (관리자 키가 없습니다. 설정에서 개인 키를 등록하세요)';
             }
             const fallbackResult = { category: 'ERROR', confidence: 0, reason: reasonText };
-            await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: fallbackResult });
+            useChatStore.getState().updateMessageAnalysis(msgId, fallbackResult);
             if (socket) {
               socket.emit('update_message', {
                 roomId: currentRoom?.id || 'global',
@@ -1662,7 +1652,7 @@ export default function Home() {
         } catch (err) {
           console.warn('AI 분석 처리 중 예외 발생:', err);
           const errorCat = { category: 'ERROR', confidence: 0, reason: 'AI 엔진 접속 오류' };
-          db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: errorCat }).catch(console.error);
+          useChatStore.getState().updateMessageAnalysis(msgId, errorCat);
         }
       })();
     }
@@ -1733,7 +1723,7 @@ export default function Home() {
           messageType: 'SYSTEM',
           createdAt: Date.now()
         };
-        await db.messages.add(newMessage);
+        useChatStore.getState().addLocalMessage(currentRoom.id, newMessage);
 
         const { socket } = chatStore;
         if (socket) {
@@ -1854,7 +1844,7 @@ export default function Home() {
       });
       if (res.ok) {
         // 로컬 IndexedDB 메시지 모두 삭제
-        await db.messages.where('receiverId').equals(roomId).delete();
+        useChatStore.getState().clearRoomMessages(roomId);
 
         // 상태 업데이트
         setRooms(prev => prev.filter(r => r.id !== roomId));
@@ -1906,7 +1896,7 @@ export default function Home() {
             messageId: uuidv4(), senderId: 'system', senderName: 'System', receiverId: newRoom.id,
             content: `${user.username}님이 ${invitedName}님을 초대하여 그룹 채팅을 시작했습니다.`, messageType: 'SYSTEM', createdAt: Date.now()
           };
-          await db.messages.add(sysMsg);
+          useChatStore.getState().addLocalMessage(newRoom.id, sysMsg);
           chatStore.socket?.emit('send_message', { receiverId: newRoom.id, message: sysMsg });
         } else {
           const err = await res.json();
@@ -1945,7 +1935,7 @@ export default function Home() {
           messageId: uuidv4(), senderId: 'system', senderName: 'System', receiverId: currentRoom.id,
           content: `${user.username}님이 ${invitedName}님을 초대했습니다.`, messageType: 'SYSTEM', createdAt: Date.now()
         };
-        await db.messages.add(sysMsg);
+        useChatStore.getState().addLocalMessage(currentRoom.id, sysMsg);
         chatStore.socket?.emit('send_message', { receiverId: currentRoom.id, message: sysMsg });
       } else {
         const err = await res.json();
@@ -2357,15 +2347,7 @@ export default function Home() {
             alert(`성공적으로 ${amount} 원을 ${receiverName}님에게 송금했습니다. 잔액: ${data.balance} 원`);
 
             // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
-            await db.walletTx?.add({
-              type: 'SPEND',
-              category: 'P2P_TRANSFER',
-              amount,
-              counterpartyId: receiverId,
-              counterpartyName: receiverName,
-              createdAt: Date.now(),
-              description: `${receiverName}님에게 통장 송금`
-            }).catch(err => console.error("로컬 장부 기록 실패:", err));
+
 
             // 송금 완료 후 채팅방(현재 룸)에 시스템 메시지 전송
             const msgStr = `💸 [송금 알림] ${user.username}님이 ${receiverName}님에게 ${amount} 원을 송금했습니다.`;
