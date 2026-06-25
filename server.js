@@ -248,7 +248,24 @@ app.prepare().then(() => {
 
   async function saveOfflineMessage(receiverId, message) {
     if (!receiverId || !message) return null;
-    const payload = JSON.stringify(message);
+
+    // 비밀방의 메시지는 오프라인 적재하지 않도록 차단
+    if (message.roomId) {
+      try {
+        const room = await prisma.room.findUnique({
+          where: { id: message.roomId },
+          select: { isSecret: true }
+        });
+        if (room && room.isSecret) {
+          console.log(`[OfflineMessage Bypass] Skip saving offline message for secret room: ${message.roomId}`);
+          return null;
+        }
+      } catch (err) {
+        console.error('Failed to check room isSecret in saveOfflineMessage:', err);
+      }
+    }
+
+    const payload = encryptText(JSON.stringify(message));
     if (!(await hasEnhancedOfflineQueue())) {
       return prisma.offlineMessage.create({
         data: { receiverId, payload }
@@ -340,7 +357,8 @@ app.prepare().then(() => {
         const rooms = new Map();
         const offlineMessages = [];
         for (const record of records) {
-          const messageObj = parseOfflineNotice(record.payload);
+          const decryptedPayload = decryptText(record.payload);
+          const messageObj = parseOfflineNotice(decryptedPayload);
           if (!messageObj) continue;
           
           offlineMessages.push(messageObj);
