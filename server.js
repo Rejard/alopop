@@ -2964,6 +2964,14 @@ app.listen(PORT, () => {
     console.log(`> ?? Ready on http://${hostname}:${port}`);
     console.log('> 🚀 Custom Express Server with Socket.io running (Encrypted 7-Day Storage Mode)');
     
+    // 서버 시작 시 비정상 종료 등으로 남아있던 stale lock 정리
+    prisma.studio.updateMany({
+      where: { isWorking: true },
+      data: { isWorking: false }
+    })
+    .then(res => console.log(`[Startup] Cleaned up ${res.count} stale studio working locks.`))
+    .catch(err => console.error('[Startup] Failed to clean up stale studio locks:', err));
+    
     // ?붾젅洹몃옩 遊?珥덇린??
 
   });
