@@ -1268,21 +1268,32 @@ app.prepare().then(() => {
       if (systemGeminiKey) {
         const COST = 10;
         if (user && user.walletBalance >= COST) {
-          const updateResult = await prisma.user.updateMany({
-            where: { id: userId, walletBalance: { gte: COST } },
-            data: { walletBalance: { decrement: COST } }
-          });
-          if (updateResult.count > 0) {
-            await prisma.transaction.create({
-              data: {
-                senderId: userId,
-                receiverId: 'system',
-                amount: COST,
-                reason: 'AI 스튜디오 에이전트 구동 요금 차감'
+          try {
+            const success = await prisma.$transaction(async (tx) => {
+              const updateResult = await tx.user.updateMany({
+                where: { id: userId, walletBalance: { gte: COST } },
+                data: { walletBalance: { decrement: COST } }
+              });
+              if (updateResult.count === 0) {
+                throw new Error('Insufficient wallet balance or user not found');
               }
+              await tx.transaction.create({
+                data: {
+                  senderId: userId,
+                  receiverId: 'system',
+                  amount: COST,
+                  reason: 'AI 스튜디오 에이전트 구동 요금 차감'
+                }
+              });
+              return true;
             });
-            console.log(`[AI Studio Key] 3순위 적용: 시스템 글로벌 Key 사용 및 10코인 차감`);
-            return systemGeminiKey;
+
+            if (success) {
+              console.log(`[AI Studio Key] 3순위 적용: 시스템 글로벌 Key 사용 및 10코인 차감`);
+              return systemGeminiKey;
+            }
+          } catch (txErr) {
+            console.error('[AI Studio Key] Transaction failed:', txErr.message);
           }
         }
       }
