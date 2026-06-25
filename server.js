@@ -2972,6 +2972,11 @@ app.listen(PORT, () => {
     .then(res => console.log(`[Startup] Cleaned up ${res.count} stale studio working locks.`))
     .catch(err => console.error('[Startup] Failed to clean up stale studio locks:', err));
     
+    // 서버 시작 시 즉시 만료 메시지/미디어 1회 소독
+    deleteExpiredOfflineMessages()
+    .then(() => console.log('[Startup] Completed initial expired messages and media files cleanup.'))
+    .catch(err => console.error('[Startup] Failed to clean up expired messages on startup:', err));
+    
     // ?붾젅洹몃옩 遊?珥덇린??
 
   });
