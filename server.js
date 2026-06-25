@@ -1066,12 +1066,18 @@ app.prepare().then(() => {
         const fileName = (reqPath === '/' || reqPath === '') ? 'index.html' : (reqPath.endsWith('.html') ? reqPath : reqPath + '.html');
         const filePath = path.join(outputDir, fileName);
         
-        fs.stat(filePath, (err, stats) => {
+        const resolvedPath = path.resolve(filePath);
+        if (!resolvedPath.startsWith(path.resolve(outputDir))) {
+          console.warn(`[Path Traversal Prevented]: Unauthorized access attempt to ${resolvedPath}`);
+          return res.status(403).send('Forbidden');
+        }
+        
+        fs.stat(resolvedPath, (err, stats) => {
           if (err || !stats.isFile()) {
             return next();
           }
           
-          fs.readFile(filePath, 'utf8', (readErr, html) => {
+          fs.readFile(resolvedPath, 'utf8', (readErr, html) => {
             if (readErr) {
               console.error('[Dynamic HTML Read Error]:', readErr);
               return next();
