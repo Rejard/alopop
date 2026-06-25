@@ -36,6 +36,30 @@ function safeModifyEcosystemConfig(fn) {
   return global.ecoConfigLock;
 }
 
+const socketRateLimits = new Map();
+function checkSocketRateLimit(userId, event, limit = 5, intervalMs = 1000) {
+  const key = `${userId}:${event}`;
+  const now = Date.now();
+  if (!socketRateLimits.has(key)) {
+    socketRateLimits.set(key, { tokens: limit, lastRefill: now });
+    return true;
+  }
+  
+  const limitState = socketRateLimits.get(key);
+  const elapsed = now - limitState.lastRefill;
+  
+  if (elapsed > intervalMs) {
+    limitState.tokens = limit;
+    limitState.lastRefill = now;
+  }
+  
+  if (limitState.tokens > 0) {
+    limitState.tokens -= 1;
+    return true;
+  }
+  return false;
+}
+
 
 loadEnvConfig(process.cwd());
 
@@ -738,6 +762,7 @@ app.prepare().then(() => {
 
     // 3.5. ?대㉫ ?좎? ??댄븨 ?곹깭 由대젅??(?먯떊???쒖쇅??諛?硫ㅻ쾭?먭쾶 釉뚮줈?쒖틦?ㅽ듃)
     socket.on('typing_start', async (payload) => {
+      if (!checkSocketRateLimit(socket.userId, 'typing_start', 10, 1000)) return;
       const room = await getRoomWithMembers(payload.roomId);
       if (!isRoomMember(room, socket.userId)) return;
       socket.to(payload.roomId).emit('typing_start', { ...payload, userId: socket.userId });
@@ -808,6 +833,10 @@ app.prepare().then(() => {
     // 4. No-Log Relay 硫붿떆吏 ?꾩넚 濡쒖쭅 (諛?媛쒖씤 怨듯넻)
     // 3. No-Log Relay 硫붿떆吏 ?꾩넚 濡쒖쭅 (諛?媛쒖씤 怨듯넻)
     socket.on('send_message', async (payload) => {
+      if (!checkSocketRateLimit(socket.userId, 'send_message', 5, 1000)) {
+        socket.emit('rate_limit_exceeded', { event: 'send_message', error: 'Too many messages. Please wait.' });
+        return;
+      }
       const { receiverId, message } = payload;
       
       try {
@@ -1007,6 +1036,7 @@ app.prepare().then(() => {
     });
 
     socket.on('read_receipt', async (payload) => {
+      if (!checkSocketRateLimit(socket.userId, 'read_receipt', 10, 1000)) return;
       const { roomId, timestamp } = payload;
       const userId = socket.userId;
       try {
