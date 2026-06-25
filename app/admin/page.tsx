@@ -408,7 +408,7 @@ export default function AdminDashboard() {
           <button 
             onClick={() => setActiveTab('DIAGNOSTICS')} 
             className={`px-4 py-3 text-sm font-semibold rounded-xl text-left whitespace-nowrap transition-all ${activeTab === 'DIAGNOSTICS' ? 'bg-primary text-on-primary shadow-md' : 'text-on-surface-variant hover:bg-surface-variant hover:text-primary'}`}>
-            🛡️ 서버 자가진단
+            🛡️ 자가진단
           </button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAdminUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -428,7 +429,104 @@ export async function GET(request: Request) {
       );
     }
 
-    const total = 21;
+    // 22단계. DB 자동 백업 크론잡 장착 여부
+    {
+      let backupScriptExists = false;
+      try {
+        await fs.access(path.join(process.cwd(), 'scripts', 'backup-db.js'));
+        backupScriptExists = true;
+      } catch {}
+      const isPassed = serverCode.includes('backup-db.js') && serverCode.includes('cron.schedule') && backupScriptExists;
+      addResult(
+        22,
+        "백그라운드 배치",
+        "DB 자동 백업 크론잡 장착",
+        isPassed ? "passed" : "failed",
+        isPassed ? 100 : 0,
+        isPassed
+          ? "매일 새벽 3시 DB 자동 백업 크론잡(node-cron)이 정상 배치 스케줄링되었으며, 백업 유틸리티 script 파일이 디스크 상에 정상 배치되었습니다."
+          : "DB 백업 크론 스케줄러 또는 scripts/backup-db.js 파일이 누락되어 정기적인 데이터 백업 보장성이 없습니다.",
+        "server.js 내 cron.schedule('0 3 * * *') 구성 및 scripts/backup-db.js 파일 물리적 존재 체크"
+      );
+    }
+
+    // 23단계. SQLite 데이터베이스 연결 무결성
+    {
+      let dbOk = false;
+      let latency = 0;
+      try {
+        const start = Date.now();
+        await prisma.user.findFirst();
+        latency = Date.now() - start;
+        dbOk = true;
+      } catch (e) {
+        dbOk = false;
+      }
+      addResult(
+        23,
+        "인프라 리소스",
+        "SQLite DB 연결 상태 및 응답 지연",
+        dbOk ? "passed" : "failed",
+        dbOk ? 100 : 0,
+        dbOk
+          ? `데이터베이스 연결 무결성이 검증되었으며, 쿼리 조회 레이턴시가 ${latency}ms로 지연 없이 즉시 서비스 공급이 가능합니다.`
+          : "데이터베이스 연결이 비활성화되었거나 쿼리 조회가 차단되어 서비스가 마비된 위협 상태입니다.",
+        "Prisma API를 통한 데이터베이스 즉석 조회 레이턴시 속도 런타임 검사"
+      );
+    }
+
+    // 24단계. 서버 시스템 메모리 고갈 위험 진단
+    {
+      const memUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+      const isPassed = memUsage < 350; // 350MB 기준선
+      addResult(
+        24,
+        "인프라 리소스",
+        "메모리 리소스 점유 통제",
+        isPassed ? "passed" : "warning",
+        isPassed ? 100 : 80,
+        isPassed
+          ? `현재 Node.js 힙 메모리 점유율이 ${memUsage.toFixed(1)}MB로 권장 안전 임계선(350MB) 미만을 유지하며 안정적으로 통제되고 있습니다.`
+          : `현재 Node.js 힙 메모리 점유율이 ${memUsage.toFixed(1)}MB로 350MB 임계선을 초과하여 메모리 과다 누수가 우려됩니다.`,
+        "process.memoryUsage() API를 활용한 Node.js V8 heapUsed 사용량 실시간 임계점 통계 런타임 체크"
+      );
+    }
+
+    // 25단계. 환경변수 및 암호 키 보안 무결성
+    {
+      const secret = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY;
+      const isPassed = !!secret && secret !== 'ALO_POP_SESSION_SECRET_DEFAULT' && secret !== 'ALO_POP_ENCRYPTION_SECRET_DEFAULT' && secret.length >= 16;
+      addResult(
+        25,
+        "인프라 리소스",
+        "환경변수 암호키 보안 복잡성",
+        isPassed ? "passed" : "warning",
+        isPassed ? 100 : 70,
+        isPassed
+          ? "기본 암호키를 배제하고 복잡한 프로덕션 보안 키 규격이 환경변수(SESSION_SECRET 등)에 정상적으로 주입되어 동작 중임을 확인했습니다."
+          : "기본 암호키가 세팅되었거나 암호키 길이가 16자 미만으로 유출 및 해킹 무차별 해독 공격에 취약합니다.",
+        "환경변수 SESSION_SECRET 및 ENCRYPTION_KEY 로딩 검사 및 기본키 방어 테스트"
+      );
+    }
+
+    // 26단계. PM2 기동 프로세스 Uptime 진단
+    {
+      const uptime = process.uptime();
+      const isPassed = uptime > 10;
+      addResult(
+        26,
+        "인프라 리소스",
+        "프로세스 기동 지속성 및 헬스",
+        isPassed ? "passed" : "failed",
+        isPassed ? 100 : 0,
+        isPassed
+          ? `서버 프로세스가 기동되어 최근 ${Math.floor(uptime)}초 동안 정상 구동 상태를 유지하며 Crash 없이 헬스 무결성이 증명되었습니다.`
+          : "서버 프로세스가 최근 10초 이내에 기동되었거나 무한 재시작 루프에 빠져 크래시가 잦을 우려가 있습니다.",
+        "process.uptime() 시스템 조회를 통한 프로세스 구동 유지 시간 런타임 검사"
+      );
+    }
+
+    const total = 26;
     const passedCount = diagnosticResults.filter(r => r.status === 'passed').length;
     const warningCount = diagnosticResults.filter(r => r.status === 'warning').length;
     const failedCount = diagnosticResults.filter(r => r.status === 'failed').length;

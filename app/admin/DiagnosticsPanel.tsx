@@ -92,10 +92,10 @@ export default function DiagnosticsPanel() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
           <h2 className="text-2xl font-bold text-on-surface drop-shadow-sm flex items-center gap-2">
-            🛡️ 실시간 서버 자가진단 모니터
+            🛡️ 실시간 자가진단 모니터
           </h2>
           <p className="text-sm text-on-surface-variant mt-1">
-            서버의 21대 핵심 위협 보안 가드 및 성능 안전장치 작동 유무를 실시간으로 교차 진단합니다.
+            알로팝 시스템 전반의 핵심 위협 보안 가드, 데이터베이스 및 리소스 상태를 실시간으로 점검합니다.
           </p>
         </div>
         
@@ -163,7 +163,7 @@ export default function DiagnosticsPanel() {
           </div>
           <div className="flex items-center gap-2 text-xs text-zinc-400 border-t border-outline-variant/10 pt-4 mt-6">
             <ShieldCheck size={14} className="text-emerald-400" />
-            <span>21대 핵심 보완책 적용 완료</span>
+            <span>{summary.total}대 핵심 안전 진단 완료</span>
           </div>
         </div>
 
@@ -198,7 +198,7 @@ export default function DiagnosticsPanel() {
 
       {/* Accordion List */}
       <h3 className="text-lg font-bold mb-4 text-on-surface-variant flex items-center gap-2">
-        <Gauge size={18} className="text-primary" /> 21대 핵심 자가진단 내역 상세 리포트
+        <Gauge size={18} className="text-primary" /> 전체 자가진단 내역 상세 리포트
       </h3>
 
       <div className="space-y-3.5 mb-12">
