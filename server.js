@@ -2842,4 +2842,91 @@ app.listen(PORT, () => {
     // ?붾젅洹몃옩 遊?珥덇린??
 
   });
+
+  // Graceful Shutdown 핸들러 등록
+  let isShuttingDown = false;
+  async function gracefulShutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[Graceful Shutdown] Received ${signal}. Starting shutdown sequence...`);
+
+    // 1. readReceiptBuffer 플러시
+    if (global.readReceiptBuffer && global.readReceiptBuffer.size > 0) {
+      const items = Array.from(global.readReceiptBuffer.values());
+      global.readReceiptBuffer.clear();
+      console.log(`[Graceful Shutdown] Flushing ${items.length} read receipts...`);
+      try {
+        await prisma.$transaction(
+          items.map(item =>
+            prisma.roomMember.upsert({
+              where: {
+                userId_roomId: {
+                  userId: item.userId,
+                  roomId: item.roomId,
+                }
+              },
+              update: { lastReadAt: item.lastReadAt },
+              create: { userId: item.userId, roomId: item.roomId, lastReadAt: item.lastReadAt }
+            })
+          )
+        );
+        console.log(`[Graceful Shutdown] Read receipts flushed successfully.`);
+      } catch (err) {
+        console.error(`[Graceful Shutdown] Error flushing read receipts:`, err);
+      }
+    }
+
+    // 2. flushStudioLogs 플러시
+    if (global.studioLogBuffer && global.studioLogBuffer.length > 0) {
+      console.log(`[Graceful Shutdown] Flushing ${global.studioLogBuffer.length} studio logs...`);
+      try {
+        await prisma.studioLog.createMany({
+          data: global.studioLogBuffer
+        });
+        global.studioLogBuffer = [];
+        console.log(`[Graceful Shutdown] Studio logs flushed successfully.`);
+      } catch (err) {
+        console.error(`[Graceful Shutdown] Error flushing studio logs:`, err);
+      }
+    }
+
+    // 3. 작동 중인 스튜디오 lock 리셋
+    try {
+      console.log(`[Graceful Shutdown] Resetting working studios...`);
+      const resetResult = await prisma.studio.updateMany({
+        where: { isWorking: true },
+        data: { isWorking: false }
+      });
+      console.log(`[Graceful Shutdown] Reset ${resetResult.count} working studios.`);
+    } catch (err) {
+      console.error(`[Graceful Shutdown] Error resetting working studios:`, err);
+    }
+
+    // 4. prisma.$disconnect()
+    try {
+      await prisma.$disconnect();
+      console.log('[Graceful Shutdown] Prisma disconnected.');
+    } catch (err) {
+      console.error('[Graceful Shutdown] Error disconnecting Prisma:', err);
+    }
+
+    // 5. httpServer.close()
+    httpServer.close((err) => {
+      if (err) {
+        console.error('[Graceful Shutdown] Error closing server:', err);
+        process.exit(1);
+      }
+      console.log('[Graceful Shutdown] HTTP Server closed successfully.');
+      process.exit(0);
+    });
+
+    // 10초 후 강제 종료 세이프가드
+    setTimeout(() => {
+      console.error('[Graceful Shutdown] Shutdown timed out. Forcing exit.');
+      process.exit(1);
+    }, 10000);
+  }
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 });
