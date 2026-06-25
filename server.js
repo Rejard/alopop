@@ -22,6 +22,20 @@ function spawnAsync(cmd, args, options = {}) {
   });
 }
 
+global.ecoConfigLock = global.ecoConfigLock || Promise.resolve();
+
+function safeModifyEcosystemConfig(fn) {
+  global.ecoConfigLock = global.ecoConfigLock.then(async () => {
+    try {
+      await fn();
+    } catch (err) {
+      console.error('[Ecosystem Lock Error]:', err);
+      throw err;
+    }
+  });
+  return global.ecoConfigLock;
+}
+
 
 loadEnvConfig(process.cwd());
 
@@ -2317,49 +2331,51 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
 
       const htmlContent = fs.readFileSync(sourceHtmlPath, 'utf8');
 
-      // 윈도우 PM2 ecosystem.config.js 분석 및 포트 3070~3089 자동 검출
-      const ecoPath = 'c:/seoha/ecosystem.config.js';
-      if (!fs.existsSync(ecoPath)) throw new Error('c:/seoha/ecosystem.config.js 경로를 찾을 수 없습니다.');
-      
-      let ecoContent = fs.readFileSync(ecoPath, 'utf8');
-      const nameRegex = /name:\s*["'](\d{2})-/g;
-      let match;
-      const usedIds = new Set();
-      while ((match = nameRegex.exec(ecoContent)) !== null) {
-        usedIds.add(parseInt(match[1]));
-      }
-
-      let nextId = -1;
-      for (let i = 70; i <= 89; i++) {
-        if (!usedIds.has(i)) {
-          nextId = i;
-          break;
+      let port, appName, targetDir;
+      await safeModifyEcosystemConfig(async () => {
+        // 윈도우 PM2 ecosystem.config.js 분석 및 포트 3070~3089 자동 검출
+        const ecoPath = 'c:/seoha/ecosystem.config.js';
+        if (!fs.existsSync(ecoPath)) throw new Error('c:/seoha/ecosystem.config.js 경로를 찾을 수 없습니다.');
+        
+        let ecoContent = fs.readFileSync(ecoPath, 'utf8');
+        const nameRegex = /name:\s*["'](\d{2})-/g;
+        let match;
+        const usedIds = new Set();
+        while ((match = nameRegex.exec(ecoContent)) !== null) {
+          usedIds.add(parseInt(match[1]));
         }
-      }
-      if (nextId === -1) {
-        throw new Error('게임 배포 포트(3070~3089)가 모두 가득 찼습니다.');
-      }
 
-      const port = 3000 + nextId;
-      const appName = `${nextId}-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}`;
+        let nextId = -1;
+        for (let i = 70; i <= 89; i++) {
+          if (!usedIds.has(i)) {
+            nextId = i;
+            break;
+          }
+        }
+        if (nextId === -1) {
+          throw new Error('게임 배포 포트(3070~3089)가 모두 가득 찼습니다.');
+        }
 
-      const targetDir = `c:/seoha/${appName}`;
-      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+        port = 3000 + nextId;
+        appName = `${nextId}-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}`;
 
-      const publicDir = path.join(targetDir, 'public');
-      if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+        targetDir = `c:/seoha/${appName}`;
+        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
-      fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent, 'utf8');
+        const publicDir = path.join(targetDir, 'public');
+        if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
 
-      const packageJson = {
-        name: appName,
-        version: '1.0.0',
-        scripts: { start: 'node server.js' },
-        dependencies: { express: '^4.18.2' }
-      };
-      fs.writeFileSync(path.join(targetDir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf8');
+        fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent, 'utf8');
 
-      const serverJsContent = `const express = require('express');
+        const packageJson = {
+          name: appName,
+          version: '1.0.0',
+          scripts: { start: 'node server.js' },
+          dependencies: { express: '^4.18.2' }
+        };
+        fs.writeFileSync(path.join(targetDir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf8');
+
+        const serverJsContent = `const express = require('express');
 const app = express();
 const path = require('path');
 const PORT = process.env.PORT || ${port};
@@ -2370,12 +2386,13 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 app.listen(PORT, () => {
   console.log('Game server listening on port ' + PORT);
 });`;
-      fs.writeFileSync(path.join(targetDir, 'server.js'), serverJsContent, 'utf8');
+        fs.writeFileSync(path.join(targetDir, 'server.js'), serverJsContent, 'utf8');
 
-      // ecosystem.config.js 자동 추가 기입
-      const newAppString = `    { name: "${appName}", script: "server.js", cwd: "c:/seoha/${appName}", env: { PORT: ${port} } },\n`;
-      ecoContent = ecoContent.replace('{ name: "90-ai-studio"', newAppString + '    { name: "90-ai-studio"');
-      fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+        // ecosystem.config.js 자동 추가 기입
+        const newAppString = `    { name: "${appName}", script: "server.js", cwd: "c:/seoha/${appName}", env: { PORT: ${port} } },\n`;
+        ecoContent = ecoContent.replace('{ name: "90-ai-studio"', newAppString + '    { name: "90-ai-studio"');
+        fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+      });
 
       // Execute npm and pm2 commands with parameter array to block shell injection.
       await spawnAsync('npm.cmd', ['install'], { cwd: targetDir, stdio: 'ignore' });
@@ -2418,18 +2435,23 @@ app.listen(PORT, () => {
 
       const ecoPath = 'c:/seoha/ecosystem.config.js';
       if (fs.existsSync(ecoPath)) {
-        let ecoContent = fs.readFileSync(ecoPath, 'utf8');
-        
-        // 정규식으로 ecosystem.config.js에서 해당 app 제거
-        const appRegex = new RegExp(`\\s*\\{\\s*name:\\s*["'](\\d{2})-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}["'][\\s\\S]*?\\},`, 'i');
-        const match = ecoContent.match(appRegex);
-        if (match) {
-          const matchedBlock = match[0];
-          const appName = matchedBlock.match(/name:\s*["']([^"']+)["']/)[1];
+        let appName = null;
+        await safeModifyEcosystemConfig(async () => {
+          let ecoContent = fs.readFileSync(ecoPath, 'utf8');
           
-          ecoContent = ecoContent.replace(matchedBlock, '');
-          fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+          // 정규식으로 ecosystem.config.js에서 해당 app 제거
+          const appRegex = new RegExp(`\\s*\\{\\s*name:\\s*["'](\\d{2})-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}["'][\\s\\S]*?\\},`, 'i');
+          const match = ecoContent.match(appRegex);
+          if (match) {
+            const matchedBlock = match[0];
+            appName = matchedBlock.match(/name:\s*["']([^"']+)["']/)[1];
+            
+            ecoContent = ecoContent.replace(matchedBlock, '');
+            fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+          }
+        });
 
+        if (appName) {
           // Execute pm2 command with parameter array to block shell injection.
           await spawnAsync('pm2.cmd', ['delete', appName], { cwd: 'c:/seoha', stdio: 'ignore' });
           await spawnAsync('pm2.cmd', ['save'], { stdio: 'ignore' });
