@@ -282,27 +282,112 @@ app.prepare().then(() => {
   }
 
   async function deleteExpiredOfflineMessages() {
-    if (await hasEnhancedOfflineQueue()) {
-      await prisma.$executeRawUnsafe(
-        'DELETE FROM OfflineMessage WHERE expiresAt <= ?',
-        new Date().toISOString()
-      );
-    } else {
-      await prisma.offlineMessage.deleteMany({
-        where: { createdAt: { lte: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) } }
-      });
+    // 1. OfflineMessage 만료 삭제
+    try {
+      if (await hasEnhancedOfflineQueue()) {
+        await prisma.$executeRawUnsafe(
+          'DELETE FROM OfflineMessage WHERE expiresAt <= ?',
+          new Date().toISOString()
+        );
+      } else {
+        await prisma.offlineMessage.deleteMany({
+          where: { createdAt: { lte: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) } }
+        });
+      }
+    } catch (e) {
+      console.error('Failed to delete expired offline messages:', e);
     }
 
-    // TTL 7일이 지난 Message 파기
+    const now = new Date();
+
+    // 2. 만료된 IMAGE/FILE/VIDEO Message의 물리 파일 삭제
+    try {
+      const expiredMediaMessages = await prisma.message.findMany({
+        where: {
+          expiresAt: { lte: now },
+          type: { in: ['IMAGE', 'FILE', 'VIDEO'] }
+        }
+      });
+
+      for (const msg of expiredMediaMessages) {
+        try {
+          const decrypted = decryptText(msg.content);
+          if (decrypted) {
+            if (decrypted.startsWith('/uploads/') || decrypted.startsWith('/output/') || decrypted.startsWith('/repoart/')) {
+              const filePath = path.join(__dirname, 'public', decrypted);
+              if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`[TTL File Cleanup] Deleted file: ${filePath}`);
+              }
+            }
+          }
+        } catch (fileErr) {
+          console.error('[TTL File Cleanup] Failed to delete file for message:', msg.id, fileErr);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to query expired media messages:', e);
+    }
+
+    // 3. TTL 7일이 지난 Message 레코드 파기
     try {
       const deleted = await prisma.message.deleteMany({
-        where: { expiresAt: { lte: new Date() } }
+        where: { expiresAt: { lte: now } }
       });
       if (deleted.count > 0) {
         console.log(`[TTL] Deleted ${deleted.count} expired messages from DB`);
       }
     } catch (e) {
       console.error('Failed to delete expired TTL messages:', e);
+    }
+
+    // 4. 만료된 PetPost의 images 물리 파일 삭제 및 PetPost 삭제
+    try {
+      const expiredPosts = await prisma.petPost.findMany({
+        where: { expiresAt: { lte: now } }
+      });
+
+      for (const post of expiredPosts) {
+        if (post.images) {
+          try {
+            const images = JSON.parse(post.images);
+            if (Array.isArray(images)) {
+              for (const imgPath of images) {
+                if (typeof imgPath === 'string' && (imgPath.startsWith('/uploads/') || imgPath.startsWith('/output/') || imgPath.startsWith('/repoart/'))) {
+                  const filePath = path.join(__dirname, 'public', imgPath);
+                  if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[TTL PetPost Cleanup] Deleted file: ${filePath}`);
+                  }
+                }
+              }
+            }
+          } catch (jsonErr) {
+            console.error('[TTL PetPost Cleanup] Failed to parse images JSON for post:', post.id, jsonErr);
+          }
+        }
+      }
+
+      const deletedPosts = await prisma.petPost.deleteMany({
+        where: { expiresAt: { lte: now } }
+      });
+      if (deletedPosts.count > 0) {
+        console.log(`[TTL PetPost] Deleted ${deletedPosts.count} expired posts from DB`);
+      }
+    } catch (e) {
+      console.error('Failed to clean up expired PetPosts:', e);
+    }
+
+    // 5. 만료된 PetComment 삭제
+    try {
+      const deletedComments = await prisma.petComment.deleteMany({
+        where: { expiresAt: { lte: now } }
+      });
+      if (deletedComments.count > 0) {
+        console.log(`[TTL PetComment] Deleted ${deletedComments.count} expired comments from DB`);
+      }
+    } catch (e) {
+      console.error('Failed to clean up expired PetComments:', e);
     }
   }
 
