@@ -1199,19 +1199,38 @@ export function AiStudioPanel({
     return () => clearInterval(interval);
   }, [selectedStudio?.type]);
 
-  // 1. 스튜디오 목록 로드 (서버 시스템 공용 + 로컬 개인 스튜디오 이원화 병합)
+  // 1. 스튜디오 목록 로드 (서버 우선, localStorage 폴백 캐시)
   const fetchStudios = async () => {
     if (!user?.id) return;
     try {
-      // 1-A. 서버에서 시스템 공용 스튜디오만 로드
       const res = await fetch(`/api/aistudio/studios?userId=${user.id}`);
-      let serverStudios: any[] = [];
+      let allStudios: any[] = [];
       if (res.ok) {
-        const data = await res.json();
-        serverStudios = data.filter((s: any) => s.isSystem === true);
+        allStudios = await res.json();
+        try {
+          const personalStudios = allStudios.filter((s: any) => !s.isSystem);
+          if (personalStudios.length > 0) {
+            localStorage.setItem('alopop_local_studios', JSON.stringify(personalStudios));
+          }
+        } catch (e) { /* cache write fail is non-critical */ }
+      } else {
+        let localStudios: any[] = [];
+        try {
+          const stored = localStorage.getItem('alopop_local_studios');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            localStudios = Array.isArray(parsed) ? parsed.filter((s: any) => s.ownerId === user.id) : [];
+          }
+        } catch (e) { /* ignore */ }
+        allStudios = localStudios;
       }
 
-      // 1-B. 로컬 스토리지에서 개인 스튜디오 로드
+      setStudios(allStudios);
+      if (allStudios.length > 0 && !selectedStudio && window.innerWidth >= 1024) {
+        handleSelectStudio(allStudios[0]);
+      }
+    } catch (e) {
+      console.error(e);
       let localStudios: any[] = [];
       try {
         const stored = localStorage.getItem('alopop_local_studios');
@@ -1219,18 +1238,10 @@ export function AiStudioPanel({
           const parsed = JSON.parse(stored);
           localStudios = Array.isArray(parsed) ? parsed.filter((s: any) => s.ownerId === user.id) : [];
         }
-      } catch (e) {
-        console.error('[Local Studios] Parse error:', e);
+      } catch (e2) { /* ignore */ }
+      if (localStudios.length > 0) {
+        setStudios(localStudios);
       }
-
-      // 1-C. 병합: 시스템 공용 스튜디오 먼저, 로컬 개인 스튜디오 뒤에 이어붙이기
-      const merged = [...serverStudios, ...localStudios];
-      setStudios(merged);
-      if (merged.length > 0 && !selectedStudio && window.innerWidth >= 1024) {
-        handleSelectStudio(merged[0]);
-      }
-    } catch (e) {
-      console.error(e);
     }
   };
 
@@ -1238,11 +1249,10 @@ export function AiStudioPanel({
     fetchStudios();
   }, [user?.id]);
 
-  // 2. 특정 스튜디오 진입 및 활성화 (시스템/로컬 이원화)
-  const handleSelectStudio = (studio: any) => {
+  // 2. 특정 스튜디오 진입 및 활성화 (서버 우선, localStorage 폴백)
+  const handleSelectStudio = async (studio: any) => {
     if (selectedStudio?.id === studio.id) return;
     
-    // 이전 시스템 스튜디오를 떠남
     if (selectedStudio?.id && selectedStudio?.isSystem && socket) {
       socket.emit('leave_studio_room', selectedStudio.id);
     }
@@ -1253,28 +1263,49 @@ export function AiStudioPanel({
     setIsWorking(false);
     
     if (studio.isSystem) {
-      // 시스템 공용 스튜디오: 기존 소켓 기반 진입
       if (socket) {
         socket.emit('join_studio_room', studio.id);
       }
       fetchArtifacts(studio.id);
     } else {
-      // 로컬 개인 스튜디오: 소켓 통신 없이 로컬 스토리지에서 상태 직접 로드
       try {
-        const storedState = localStorage.getItem(`alopop_studio_state_${studio.id}`);
-        if (storedState) {
-          const parsed = JSON.parse(storedState);
-          setAgentState(parsed.agentState || {});
-          setLogs(parsed.logs || []);
-        } else if (studio.agentState) {
-          setAgentState(studio.agentState);
-          setLogs(studio.logs || []);
+        const [stateRes, artifactsRes] = await Promise.all([
+          fetch(`/api/aistudio/studios/${studio.id}/state`),
+          fetch(`/api/aistudio/history/${studio.id}`)
+        ]);
+
+        if (stateRes.ok) {
+          const stateData = await stateRes.json();
+          setAgentState(stateData.agentState || {});
+          setLogs(stateData.logs || []);
+          try { localStorage.setItem(`alopop_studio_state_${studio.id}`, JSON.stringify(stateData)); } catch (e) { /* ignore */ }
+        } else {
+          throw new Error('Server state fetch failed');
         }
-        // 로컬 아카이브 산출물 로드
-        const storedArtifacts = localStorage.getItem(`alopop_local_artifacts_${studio.id}`);
-        setArtifacts(storedArtifacts ? JSON.parse(storedArtifacts) : []);
+
+        if (artifactsRes.ok) {
+          const artifactsData = await artifactsRes.json();
+          setArtifacts(artifactsData);
+          try { localStorage.setItem(`alopop_local_artifacts_${studio.id}`, JSON.stringify(artifactsData)); } catch (e) { /* ignore */ }
+        } else {
+          setArtifacts([]);
+        }
       } catch (e) {
-        console.error('[Local Studio Load] Error:', e);
+        try {
+          const storedState = localStorage.getItem(`alopop_studio_state_${studio.id}`);
+          if (storedState) {
+            const parsed = JSON.parse(storedState);
+            setAgentState(parsed.agentState || {});
+            setLogs(parsed.logs || []);
+          } else if (studio.agentState) {
+            setAgentState(studio.agentState);
+            setLogs(studio.logs || []);
+          }
+          const storedArtifacts = localStorage.getItem(`alopop_local_artifacts_${studio.id}`);
+          setArtifacts(storedArtifacts ? JSON.parse(storedArtifacts) : []);
+        } catch (e2) {
+          console.error('[Studio Load Fallback] Error:', e2);
+        }
       }
     }
     setActiveMobileView('detail');
@@ -1517,7 +1548,7 @@ export function AiStudioPanel({
     }
   };
 
-  // 5. 새 스튜디오 생성 (사무직: 로컬 저장, 그 외 시스템 타입: 서버 API)
+  // 5. 새 스튜디오 생성 (서버 DB 저장, localStorage 캐시 백업)
   const handleCreateStudio = async () => {
     console.log('handleCreateStudio called. newStudioName:', newStudioName, 'user.id:', user?.id, 'newStudioType:', newStudioType);
     if (!newStudioName.trim()) {
@@ -1531,12 +1562,6 @@ export function AiStudioPanel({
     try {
       const activeConfig = newStudioAgentsConfig.slice(0, newStudioAgentCount);
 
-      // =============================================
-      // 사무직(office) 스튜디오: 100% 로컬 스토리지 저장 (서버 무개입)
-      // =============================================
-      const studioId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      
-      // 에이전트 초기 상태 구성
       const initialAgentState: Record<string, any> = {};
       activeConfig.forEach((agent: any, idx: number) => {
         initialAgentState[agent.name] = {
@@ -1549,13 +1574,11 @@ export function AiStudioPanel({
         };
       });
 
-      // AI 추천을 실제로 사용했는지 명확한 상태 플래그로 판단
       const usedAiRecommend = hasUsedAiRecommend;
 
       let welcomeLogs: any[] = [];
 
       if (usedAiRecommend) {
-        // *** 시나리오 1: AI 추천 사용 → 브라우저에서 Gemini API로 맞춤형 첫인사 동적 생성 ***
         let geminiApiKey = '';
         try {
           const keysStr = localStorage.getItem('alo_api_keys');
@@ -1604,7 +1627,6 @@ export function AiStudioPanel({
                   msg: wm.message,
                   createdAt: new Date().toISOString()
                 });
-                // 에이전트 상태에 첫 로그 바인딩
                 if (initialAgentState[wm.name]) {
                   initialAgentState[wm.name].log = wm.message.substring(0, 30) + (wm.message.length > 30 ? '...' : '');
                 }
@@ -1616,9 +1638,7 @@ export function AiStudioPanel({
         }
       }
 
-      // 시나리오 2: AI 추천 미사용 → 서버 기본 정적 웰컴 멘트 차용
       if (welcomeLogs.length === 0) {
-        // 서버로부터 정적 웰컴 멘트 다운로드 시도
         let defaultWelcomeMessages: Record<string, string> = {};
         try {
           const resTemplates = await fetch('/api/aistudio/templates-resources');
@@ -1647,94 +1667,91 @@ export function AiStudioPanel({
         }
       }
 
-      // 로컬 스튜디오 객체 구성
-      const newLocalStudio = {
-        id: studioId,
-        name: newStudioName,
-        type: 'office',
-        isSystem: false,
-        ownerId: user.id,
-        isWorking: false,
-        agentState: initialAgentState,
-        logs: welcomeLogs,
-        description: newStudioDesc,
-        createdAt: new Date().toISOString()
-      };
+      const createRes = await fetch('/api/aistudio/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          name: newStudioName,
+          type: 'office'
+        })
+      });
 
-      // 로컬 스토리지에 저장 (기존 로컬 스튜디오 목록에 추가)
-      let existingLocalStudios: any[] = [];
+      let newStudio: any;
+      if (createRes.ok) {
+        newStudio = await createRes.json();
+        fetch(`/api/aistudio/studios/${newStudio.id}/state`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentState: initialAgentState, logs: welcomeLogs })
+        }).catch(e => console.error('[State Save] Error:', e));
+      } else {
+        const studioId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        newStudio = {
+          id: studioId,
+          name: newStudioName,
+          type: 'office',
+          isSystem: false,
+          ownerId: user.id,
+          isWorking: false,
+          createdAt: new Date().toISOString()
+        };
+      }
+
+      newStudio.agentState = initialAgentState;
+      newStudio.logs = welcomeLogs;
+      newStudio.description = newStudioDesc;
+
       try {
-        const stored = localStorage.getItem('alopop_local_studios');
-        if (stored) existingLocalStudios = JSON.parse(stored);
+        localStorage.setItem(`alopop_studio_state_${newStudio.id}`, JSON.stringify({
+          agentState: initialAgentState,
+          logs: welcomeLogs
+        }));
       } catch (e) { /* ignore */ }
-      existingLocalStudios.push(newLocalStudio);
-      localStorage.setItem('alopop_local_studios', JSON.stringify(existingLocalStudios));
 
-      // 에이전트 상태 및 로그 로컬 저장
-      localStorage.setItem(`alopop_studio_state_${studioId}`, JSON.stringify({
-        agentState: initialAgentState,
-        logs: welcomeLogs
-      }));
-
-      console.log('[Local Studio] Created successfully:', studioId);
+      console.log('[Studio] Created successfully:', newStudio.id);
       setNewStudioName('');
       setNewStudioDesc('');
       setNewStudioAgentCount(4);
       setHasUsedAiRecommend(false);
       setShowCreateModal(false);
       fetchStudios();
-      handleSelectStudio(newLocalStudio);
+      handleSelectStudio(newStudio);
     } catch (e: any) {
       console.error('handleCreateStudio Catch Block:', e);
       alert(`스튜디오 개설 오류: ${e.message || e}`);
     }
   };
 
-  // 6. 스튜디오 삭제
+  // 6. 스튜디오 삭제 (서버 우선, localStorage 캐시 정리)
   const handleDeleteStudio = async (studioId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('정말로 이 AI 스튜디오 방을 삭제하시겠습니까? 관련 로그와 산출물이 모두 삭제됩니다.')) return;
     
-    // 로컬 스튜디오(isSystem=false)인지 확인
-    const targetStudio = studios.find(s => s.id === studioId);
-    
-    if (targetStudio && !targetStudio.isSystem) {
-      // 로컬 스튜디오: 로컬 스토리지에서 제거
-      try {
-        const stored = localStorage.getItem('alopop_local_studios');
-        if (stored) {
-          const localStudios = JSON.parse(stored).filter((s: any) => s.id !== studioId);
-          localStorage.setItem('alopop_local_studios', JSON.stringify(localStudios));
-        }
-        localStorage.removeItem(`alopop_studio_state_${studioId}`);
-        localStorage.removeItem(`alopop_local_artifacts_${studioId}`);
-      } catch (e) {
-        console.error('[Local Studio Delete] Error:', e);
-      }
-      
-      setStudios(prev => prev.filter(s => s.id !== studioId));
-      if (selectedStudio?.id === studioId) {
-        setSelectedStudio(null);
-        setAgentState({});
-        setLogs([]);
-      }
-    } else {
-      // 시스템 스튜디오: 기존 서버 API 삭제
-      try {
-        const res = await fetch(`/api/aistudio/delete/${studioId}?userId=${user.id}`, {
-          method: 'DELETE'
-        });
-        if (res.ok) {
-          setStudios(prev => prev.filter(s => s.id !== studioId));
-          if (selectedStudio?.id === studioId) {
-            setSelectedStudio(null);
-            setAgentState({});
-            setLogs([]);
+    try {
+      const res = await fetch(`/api/aistudio/delete/${studioId}?userId=${user.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok || res.status === 404) {
+        try {
+          const stored = localStorage.getItem('alopop_local_studios');
+          if (stored) {
+            const localStudios = JSON.parse(stored).filter((s: any) => s.id !== studioId);
+            localStorage.setItem('alopop_local_studios', JSON.stringify(localStudios));
           }
+          localStorage.removeItem(`alopop_studio_state_${studioId}`);
+          localStorage.removeItem(`alopop_local_artifacts_${studioId}`);
+        } catch (cacheErr) { /* ignore */ }
+
+        setStudios(prev => prev.filter(s => s.id !== studioId));
+        if (selectedStudio?.id === studioId) {
+          setSelectedStudio(null);
+          setAgentState({});
+          setLogs([]);
         }
-      } catch (e) {
-        console.error(e);
       }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -1898,10 +1915,9 @@ ${accumulatedDoc}
         addLog(agentName, `작업이 끝났습니다. ${i < agentNames.length - 1 ? '다음 에이전트에게 인계합니다.' : '최종 결과를 제출합니다.'}`);
       }
 
-      // 최종 보고서 로컬 아카이브에 저장
       const versionNum = artifacts.length + 1;
       const docTitle = `${studio.name} 보고서 V${versionNum}`;
-      const newArtifact = {
+      let newArtifact: any = {
         id: `local_artifact_${Date.now()}`,
         name: docTitle,
         content: accumulatedDoc,
@@ -1909,18 +1925,30 @@ ${accumulatedDoc}
         createdAt: new Date().toISOString()
       };
 
+      try {
+        const artifactRes = await fetch(`/api/aistudio/studios/${studio.id}/artifacts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: docTitle, content: accumulatedDoc })
+        });
+        if (artifactRes.ok) {
+          newArtifact = await artifactRes.json();
+        }
+      } catch (e) { /* server save failed, use local artifact */ }
+
       const updatedArtifacts = [newArtifact, ...artifacts];
       setArtifacts(updatedArtifacts);
-      localStorage.setItem(`alopop_local_artifacts_${studio.id}`, JSON.stringify(updatedArtifacts));
+      try { localStorage.setItem(`alopop_local_artifacts_${studio.id}`, JSON.stringify(updatedArtifacts)); } catch (e) { /* ignore */ }
 
       addLog('대표님', `🎉 스튜디오 자문 및 기획 문서 작성이 완료되었습니다! 최종 결과물 [${docTitle}]이 아카이브에 안전하게 등록되었습니다.`);
 
-      // 로컬 상태 최종 저장
       const finalLogs = [...logs, { agent: '대표님', msg: `🎉 [${docTitle}] 아카이브 등록 완료!`, createdAt: new Date().toISOString() }];
-      localStorage.setItem(`alopop_studio_state_${studio.id}`, JSON.stringify({
-        agentState: currentState,
-        logs: finalLogs
-      }));
+      fetch(`/api/aistudio/studios/${studio.id}/state`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentState: currentState, logs: finalLogs })
+      }).catch(e => console.error('[State Save] Error:', e));
+      try { localStorage.setItem(`alopop_studio_state_${studio.id}`, JSON.stringify({ agentState: currentState, logs: finalLogs })); } catch (e) { /* ignore */ }
 
     } catch (error: any) {
       addLog('대표님', `❌ 에러가 발생하여 연산이 중단되었습니다: ${error.message}`);

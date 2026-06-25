@@ -2350,6 +2350,90 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
+  // 2.5 스튜디오 상태(agentState/logs) 조회 API
+  aistudioRouter.get('/studios/:studioId/state', async (req, res) => {
+    try {
+      const { studioId } = req.params;
+      const studio = await prisma.studio.findUnique({ where: { id: studioId } });
+      if (!studio) return res.status(404).json({ error: 'Studio not found' });
+
+      let agentState = {};
+      try { agentState = JSON.parse(studio.agentStateJson || '{}'); } catch (e) { /* ignore */ }
+
+      const logs = await prisma.studioLog.findMany({
+        where: { studioId },
+        orderBy: { createdAt: 'asc' },
+        take: 200
+      });
+
+      res.json({ agentState, logs });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2.6 스튜디오 상태(agentState/logs) 저장 API
+  aistudioRouter.put('/studios/:studioId/state', async (req, res) => {
+    try {
+      const { studioId } = req.params;
+      const { agentState, logs } = req.body;
+
+      await prisma.studio.update({
+        where: { id: studioId },
+        data: {
+          agentStateJson: JSON.stringify(agentState || {})
+        }
+      });
+
+      if (Array.isArray(logs) && logs.length > 0) {
+        const existingCount = await prisma.studioLog.count({ where: { studioId } });
+        const newLogs = logs.slice(existingCount);
+        if (newLogs.length > 0) {
+          await prisma.studioLog.createMany({
+            data: newLogs.map(l => ({
+              studioId,
+              agent: l.agent || 'System',
+              msg: l.msg || '',
+              error: l.error || false,
+              createdAt: l.createdAt ? new Date(l.createdAt) : new Date()
+            }))
+          });
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 2.7 스튜디오별 아티팩트 생성 API (로컬 스튜디오 산출물 서버 저장용)
+  aistudioRouter.post('/studios/:studioId/artifacts', async (req, res) => {
+    try {
+      const { studioId } = req.params;
+      const { name, content, fileUrl, isDeployed } = req.body;
+
+      if (!name) return res.status(400).json({ error: 'Missing artifact name' });
+
+      const studio = await prisma.studio.findUnique({ where: { id: studioId } });
+      if (!studio) return res.status(404).json({ error: 'Studio not found' });
+
+      const artifact = await prisma.studioArtifact.create({
+        data: {
+          studioId,
+          name,
+          content: content || null,
+          fileUrl: fileUrl || null,
+          isDeployed: isDeployed || false
+        }
+      });
+
+      res.json(artifact);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 3. 새 스튜디오 개설 API
   aistudioRouter.post('/create', async (req, res) => {
     console.log('[/api/aistudio/create] req.body:', req.body);
