@@ -63,8 +63,9 @@ export async function GET(request: Request) {
 
     // 1단계. Prisma 인스턴스 전역 공유
     {
-      const sendPushMatch = serverCode.match(/async function sendWebPush[\s\S]*?\n\s*\}/);
-      const hasLocalPrisma = !!(sendPushMatch && sendPushMatch[0].includes('new PrismaClient'));
+      const pushFuncIndex = serverCode.indexOf('async function sendWebPush');
+      const pushFuncBlock = pushFuncIndex !== -1 ? serverCode.slice(pushFuncIndex, pushFuncIndex + 2000) : '';
+      const hasLocalPrisma = pushFuncBlock.includes('new PrismaClient');
       const hasGlobalPrisma = serverCode.includes('const prisma = new PrismaClient()');
       const isPassed = !hasLocalPrisma && hasGlobalPrisma;
       addResult(
@@ -82,8 +83,9 @@ export async function GET(request: Request) {
 
     // 2단계. 오프라인 메시지 암호화 및 비밀방 저장 원천 차단
     {
-      const saveOfflineMatch = serverCode.match(/async function saveOfflineMessage[\s\S]*?\n\s*\}/);
-      const isPassed = !!(saveOfflineMatch && saveOfflineMatch[0].includes('room.isSecret') && saveOfflineMatch[0].includes('Bypass'));
+      const funcIndex = serverCode.indexOf('async function saveOfflineMessage');
+      const saveOfflineBlock = funcIndex !== -1 ? serverCode.slice(funcIndex, funcIndex + 1500) : '';
+      const isPassed = saveOfflineBlock.includes('room.isSecret') && saveOfflineBlock.includes('Bypass');
       addResult(
         2,
         "실시간 소켓",
@@ -228,8 +230,9 @@ export async function GET(request: Request) {
 
     // 11단계. 만료 미디어 파일 및 PetPost 이미지 디스크 물리 삭제
     {
-      const match = serverCode.match(/async function deleteExpiredOfflineMessages[\s\S]*?\n\s*\}/);
-      const isPassed = !!(match && match[0].includes('unlinkSync') && match[0].includes('PetPost'));
+      const ttlFuncIndex = serverCode.indexOf('async function deleteExpiredOfflineMessages');
+      const ttlFuncBlock = ttlFuncIndex !== -1 ? serverCode.slice(ttlFuncIndex, ttlFuncIndex + 3000) : '';
+      const isPassed = ttlFuncBlock.includes('unlinkSync') && ttlFuncBlock.includes('PetPost');
       addResult(
         11,
         "디스크 파일",
