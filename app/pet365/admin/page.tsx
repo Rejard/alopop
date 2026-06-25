@@ -49,7 +49,7 @@ export default function Pet365AdminPage() {
 
   useEffect(() => {
     if (user && !user.isAdmin) {
-      router.replace("/pet365care");
+      router.replace("/pet365");
       return;
     }
     if (user?.isAdmin) {

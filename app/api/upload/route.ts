@@ -17,6 +17,32 @@ const ALLOWED_UPLOAD_TYPES = new Map([
   ['text/html', '.html'],
 ]);
 
+function isValidMagicNumber(buffer: Buffer, mimeType: string): boolean {
+  // Validate raw bytes of binary formats to prevent MIME spoofing.
+  if (mimeType === 'image/png') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x89504E47;
+  }
+  if (mimeType === 'image/jpeg') {
+    return buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+  }
+  if (mimeType === 'image/webp') {
+    return buffer.length >= 12 && buffer.readUInt32BE(0) === 0x52494646 && buffer.readUInt32BE(8) === 0x57454250;
+  }
+  if (mimeType === 'image/gif') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x47494638;
+  }
+  if (mimeType === 'application/pdf') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x25504446;
+  }
+  if (mimeType === 'video/mp4') {
+    return buffer.length >= 8 && buffer.readUInt32BE(4) === 0x66747970;
+  }
+  if (mimeType === 'video/webm') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x1A45DFA3;
+  }
+  return true;
+}
+
 export async function POST(request: Request) {
   let currentUsr: any = null;
   try {
@@ -41,6 +67,9 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    if (!isValidMagicNumber(buffer, file.type)) {
+      return NextResponse.json({ error: 'Invalid or corrupted file content' }, { status: 400 });
+    }
     const uniqueFilename = `chat_${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}${safeExt}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
 

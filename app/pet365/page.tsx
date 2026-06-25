@@ -253,7 +253,7 @@ export default function HomePage() {
             <span className="text-6xl block mb-4">🐾</span>
             <h2 className="text-2xl font-black mb-2">Pet365Care</h2>
             <p className="text-white/80 text-sm leading-relaxed mb-6">반려동물을 등록하고<br />AI 맞춤 건강 관리를 시작하세요</p>
-            <a href="/pet365care/profile" className="inline-flex items-center gap-2 bg-white text-[#9c48ea] font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg hover:bg-purple-50 transition-colors active:scale-95">
+            <a href="/pet365/profile" className="inline-flex items-center gap-2 bg-white text-[#9c48ea] font-bold text-sm px-6 py-3.5 rounded-2xl shadow-lg hover:bg-purple-50 transition-colors active:scale-95">
               <PawPrint size={18} /> 반려동물 추가하기
             </a>
           </div>
@@ -298,7 +298,7 @@ export default function HomePage() {
             <PawPrint size={16} className="text-purple-500" /> 내 반려동물
             <span className="text-xs font-bold text-gray-400 ml-1">{pets.length}</span>
           </h2>
-          <a href="/pet365care/profile" className="flex items-center gap-1 text-xs font-bold text-purple-500 hover:text-purple-600 transition-colors">
+          <a href="/pet365/profile" className="flex items-center gap-1 text-xs font-bold text-purple-500 hover:text-purple-600 transition-colors">
             <Plus size={14} /> 추가
           </a>
         </div>

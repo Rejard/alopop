@@ -80,12 +80,12 @@ const WRITE_CATEGORIES = CATEGORIES.filter(c =>
 );
 
 const FALLBACK_IMAGES: Record<string, string> = {
-  daily: "/pet365care/social-fallbacks/daily.svg",
-  walk: "/pet365care/social-fallbacks/walk.svg",
-  health: "/pet365care/social-fallbacks/health.svg",
-  funny: "/pet365care/social-fallbacks/funny.svg",
-  local: "/pet365care/social-fallbacks/local.svg",
-  mate: "/pet365care/social-fallbacks/mate.svg",
+  daily: "/pet365-assets/social-fallbacks/daily.svg",
+  walk: "/pet365-assets/social-fallbacks/walk.svg",
+  health: "/pet365-assets/social-fallbacks/health.svg",
+  funny: "/pet365-assets/social-fallbacks/funny.svg",
+  local: "/pet365-assets/social-fallbacks/local.svg",
+  mate: "/pet365-assets/social-fallbacks/mate.svg",
 };
 
 const LOCAL_MEETUP_SEEDS = [

@@ -117,7 +117,7 @@ export default function Home() {
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
   const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
-  const [pet365Path, setPet365Path] = useState("/pet365care?view=home");
+  const [pet365Path, setPet365Path] = useState("/pet365?view=home");
   // Pet365Care: 내부 라우트 /pet365care (iframe 임베딩)
 
   // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
@@ -802,6 +802,37 @@ export default function Home() {
       });
     };
 
+    const handleVisibilityOrFocusChange = async () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[DEBUG] 🔄 Page visible/focused. Syncing chat state...');
+        
+        // 1. 소켓 연결 상태 점검 및 재연결
+        const { socket, connectSocket } = useChatStore.getState();
+        if (!socket) {
+          console.log('[DEBUG] 🔌 Socket is null. Re-connecting...');
+          connectSocket(parsedUser.id);
+        } else if (socket.disconnected) {
+          console.log('[DEBUG] 🔌 Socket disconnected. Re-connecting...');
+          socket.connect();
+        } else {
+          console.log('[DEBUG] 🔌 Socket is connected. Registering anyway...');
+          socket.emit('register', parsedUser.id);
+        }
+
+        // 2. 방 목록 및 기본 데이터 강제 리로드 (알림 숫자 갱신용)
+        await loadData(parsedUser.id);
+
+        // 3. 현재 보고 있는 방이 있다면 재조인 및 메시지 강제 동기화 트리거
+        const currentRoom = currentRoomRef.current;
+        if (currentRoom) {
+          console.log('[DEBUG] 🔄 Syncing current room:', currentRoom.id);
+          useChatStore.getState().joinRoom(currentRoom.id);
+        }
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrFocusChange);
+    window.addEventListener('focus', handleVisibilityOrFocusChange);
     window.addEventListener('new_chat_message', handleNewMessage);
     window.addEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
     window.addEventListener('room_read_update', handleReadUpdateEvent);
@@ -817,6 +848,8 @@ export default function Home() {
     // Pet365Care: 내부 라우트 — postMessage 브릿지 불필요 (제거됨)
 
     return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocusChange);
+      window.removeEventListener('focus', handleVisibilityOrFocusChange);
       window.removeEventListener('new_chat_message', handleNewMessage);
       window.removeEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
       window.removeEventListener('room_read_update', handleReadUpdateEvent);
@@ -3773,7 +3806,7 @@ export default function Home() {
                 </div>
               )}
               <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,.pdf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.html" />
+                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/html" />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}

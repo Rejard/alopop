@@ -4,11 +4,11 @@ import React from "react";
 import { MessageSquare, Users, Wallet, Gamepad2, Building2, PawPrint, Crown, Bot, HelpCircle, Home as HomeIcon, ShieldPlus, Sprout, User as UserIcon } from "lucide-react";
 
 export const PET365CARE_LNB_ITEMS = [
-  { name: "홈", path: "/pet365care?view=home", icon: HomeIcon },
-  { name: "소셜", path: "/pet365care/social", icon: Users },
-  { name: "건강", path: "/pet365care/health", icon: ShieldPlus },
-  { name: "케어", path: "/pet365care/care", icon: Sprout },
-  { name: "프로필", path: "/pet365care/profile", icon: UserIcon },
+  { name: "홈", path: "/pet365?view=home", icon: HomeIcon },
+  { name: "소셜", path: "/pet365/social", icon: Users },
+  { name: "건강", path: "/pet365/health", icon: ShieldPlus },
+  { name: "케어", path: "/pet365/care", icon: Sprout },
+  { name: "프로필", path: "/pet365/profile", icon: UserIcon },
 ];
 
 interface LnbSidebarProps {
@@ -100,7 +100,7 @@ export function LnbSidebar({
         <button
           onClick={() => {
             setCurrentTab('pet365care');
-            setPet365Path('/pet365care?view=home');
+            setPet365Path('/pet365?view=home');
           }}
           className={`relative p-3 rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'pet365care' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
           title="Pet365Care"

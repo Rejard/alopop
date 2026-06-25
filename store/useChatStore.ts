@@ -17,7 +17,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isConnected: false,
 
   connectSocket: (userId: string) => {
-    if (get().socket) return; // 이미 연결되어 있으면 무시
+    const existingSocket = get().socket;
+    if (existingSocket) {
+      if (existingSocket.disconnected) {
+        console.log('[DEBUG] Socket instance exists but disconnected, connecting...');
+        existingSocket.connect();
+      }
+      return;
+    }
 
     // 서버와 같은 Origin으로 소켓 연결 (현재 window.location)
     const socket = io(undefined, {

@@ -282,7 +282,7 @@ export default function ProfilePage() {
         {/* Settings Menu */}
         <section className="pet365-card p-2 flex flex-col">
 
-          <Link href="/pet365care/hospitals" className="flex items-center gap-4 p-4 hover:bg-gray-50 rounded-2xl transition-colors text-left group">
+          <Link href="/pet365/hospitals" className="flex items-center gap-4 p-4 hover:bg-gray-50 rounded-2xl transition-colors text-left group">
             <div className="w-10 h-10 bg-[#efe7ff] rounded-full flex items-center justify-center text-[#9c48ea] group-hover:bg-[#e8ddff] transition-colors">
                <Heart size={20} />
             </div>
@@ -292,7 +292,7 @@ export default function ProfilePage() {
           {user?.isAdmin && (
             <>
               <div className="h-px bg-gray-100 my-1 mx-4"></div>
-              <Link href="/pet365care/admin" className="flex items-center gap-4 p-4 hover:bg-blue-50 rounded-2xl transition-colors text-left group">
+              <Link href="/pet365/admin" className="flex items-center gap-4 p-4 hover:bg-blue-50 rounded-2xl transition-colors text-left group">
                 <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-blue-500 group-hover:bg-blue-100 transition-colors">
                    <BarChart3 size={20} />
                 </div>
