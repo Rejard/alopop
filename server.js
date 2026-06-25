@@ -8,7 +8,7 @@ const next = require('next');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const { loadEnvConfig } = require('@next/env');
 
 
@@ -22,6 +22,18 @@ if (!internalApiSecret) {
   console.error('INTERNAL_API_SECRET, SESSION_SECRET, or ENCRYPTION_KEY must be set for sponsor background checks.');
 }
 const SESSION_COOKIE_NAME = 'alo_session';
+
+let cachedTemplates = null;
+function getStudioTemplates() {
+  // Cache template config in memory to avoid blocking synchronous I/O.
+  if (cachedTemplates) return cachedTemplates;
+  const TEMPLATES_PATH = path.join(__dirname, 'config', 'studio_templates.json');
+  if (!fs.existsSync(TEMPLATES_PATH)) {
+    throw new Error('스튜디오 템플릿 설정 파일이 존재하지 않습니다.');
+  }
+  cachedTemplates = JSON.parse(fs.readFileSync(TEMPLATES_PATH, 'utf8'));
+  return cachedTemplates;
+}
 
 function getSessionSecret() {
   const secret = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY;
@@ -124,6 +136,8 @@ app.prepare().then(() => {
   const expressApp = express();
   const { PrismaClient } = require('@prisma/client');
   const prisma = new PrismaClient();
+  // Enable SQLite WAL mode to improve concurrent database write throughput.
+  prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL;').catch(e => console.error('Failed to set WAL mode:', e));
   const { logSocketAudit } = require('./lib/auditLogger');
 
   // 인메모리 벌크 배치 버퍼 초기화
@@ -384,15 +398,13 @@ app.prepare().then(() => {
   async function sendWebPush(targetUserId, messageData) {
     if (!publicVapidKey || !privateVapidKey) return;
     try {
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
       const subscriptions = await prisma.pushSubscription.findMany({
         where: { userId: targetUserId }
       });
       if (!subscriptions || subscriptions.length === 0) return;
       
       const payload = JSON.stringify({
-        title: '?뚮줈??- 새 메시지',
+        title: '알로팝 - 새 메시지',
         body: '새 메시지가 도착했습니다.',
         url: `/`
       });
@@ -424,8 +436,10 @@ app.prepare().then(() => {
     }
   }
 
-  // ?고????뚯씪(?꾨줈???ъ쭊 ?? 利됱떆 ?쒓났???꾪빐 public/uploads 寃쎈줈瑜?express static?쇰줈 留ㅽ븨
+  // ?고????뚯씪(?꾨줈???ъ쭊 ?? 利됱떆 ?쒓났???꾪放 public/uploads 寃쎈줈瑜?express static?쇰줈 留ㅽ븨
   expressApp.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+  expressApp.use('/repoart', express.static(path.join(__dirname, 'public', 'repoart')));
+  expressApp.use(express.static(path.join(__dirname, 'public')));
 
   const httpServer = createServer(expressApp);
   
@@ -1142,11 +1156,7 @@ app.prepare().then(() => {
         io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
         return;
       }
-      const TEMPLATES_PATH = path.join(__dirname, 'config', 'studio_templates.json');
-      if (!fs.existsSync(TEMPLATES_PATH)) {
-        throw new Error('스튜디오 템플릿 설정 파일이 존재하지 않습니다.');
-      }
-      const templates = JSON.parse(fs.readFileSync(TEMPLATES_PATH, 'utf8'));
+      const templates = getStudioTemplates();
       const template = templates[studio.type];
       if (!template) throw new Error('올바르지 않은 스튜디오 타입입니다.');
 
@@ -1861,7 +1871,7 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
   // 시스템 스튜디오 자동 생성 (시딩) 함수
   async function seedSystemStudios(userId) {
     try {
-      const studioTemplates = require('./config/studio_templates.json');
+      const studioTemplates = getStudioTemplates();
 
       // 기존 '게임 개발 스튜디오' 명칭이 DB에 있다면 자동 보정 마이그레이션
       await prisma.studio.updateMany({
@@ -2289,13 +2299,13 @@ app.listen(PORT, () => {
       ecoContent = ecoContent.replace('{ name: "90-ai-studio"', newAppString + '    { name: "90-ai-studio"');
       fs.writeFileSync(ecoPath, ecoContent, 'utf8');
 
-      // 라이브 윈도우 환경 쉘 기동 (windowsHide: true 적용하여 도스창 방지)
-      execSync('npm install', { cwd: targetDir, stdio: 'ignore', windowsHide: true });
+      // Execute npm and pm2 commands with parameter array to block shell injection.
+      spawnSync('npm.cmd', ['install'], { cwd: targetDir, stdio: 'ignore', windowsHide: true });
       
       const cleanEnv = Object.assign({}, process.env);
       delete cleanEnv.PORT;
-      execSync(`pm2 start ecosystem.config.js --only "${appName}"`, { cwd: 'c:/seoha', env: cleanEnv, stdio: 'ignore', windowsHide: true });
-      execSync('pm2 save', { stdio: 'ignore', windowsHide: true });
+      spawnSync('pm2.cmd', ['start', 'ecosystem.config.js', '--only', appName], { cwd: 'c:/seoha', env: cleanEnv, stdio: 'ignore', windowsHide: true });
+      spawnSync('pm2.cmd', ['save'], { stdio: 'ignore', windowsHide: true });
 
       // DB 상태 업데이트
       await prisma.studioArtifact.update({
@@ -2342,9 +2352,9 @@ app.listen(PORT, () => {
           ecoContent = ecoContent.replace(matchedBlock, '');
           fs.writeFileSync(ecoPath, ecoContent, 'utf8');
 
-          // PM2 제거 쉘 가동 (windowsHide: true 적용하여 도스창 방지)
-          execSync(`pm2 delete "${appName}"`, { cwd: 'c:/seoha', stdio: 'ignore', windowsHide: true });
-          execSync('pm2 save', { stdio: 'ignore', windowsHide: true });
+          // Execute pm2 command with parameter array to block shell injection.
+          spawnSync('pm2.cmd', ['delete', appName], { cwd: 'c:/seoha', stdio: 'ignore', windowsHide: true });
+          spawnSync('pm2.cmd', ['save'], { stdio: 'ignore', windowsHide: true });
 
           // 로컬 node 디렉토리 제거
           const targetDir = `c:/seoha/${appName}`;
@@ -2376,8 +2386,7 @@ app.listen(PORT, () => {
   // 로컬 독립 스튜디오 초기화용 리소스 및 템플릿 서빙 API
   aistudioRouter.get('/templates-resources', (req, res) => {
     try {
-      const TEMPLATES_PATH = path.join(__dirname, 'config', 'studio_templates.json');
-      const templates = JSON.parse(fs.readFileSync(TEMPLATES_PATH, 'utf8'));
+      const templates = getStudioTemplates();
       const officeTemplate = templates['office'] || {};
       
       // 기본 8인 사무직 에이전트 정적 웰컴 멘트 매핑
