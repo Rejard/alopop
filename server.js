@@ -46,6 +46,10 @@ const internalApiSecret = process.env.INTERNAL_API_SECRET || process.env.SESSION
 if (!internalApiSecret) {
   console.error('INTERNAL_API_SECRET, SESSION_SECRET, or ENCRYPTION_KEY must be set for sponsor background checks.');
 }
+if (process.env.NODE_ENV === 'production' && internalApiSecret === 'ALO_POP_INTERNAL_SECRET_DEFAULT') {
+  console.error('CRITICAL SECURITY ERROR: Default INTERNAL_API_SECRET must not be used in production.');
+  process.exit(1);
+}
 const SESSION_COOKIE_NAME = 'alo_session';
 
 let cachedTemplates = null;
