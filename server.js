@@ -1065,15 +1065,28 @@ app.prepare().then(() => {
       if (reqPath.endsWith('.html') || reqPath === '/' || !path.extname(reqPath)) {
         const fileName = (reqPath === '/' || reqPath === '') ? 'index.html' : (reqPath.endsWith('.html') ? reqPath : reqPath + '.html');
         const filePath = path.join(outputDir, fileName);
-        if (fs.existsSync(filePath)) {
-          let html = fs.readFileSync(filePath, 'utf8');
-          if (html.includes('</body>')) {
-            const injectScript = '\n<script src="/game-proxy/3000/shared/theme-manager.js"></script>\n';
-            html = html.replace('</body>', injectScript + '</body>');
+        
+        fs.stat(filePath, (err, stats) => {
+          if (err || !stats.isFile()) {
+            return next();
           }
-          res.setHeader('Content-Type', 'text/html; charset=UTF-8');
-          return res.send(html);
-        }
+          
+          fs.readFile(filePath, 'utf8', (readErr, html) => {
+            if (readErr) {
+              console.error('[Dynamic HTML Read Error]:', readErr);
+              return next();
+            }
+            
+            let finalHtml = html;
+            if (finalHtml.includes('</body>')) {
+              const injectScript = '\n<script src="/game-proxy/3000/shared/theme-manager.js"></script>\n';
+              finalHtml = finalHtml.replace('</body>', injectScript + '</body>');
+            }
+            res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+            return res.send(finalHtml);
+          });
+        });
+        return;
       }
     } catch (e) {
       console.error('[Dynamic HTML Injection Error]:', e);
