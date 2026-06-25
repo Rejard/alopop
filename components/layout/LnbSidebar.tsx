@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { MessageSquare, Users, Wallet, Gamepad2, Building2, PawPrint, Crown, Bot, HelpCircle, Home as HomeIcon, ShieldPlus, Sprout, User as UserIcon } from "lucide-react";
 
 export const PET365CARE_LNB_ITEMS = [
@@ -177,12 +178,12 @@ export function LnbSidebar({
         </div>
 
         <div
-          className="w-10 h-10 rounded-lg bg-surface-container-high shadow-ambient border border-outline-variant/30 flex items-center justify-center text-primary font-bold cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
+          className="relative w-10 h-10 rounded-lg bg-surface-container-high shadow-ambient border border-outline-variant/30 flex items-center justify-center text-primary font-bold cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
           title={user?.username || ''}
           onClick={() => { setCurrentTab('friends'); setIsProfileModalOpen(true); }}
         >
           {myProfile?.avatar_url ? (
-            <img src={myProfile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+            <Image src={myProfile.avatar_url} alt="Profile" fill className="object-cover" />
           ) : (
             (myProfile?.username?.charAt(0).toUpperCase() || user?.username?.charAt(0).toUpperCase()) || '?'
           )}

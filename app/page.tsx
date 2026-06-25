@@ -7,8 +7,15 @@ import QRCode from 'react-qr-code';
 import { ChatMessage } from '@/lib/db';
 import { useChatStore } from '@/store/useChatStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { SettingsModal } from '@/components/SettingsModal';
-import { AiStudioPanel } from '@/components/AiStudioPanel';
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
+
+const SettingsModal = dynamic(() => import('@/components/SettingsModal').then(mod => mod.SettingsModal), { ssr: false });
+const AiStudioPanel = dynamic(() => import('@/components/AiStudioPanel').then(mod => mod.AiStudioPanel), { ssr: false });
+
+import { AnnouncementTicker } from '@/components/layout/AnnouncementTicker';
+import { EventTicker } from '@/components/layout/EventTicker';
+
 import { AiModelSelector } from '@/components/AiModelSelector';
 import { v4 as uuidv4 } from 'uuid';
 import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
@@ -131,39 +138,15 @@ export default function Home() {
 
   // 글로벌 서버 공지사항 상태 및 롤링 인덱스
   const [serverAnnouncements, setServerAnnouncements] = useState<any[]>([]);
-  const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
 
   // 공지사항 상세 모달 상태 및 스와이프 제어
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<any>(null);
-  const announceTouchStartXRef = useRef(0);
-  const announceTouchEndXRef = useRef(0);
   const [globalAnnounceDurationMs, setGlobalAnnounceDurationMs] = useState(4000);
-
-  // 공지사항 자동 롤링 (글로벌 설정된 시간 주기)
-  useEffect(() => {
-    if (serverAnnouncements.length <= 1) return;
-
-    const timeout = setTimeout(() => {
-      setCurrentAnnounceIndex(prev => (prev + 1) % serverAnnouncements.length);
-    }, globalAnnounceDurationMs);
-
-    return () => clearTimeout(timeout);
-  }, [serverAnnouncements, currentAnnounceIndex]);
 
   // 글로벌 서버 이벤트 상태 및 롤링 인덱스
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
   const [exhaustedFreeEvents, setExhaustedFreeEvents] = useState<Record<string, boolean>>({});
-  const [currentEventIndex, setCurrentEventIndex] = useState(0);
-
-  // 이벤트 롤링
-  useEffect(() => {
-    if (activeEvents.length <= 1) return;
-    const timeout = setTimeout(() => {
-      setCurrentEventIndex(prev => (prev + 1) % activeEvents.length);
-    }, globalAnnounceDurationMs);
-    return () => clearTimeout(timeout);
-  }, [activeEvents, currentEventIndex, globalAnnounceDurationMs]);
 
   // 친구 추가 모달 관련 상태
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
@@ -2004,7 +1987,7 @@ export default function Home() {
       if (res.ok && data.success && data.avatarUrl) {
         if (data.avatarUrl.startsWith('http')) {
           // 브라우저 캐시에 Preload 될 때까지 대기
-          const img = new Image();
+          const img = new window.Image();
           img.src = data.avatarUrl;
           img.onload = () => {
             setAiAvatarUrl(data.avatarUrl);
@@ -2833,25 +2816,7 @@ export default function Home() {
           </div>
 
           {/* 활성 이벤트 인디케이터 (중앙 여백 flex-1 활용) */}
-          {activeEvents.length > 0 && !currentRoom && (
-            <div className="flex-1 mx-2 sm:mx-4 flex items-center h-full pointer-events-auto min-w-[100px]">
-              <div className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 flex items-center gap-1.5 sm:gap-2 overflow-hidden shadow-sm hover:bg-surface-container-high transition-colors max-w-md w-full border-dashed border-emerald-500/30">
-                <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold shrink-0 whitespace-nowrap">
-                  🎁 이벤트
-                </span>
-                <div className="flex-1 flex flex-col justify-center animate-in fade-in slide-in-from-bottom-2 duration-500 overflow-hidden" key={`event-${currentEventIndex}`}>
-                  <div className="text-[10px] sm:text-xs font-bold text-zinc-300 truncate cursor-help" title={activeEvents[currentEventIndex]?.description}>
-                    {activeEvents[currentEventIndex]?.title}
-                  </div>
-                  <div className="text-[8px] sm:text-[9px] text-emerald-500/70 truncate font-semibold">
-                    {activeEvents[currentEventIndex]?.startDate ? `${new Date(activeEvents[currentEventIndex].startDate).getMonth() + 1}/${new Date(activeEvents[currentEventIndex].startDate).getDate()}` : '상시'}
-                    {' ~ '}
-                    {activeEvents[currentEventIndex]?.endDate ? `${new Date(activeEvents[currentEventIndex].endDate).getMonth() + 1}/${new Date(activeEvents[currentEventIndex].endDate).getDate()}` : '종료 시까지'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <EventTicker activeEvents={activeEvents} globalAnnounceDurationMs={globalAnnounceDurationMs} />
 
           <div className="flex items-center gap-3">
             {currentRoom && (
@@ -2961,61 +2926,12 @@ export default function Home() {
             <div className={`alo-content-panel ${currentTab === 'pet365care' || currentTab === 'aistudio' ? 'alo-content-panel-plain' : ''} flex-1 flex flex-col bg-surface-container overflow-y-auto`} style={{ scrollbarWidth: 'none' }}>
 
               {/* 글로벌 서버 점검 및 공지사항 배너 (항상 렌더링, 롤링) */}
-              {serverAnnouncements.length > 0 && (
-                <div className="flex flex-col border-b border-primary/20 shrink-0 overflow-hidden relative" style={{ minHeight: '48px' }}>
-                  {(() => {
-                    const ann = serverAnnouncements[currentAnnounceIndex];
-                    if (!ann) return null;
-                    return (
-                      <div
-                        key={ann.id}
-                        className="absolute inset-0 bg-gradient-to-r from-primary/10 via-surface-container-high to-secondary/10 pt-2 pb-3 px-4 flex items-center gap-3 animate-in fade-in zoom-in-95 duration-500 cursor-pointer hover:bg-surface-variant/30 transition-colors"
-                        onTouchStart={(e) => {
-                          announceTouchStartXRef.current = e.touches[0].clientX;
-                        }}
-                        onTouchEnd={(e) => {
-                          announceTouchEndXRef.current = e.changedTouches[0].clientX;
-                          const diff = announceTouchStartXRef.current - announceTouchEndXRef.current;
-                          if (diff > 50) {
-                            setCurrentAnnounceIndex(prev => (prev + 1) % serverAnnouncements.length);
-                          } else if (diff < -50) {
-                            setCurrentAnnounceIndex(prev => (prev - 1 + serverAnnouncements.length) % serverAnnouncements.length);
-                          }
-                        }}
-                        onClick={() => {
-                          if (Math.abs(announceTouchStartXRef.current - announceTouchEndXRef.current) < 10) {
-                            setSelectedAnnouncement(ann);
-                            setIsAnnouncementModalOpen(true);
-                          }
-                        }}
-                      >
-                        <span className="bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded shadow-sm text-[10px] font-bold shrink-0">공지</span>
-                        <div className="text-sm font-semibold text-zinc-100 flex-1 truncate flex items-center gap-2">
-                          <span className="text-secondary/90 tracking-tight truncate">{ann.title}</span>
-                          {ann.content && (
-                            <span className="text-xs text-on-surface-variant font-normal whitespace-pre-wrap truncate hidden sm:block pointer-events-none">- {ann.content}</span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-zinc-500 bg-surface-variant/30 px-1.5 py-0.5 rounded-full shrink-0 relative z-10">
-                          {currentAnnounceIndex + 1} / {serverAnnouncements.length}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* 하단 페이지네이션 닷 (Dots) */}
-                  {serverAnnouncements.length > 1 && (
-                    <div className="absolute bottom-1 left-0 right-0 flex justify-center items-center gap-1.5 pointer-events-none">
-                      {serverAnnouncements.map((_, idx) => (
-                        <div
-                          key={idx}
-                          className={`h-1.5 rounded-full shadow-sm transition-all duration-300 ${idx === currentAnnounceIndex ? 'w-4 bg-primary' : 'w-1.5 bg-zinc-600/60'}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <AnnouncementTicker
+                serverAnnouncements={serverAnnouncements}
+                globalAnnounceDurationMs={globalAnnounceDurationMs}
+                setSelectedAnnouncement={setSelectedAnnouncement}
+                setIsAnnouncementModalOpen={setIsAnnouncementModalOpen}
+              />
 
               {currentTab === 'chats' && (
                 <div className="p-4 space-y-5">
@@ -3055,10 +2971,10 @@ export default function Home() {
                               const firstChar = [...roomDisplayName][0] || '?';
                               return (
                             <div data-chat-room-avatar-wrap className="relative w-12 h-12 shrink-0">
-                              <div data-chat-room-avatar-clip className="w-full h-full rounded-lg bg-surface-container-high flex items-center justify-center text-primary shadow-inner overflow-hidden">
+                              <div data-chat-room-avatar-clip className="relative w-full h-full rounded-lg bg-surface-container-high flex items-center justify-center text-primary shadow-inner overflow-hidden">
                                 {memberAvatar ? (
                                   <>
-                                    <img src={memberAvatar} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; el.parentElement!.querySelector('[data-fallback]')!.classList.remove('hidden'); }} />
+                                    <Image src={memberAvatar} alt="" fill className="object-cover" onError={(e) => { const el = e.currentTarget; el.style.opacity = '0'; const parent = el.parentElement; if (parent) { const fb = parent.querySelector('[data-fallback]'); if (fb) fb.classList.remove('hidden'); } }} />
                                     <span data-fallback="" className="text-xl hidden">{firstChar}</span>
                                   </>
                                 ) : (
@@ -3195,9 +3111,9 @@ export default function Home() {
                     onClick={() => setIsProfileModalOpen(true)}
                     className="p-4 bg-surface-container-lowest border border-outline-variant/15 hover:border-outline-variant/30 rounded-[16px] shadow-inner cursor-pointer flex items-center gap-4 group transition-colors"
                   >
-                    <div className="w-14 h-14 rounded-xl bg-surface-container border border-outline-variant/30 group-hover:border-primary/50 flex items-center justify-center text-primary font-bold overflow-hidden shadow-ambient text-xl shrink-0 transition-colors">
+                    <div className="relative w-14 h-14 rounded-xl bg-surface-container border border-outline-variant/30 group-hover:border-primary/50 flex items-center justify-center text-primary font-bold overflow-hidden shadow-ambient text-xl shrink-0 transition-colors">
                       {myProfile?.avatar_url ? (
-                        <img src={myProfile.avatar_url} alt="My Profile" className="w-full h-full object-cover" />
+                        <Image src={myProfile.avatar_url} alt="My Profile" fill className="object-cover" />
                       ) : (
                         myProfile?.username?.charAt(0).toUpperCase() || user.username.charAt(0).toUpperCase()
                       )}
@@ -3253,7 +3169,7 @@ export default function Home() {
                               }}
                             >
                               {friend.avatar_url ? (
-                                <img src={friend.avatar_url} alt={friend.username} className="w-full h-full object-cover rounded-xl border-[1.5px] border-purple-900/60" />
+                                <Image src={friend.avatar_url} alt={friend.username} fill className="object-cover rounded-xl border-[1.5px] border-purple-900/60" />
                               ) : (
                                 <div className="w-full h-full rounded-xl bg-surface-container border-[1.5px] border-purple-900/60 flex items-center justify-center text-secondary">
                                   {friend.username.charAt(0).toUpperCase()}
@@ -3478,7 +3394,9 @@ export default function Home() {
                     </span>
                     <button onClick={() => setClawCanvasData(null)} className="text-zinc-500 hover:text-white text-xs">✕</button>
                   </div>
-                  <img src={clawCanvasData} alt="OpenClaw Real-time Screen" className="w-full h-auto rounded border border-zinc-700 bg-black" />
+                  <div className="relative w-full aspect-video rounded border border-zinc-700 bg-black overflow-hidden">
+                    <Image src={clawCanvasData} alt="OpenClaw Real-time Screen" fill className="object-contain" />
+                  </div>
                 </div>
               )}
               <div className="flex justify-center mb-6 mt-2">
@@ -3601,7 +3519,7 @@ export default function Home() {
                           className="relative rounded-xl overflow-hidden shadow-sm border border-black/10 bg-black/5 flex justify-center cursor-pointer hover:opacity-90 transition-opacity"
                           onClick={() => setSelectedMedia({ url: msg.fileUrl!, type: 'IMAGE' })}
                         >
-                          <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-contain rounded-xl" />
+                          <Image src={msg.fileUrl} alt="attachment" width={500} height={300} className="w-auto h-auto max-h-60 object-contain rounded-xl" />
                         </div>
                       ) : msg.messageType === 'VIDEO' ? (
                         <div
@@ -3698,9 +3616,9 @@ export default function Home() {
                             const fallbackName = currentRoom?.name || msg.senderName || '?';
                             const firstChar = [...fallbackName][0] || '?';
                             return (
-                              <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-sm font-bold shrink-0 shadow-inner border border-outline-variant/15 text-secondary overflow-hidden">
+                              <div className="relative w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-sm font-bold shrink-0 shadow-inner border border-outline-variant/15 text-secondary overflow-hidden">
                                 {avatarUrl ? (
-                                  <img src={avatarUrl} alt="profile" className="w-full h-full object-cover" />
+                                  <Image src={avatarUrl} alt="profile" fill className="object-cover" />
                                 ) : (
                                   <span className="text-lg">{firstChar}</span>
                                 )}
@@ -3896,7 +3814,7 @@ export default function Home() {
                           >
                             <div className="flex items-center gap-2">
                               {member.user.avatar_url ? (
-                                <img src={member.user.avatar_url} alt={member.user.username} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                                <Image src={member.user.avatar_url} alt={member.user.username} width={32} height={32} className="rounded-full object-cover shrink-0" />
                               ) : (
                                 <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-semibold text-zinc-200 shrink-0">
                                   {member.user.username.charAt(0).toUpperCase()}
@@ -4003,9 +3921,9 @@ export default function Home() {
 
               <div className="flex flex-col items-center text-center mt-4">
                 <div className="relative group w-24 h-24 mb-4">
-                  <div className="w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
+                  <div className="relative w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
                     {myProfile?.avatar_url ? (
-                      <img src={myProfile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                      <Image src={myProfile.avatar_url} alt="Avatar" fill className="object-cover" />
                     ) : (
                       myProfile?.username?.charAt(0).toUpperCase() || user?.username.charAt(0).toUpperCase()
                     )}
@@ -4066,9 +3984,9 @@ export default function Home() {
 
               <div className="flex flex-col items-center text-center mt-4">
                 <div className="relative w-24 h-24 mb-4">
-                  <div className="w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
+                  <div className="relative w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
                     {selectedFriendProfile.avatar_url ? (
-                      <img src={selectedFriendProfile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                      <Image src={selectedFriendProfile.avatar_url} alt="Avatar" fill className="object-cover" />
                     ) : (
                       selectedFriendProfile.username.charAt(0).toUpperCase()
                     )}
@@ -4244,9 +4162,9 @@ export default function Home() {
                   </div>
 
                   <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg mt-2 flex items-center justify-between gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
+                    <div className="relative w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
                       {aiAvatarUrl ? (
-                        <img src={aiAvatarUrl} alt="Preview Avatar" className="w-full h-full object-cover" />
+                        <Image src={aiAvatarUrl} alt="Preview Avatar" fill className="object-cover" />
                       ) : (
                         <Bot className="text-zinc-500" size={24} />
                       )}
@@ -4439,9 +4357,9 @@ export default function Home() {
                       )}
 
                       <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg mt-4 flex items-center justify-between gap-4 mb-4">
-                        <div className="w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
+                        <div className="relative w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
                           {aiAvatarUrl ? (
-                            <img src={aiAvatarUrl} alt="Preview Avatar" className="w-full h-full object-cover" />
+                            <Image src={aiAvatarUrl} alt="Preview Avatar" fill className="object-cover" />
                           ) : (
                             <Bot className="text-zinc-500" size={24} />
                           )}
@@ -4508,9 +4426,9 @@ export default function Home() {
             >
               <X size={28} />
             </button>
-            <div className="w-full h-full max-w-5xl max-h-screen flex items-center justify-center p-2 sm:p-8" onClick={(e) => e.stopPropagation()}>
+            <div className="relative w-full h-full max-w-5xl max-h-screen flex items-center justify-center p-2 sm:p-8" onClick={(e) => e.stopPropagation()}>
               {selectedMedia.type === 'IMAGE' ? (
-                <img src={selectedMedia.url} alt="Full screen media" className="max-w-full max-h-full object-contain rounded-sm select-none" />
+                <Image src={selectedMedia.url} alt="Full screen media" fill className="object-contain rounded-sm select-none" />
               ) : (
                 <video src={selectedMedia.url} controls autoPlay playsInline className="max-w-full max-h-full object-contain rounded-sm outline-none shadow-2xl" />
               )}

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import sharp from 'sharp';
 import { requireCurrentUser } from '@/lib/auth';
 import { logUserActivity } from '@/lib/auditLogger';
 import { checkRateLimit } from '@/lib/rate-limit';
@@ -67,15 +68,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'File is too large' }, { status: 400 });
     }
 
-    const safeExt = ALLOWED_UPLOAD_TYPES.get(file.type);
+    let safeExt = ALLOWED_UPLOAD_TYPES.get(file.type);
     if (!safeExt) {
       return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    let buffer = Buffer.from(await file.arrayBuffer());
     if (!isValidMagicNumber(buffer, file.type)) {
       return NextResponse.json({ error: 'Invalid or corrupted file content' }, { status: 400 });
     }
+
+    // Apply sharp resizing & WebP compression for standard images (excluding gif)
+    const isStandardImage = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp';
+    if (isStandardImage) {
+      try {
+        const compressed = await sharp(buffer)
+          .resize({
+            width: 1080,
+            withoutEnlargement: true,
+            fit: 'inside',
+          })
+          .webp({ quality: 80 })
+          .toBuffer();
+        buffer = Buffer.from(compressed);
+        safeExt = '.webp';
+      } catch (err) {
+        console.error('Image compression failed, using original buffer:', err);
+      }
+    }
+
     const uniqueFilename = `chat_${crypto.randomUUID()}${safeExt}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
 
@@ -93,7 +114,7 @@ export async function POST(request: Request) {
       userId: currentUser.id,
       activityType: 'FILE_UPLOAD',
       status: 'SUCCESS',
-      metadata: { size: file.size, type },
+      metadata: { size: buffer.length, type },
     });
 
     return NextResponse.json({

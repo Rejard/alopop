@@ -219,7 +219,10 @@ app.prepare().then(() => {
             return Reflect.apply(target.set, target, arguments);
           };
         }
-        const val = Reflect.get(target, prop, receiver);
+        if (prop === 'size') {
+          return target.size;
+        }
+        const val = Reflect.get(target, prop, target);
         return typeof val === 'function' ? val.bind(target) : val;
       }
     };
@@ -677,6 +680,26 @@ app.prepare().then(() => {
       console.error('Failed to send push completely:', e);
     }
   }
+
+  // 헬스체크 엔드포인트 (SQLite DB 핑 테스트 포함)
+  expressApp.get('/api/health', async (req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return res.status(200).json({
+        status: 'UP',
+        database: 'CONNECTED',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('[Healthcheck Failed]:', error);
+      return res.status(500).json({
+        status: 'DOWN',
+        database: 'DISCONNECTED',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
 
   // 세션 쿠키 인증 및 경로이탈 검증을 수반한 파일 안전 서빙 엔드포인트
   expressApp.get('/uploads/:fileName', (req, res) => {
@@ -1329,30 +1352,40 @@ app.prepare().then(() => {
   });
   expressApp.use('/output', express.static(outputDir));
 
-  // AI 스튜디오 전용 Gemini API Key 결정 헬퍼 함수
   async function getStudioGeminiKey(userId) {
+    if (userId === 'SYSTEM_ADMIN') return process.env.GEMINI_API_KEY;
+
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
     
-    // 1순위: 활성화된 무료 AI 이벤트 확인
+    // 1순위: 활성화된 무료 AI 이벤트 확인 (N+1 최적화 적용)
     try {
       const activeEvents = await prisma.event.findMany({
         where: { isActive: true, eventType: 'FREE_AI' }
       });
-      for (const event of activeEvents) {
-        if (event.eventApiKey) {
-          const usage = await prisma.userEventUsage.findUnique({
-            where: { userId_eventId_usageDate: { userId, eventId: event.id, usageDate: todayStr } }
-          });
-          const currentCount = usage ? usage.count : 0;
-          const limit = event.dailyLimit || 30;
-          if (currentCount < limit) {
-            await prisma.userEventUsage.upsert({
-              where: { userId_eventId_usageDate: { userId, eventId: event.id, usageDate: todayStr } },
-              create: { userId, eventId: event.id, usageDate: todayStr, count: 1 },
-              update: { count: { increment: 1 } }
-            });
-            console.log(`[AI Studio Key] 1순위 적용: 무료 AI 이벤트 (${currentCount + 1}/${limit}회)`);
-            return event.eventApiKey;
+      if (activeEvents.length > 0) {
+        const eventIds = activeEvents.map(e => e.id);
+        const usages = await prisma.userEventUsage.findMany({
+          where: {
+            userId,
+            eventId: { in: eventIds },
+            usageDate: todayStr
+          }
+        });
+        const usageMap = new Map(usages.map(u => [u.eventId, u.count]));
+
+        for (const event of activeEvents) {
+          if (event.eventApiKey) {
+            const currentCount = usageMap.get(event.id) || 0;
+            const limit = event.dailyLimit || 30;
+            if (currentCount < limit) {
+              await prisma.userEventUsage.upsert({
+                where: { userId_eventId_usageDate: { userId, eventId: event.id, usageDate: todayStr } },
+                create: { userId, eventId: event.id, usageDate: todayStr, count: 1 },
+                update: { count: { increment: 1 } }
+              });
+              console.log(`[AI Studio Key] 1순위 적용: 무료 AI 이벤트 (${currentCount + 1}/${limit}회)`);
+              return event.eventApiKey;
+            }
           }
         }
       }
