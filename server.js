@@ -1268,20 +1268,22 @@ app.prepare().then(() => {
       if (systemGeminiKey) {
         const COST = 10;
         if (user && user.walletBalance >= COST) {
-          await prisma.user.update({
-            where: { id: userId },
+          const updateResult = await prisma.user.updateMany({
+            where: { id: userId, walletBalance: { gte: COST } },
             data: { walletBalance: { decrement: COST } }
           });
-          await prisma.transaction.create({
-            data: {
-              senderId: userId,
-              receiverId: 'system',
-              amount: COST,
-              reason: 'AI 스튜디오 에이전트 구동 요금 차감'
-            }
-          });
-          console.log(`[AI Studio Key] 3순위 적용: 시스템 글로벌 Key 사용 및 10코인 차감`);
-          return systemGeminiKey;
+          if (updateResult.count > 0) {
+            await prisma.transaction.create({
+              data: {
+                senderId: userId,
+                receiverId: 'system',
+                amount: COST,
+                reason: 'AI 스튜디오 에이전트 구동 요금 차감'
+              }
+            });
+            console.log(`[AI Studio Key] 3순위 적용: 시스템 글로벌 Key 사용 및 10코인 차감`);
+            return systemGeminiKey;
+          }
         }
       }
     } catch (e) {
