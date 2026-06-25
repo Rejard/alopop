@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import { requireCurrentUser } from '@/lib/auth';
 import { logUserActivity } from '@/lib/auditLogger';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = new Map([
@@ -50,6 +52,10 @@ export async function POST(request: Request) {
     if (!currentUser) return response;
     currentUsr = currentUser;
 
+    if (!checkRateLimit(`upload:${currentUser.id}`, 10, 60000)) {
+      return NextResponse.json({ error: 'Too many uploads. Please try again later.' }, { status: 429 });
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
 
@@ -70,7 +76,7 @@ export async function POST(request: Request) {
     if (!isValidMagicNumber(buffer, file.type)) {
       return NextResponse.json({ error: 'Invalid or corrupted file content' }, { status: 400 });
     }
-    const uniqueFilename = `chat_${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}${safeExt}`;
+    const uniqueFilename = `chat_${crypto.randomUUID()}${safeExt}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
 
     await fs.mkdir(uploadDir, { recursive: true });

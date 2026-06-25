@@ -623,8 +623,30 @@ app.prepare().then(() => {
     }
   }
 
-  // ?고????뚯씪(?꾨줈???ъ쭊 ?? 利됱떆 ?쒓났???꾪放 public/uploads 寃쎈줈瑜?express static?쇰줈 留ㅽ븨
-  expressApp.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+  // 세션 쿠키 인증 및 경로이탈 검증을 수반한 파일 안전 서빙 엔드포인트
+  expressApp.get('/uploads/:fileName', (req, res) => {
+    const cookies = parseCookieHeader(req.headers.cookie);
+    const payload = verifySessionToken(cookies.get(SESSION_COOKIE_NAME));
+    if (!payload) {
+      return res.status(401).send('Unauthorized');
+    }
+
+    const fileName = req.params.fileName;
+    const uploadDir = path.join(__dirname, 'public', 'uploads');
+    const filePath = path.join(uploadDir, fileName);
+    const resolvedPath = path.resolve(filePath);
+
+    if (!resolvedPath.startsWith(path.resolve(uploadDir))) {
+      console.warn(`[Path Traversal Prevented in upload serving]: Unauthorized access to ${resolvedPath}`);
+      return res.status(403).send('Forbidden');
+    }
+
+    if (fs.existsSync(resolvedPath)) {
+      return res.sendFile(resolvedPath);
+    }
+    res.status(404).send('File not found');
+  });
+
   expressApp.use('/repoart', express.static(path.join(__dirname, 'public', 'repoart')));
   expressApp.use(express.static(path.join(__dirname, 'public')));
 
