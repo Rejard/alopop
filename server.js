@@ -8,8 +8,19 @@ const next = require('next');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawnSync, spawn } = require('child_process');
 const { loadEnvConfig } = require('@next/env');
+
+function spawnAsync(cmd, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { ...options, windowsHide: true });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Command ${cmd} exited with code ${code}`));
+    });
+    child.on('error', (err) => reject(err));
+  });
+}
 
 
 loadEnvConfig(process.cwd());
@@ -2367,12 +2378,12 @@ app.listen(PORT, () => {
       fs.writeFileSync(ecoPath, ecoContent, 'utf8');
 
       // Execute npm and pm2 commands with parameter array to block shell injection.
-      spawnSync('npm.cmd', ['install'], { cwd: targetDir, stdio: 'ignore', windowsHide: true });
+      await spawnAsync('npm.cmd', ['install'], { cwd: targetDir, stdio: 'ignore' });
       
       const cleanEnv = Object.assign({}, process.env);
       delete cleanEnv.PORT;
-      spawnSync('pm2.cmd', ['start', 'ecosystem.config.js', '--only', appName], { cwd: 'c:/seoha', env: cleanEnv, stdio: 'ignore', windowsHide: true });
-      spawnSync('pm2.cmd', ['save'], { stdio: 'ignore', windowsHide: true });
+      await spawnAsync('pm2.cmd', ['start', 'ecosystem.config.js', '--only', appName], { cwd: 'c:/seoha', env: cleanEnv, stdio: 'ignore' });
+      await spawnAsync('pm2.cmd', ['save'], { stdio: 'ignore' });
 
       // DB 상태 업데이트
       await prisma.studioArtifact.update({
@@ -2420,8 +2431,8 @@ app.listen(PORT, () => {
           fs.writeFileSync(ecoPath, ecoContent, 'utf8');
 
           // Execute pm2 command with parameter array to block shell injection.
-          spawnSync('pm2.cmd', ['delete', appName], { cwd: 'c:/seoha', stdio: 'ignore', windowsHide: true });
-          spawnSync('pm2.cmd', ['save'], { stdio: 'ignore', windowsHide: true });
+          await spawnAsync('pm2.cmd', ['delete', appName], { cwd: 'c:/seoha', stdio: 'ignore' });
+          await spawnAsync('pm2.cmd', ['save'], { stdio: 'ignore' });
 
           // 로컬 node 디렉토리 제거
           const targetDir = `c:/seoha/${appName}`;
