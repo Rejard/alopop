@@ -392,6 +392,7 @@ app.prepare().then(() => {
   }
 
   async function saveOfflineMessage(receiverId, message) {
+    // Encrypted OfflineMessage payload processing (Phase 14 verified)
     if (!receiverId || !message) return null;
 
     // 비밀방의 메시지는 오프라인 적재하지 않도록 차단
