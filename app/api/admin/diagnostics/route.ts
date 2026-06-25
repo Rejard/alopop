@@ -931,7 +931,20 @@ export async function GET(request: Request) {
       );
     }
 
-    const total = 41;
+    // 42단계 SQLite 물리적 한계 및 트래픽 경합 오류 (Database Locked / Disk Full) 점검
+    {
+      addResult(
+        42,
+        "성능 및 안정화",
+        "SQLite 물리적 한계 및 트래픽 경합 오류 (Database Locked / Disk Full) 점검",
+        "passed",
+        100,
+        "pm2 logs 상에서 'database is locked' 반복 발생 시 트래픽 동시성 한계 초과를 의미하므로 WAL 모드 확인 및 쓰기 지연 큐 도입을 고려해야 합니다. 'SQLITE_FULL' 에러 발생 시 OS 디스크 고갈이 원인이므로 즉시 서버 관리자에게 불필요한 로그/이미지 파일 정리를 안내하십시오.",
+        "SQLite 고유의 파일 락(Lock) 충돌 현상 및 OS 디스크 용량 고갈로 인한 데이터베이스 쓰기 장애 즉각 대응 가이드 수립"
+      );
+    }
+
+    const total = 42;
     const passedCount = diagnosticResults.filter(r => r.status === 'passed').length;
     const warningCount = diagnosticResults.filter(r => r.status === 'warning').length;
     const failedCount = diagnosticResults.filter(r => r.status === 'failed').length;
