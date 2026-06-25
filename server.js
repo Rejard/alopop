@@ -202,6 +202,17 @@ app.prepare().then(() => {
 
   setInterval(flushStudioLogs, 30 * 1000);
 
+  // 1시간 주기 만료 메시지(TTL) 파기 백그라운드 배치
+  setInterval(async () => {
+    console.log('[TTL Batch] Running expired messages cleanup...');
+    try {
+      await deleteExpiredOfflineMessages();
+      console.log('[TTL Batch] Expired messages cleanup completed.');
+    } catch (error) {
+      console.error('[TTL Batch] Error cleaning up expired messages:', error);
+    }
+  }, 60 * 60 * 1000);
+
   // createOfflineNotice is no longer used since we serialize the whole message
 
   function parseOfflineNotice(payload) {
@@ -335,7 +346,6 @@ app.prepare().then(() => {
     const userId = socket.userId;
     if (!userId) return;
     try {
-      await deleteExpiredOfflineMessages();
       const enhancedOfflineQueue = await hasEnhancedOfflineQueue();
       const records = enhancedOfflineQueue
         ? await prisma.$queryRawUnsafe(
