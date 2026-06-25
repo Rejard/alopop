@@ -22,6 +22,16 @@ interface DiagnosticSummary {
   status: 'safe' | 'warning' | 'danger';
 }
 
+const categories = [
+  { id: 'socket', name: '실시간 소켓', icon: '📡' },
+  { id: 'api', name: 'Express API', icon: '🌐' },
+  { id: 'guard', name: '안정성 가드', icon: '🛡️' },
+  { id: 'batch', name: '백그라운드 배치', icon: '⚙️' },
+  { id: 'file', name: '디스크 파일', icon: '💾' },
+  { id: 'coin', name: '코인 제어', icon: '🪙' },
+  { id: 'infra', name: '인프라 리소스', icon: '🖥️' }
+];
+
 export default function DiagnosticsPanel() {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<DiagnosticSummary | null>(null);
@@ -197,118 +207,153 @@ export default function DiagnosticsPanel() {
       </div>
 
       {/* Accordion List */}
-      <h3 className="text-lg font-bold mb-4 text-on-surface-variant flex items-center gap-2">
-        <Gauge size={18} className="text-primary" /> 전체 자가진단 내역 상세 리포트
+      <h3 className="text-lg font-bold mb-6 text-on-surface flex items-center gap-2">
+        <Gauge size={18} className="text-primary" /> 자가진단 상세 리포트 (성격별 그룹화)
       </h3>
 
-      <div className="space-y-3.5 mb-12">
-        {items.map((item) => {
-          const isOpen = expandedStep === item.step;
-          let icon = <ShieldCheck size={18} className="text-emerald-400" />;
-          let badge = (
-            <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-tight">
-              안전
-            </span>
-          );
-          let itemBorder = 'border-outline-variant/20 hover:border-primary/30';
-          let itemBg = 'bg-surface-container-low';
+      <div className="space-y-8 mb-16">
+        {categories.map((cat) => {
+          const catItems = items.filter(item => item.category === cat.name);
+          if (catItems.length === 0) return null;
 
-          if (item.status === 'warning') {
-            icon = <AlertTriangle size={18} className="text-amber-400" />;
-            badge = (
-              <span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-tight">
-                경고
-              </span>
-            );
-            itemBorder = 'border-amber-500/30';
-          } else if (item.status === 'failed') {
-            icon = <XOctagon size={18} className="text-rose-400" />;
-            badge = (
-              <span className="bg-rose-500/15 text-rose-400 border border-rose-500/30 text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-tight animate-pulse">
-                위험
-              </span>
-            );
-            itemBorder = 'border-rose-500/40';
-            itemBg = 'bg-rose-950/10';
-          }
-
-          if (isOpen) {
-            itemBorder = item.status === 'passed' ? 'border-primary/50 ring-1 ring-primary/20' : itemBorder;
+          const hasFailed = catItems.some(i => i.status === 'failed');
+          const hasWarning = catItems.some(i => i.status === 'warning');
+          
+          let catStatusColor = 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5';
+          let catBadgeText = '정상';
+          if (hasFailed) {
+            catStatusColor = 'text-rose-400 border-rose-500/20 bg-rose-500/5';
+            catBadgeText = '조치 필요';
+          } else if (hasWarning) {
+            catStatusColor = 'text-amber-400 border-amber-500/20 bg-amber-500/5';
+            catBadgeText = '보완 권장';
           }
 
           return (
-            <div
-              key={item.step}
-              className={`${itemBg} border ${itemBorder} rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md`}
-            >
-              {/* Header block */}
-              <div
-                onClick={() => toggleExpand(item.step)}
-                className="flex items-center justify-between p-4 cursor-pointer select-none transition-colors hover:bg-surface-variant/20"
-              >
-                <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                  <div className="flex-shrink-0">{icon}</div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider">
-                        {item.category} ({item.step}단계)
-                      </span>
-                      {badge}
-                    </div>
-                    <h4 className="text-sm font-bold text-on-surface mt-0.5 truncate">
-                      {item.name}
-                    </h4>
-                  </div>
+            <div key={cat.id} className="bg-surface-container/30 border border-outline-variant/10 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-outline-variant/10 pb-4 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl">{cat.icon}</span>
+                  <h4 className="text-base font-extrabold text-on-surface">{cat.name}</h4>
+                  <span className="text-xs text-zinc-500 font-medium">({catItems.length}개 항목)</span>
                 </div>
-                <div className="text-on-surface-variant ml-2">
-                  {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </div>
+                <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${catStatusColor}`}>
+                  {catBadgeText}
+                </span>
               </div>
 
-              {/* Expansive panel */}
-              {isOpen && (
-                <div className="border-t border-outline-variant/10 p-5 bg-surface-container text-xs leading-relaxed text-on-surface-variant space-y-4 animate-in slide-in-from-top-2 duration-300">
-                  <div>
-                    <h5 className="font-bold text-zinc-300 mb-1 flex items-center gap-1.5">
-                      <CheckCircle2 size={12} className="text-primary" /> 개선 결과 및 안전 수준
-                    </h5>
-                    <p className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/10 text-[11px] text-zinc-200">
-                      {item.details}
-                    </p>
-                  </div>
+              <div className="space-y-3.5">
+                {catItems.map((item) => {
+                  const isOpen = expandedStep === item.step;
+                  let icon = <ShieldCheck size={18} className="text-emerald-400" />;
+                  let badge = (
+                    <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-tight">
+                      안전
+                    </span>
+                  );
+                  let itemBorder = 'border-outline-variant/20 hover:border-primary/30';
+                  let itemBg = 'bg-surface-container-low';
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <h5 className="font-bold text-zinc-300 mb-1 flex items-center gap-1.5">
-                        <FileCode size={12} className="text-tertiary" /> 실시간 검증 방식
-                      </h5>
-                      <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/10 text-[11px] font-mono text-tertiary">
-                        {item.logic}
-                      </div>
-                    </div>
+                  if (item.status === 'warning') {
+                    icon = <AlertTriangle size={18} className="text-amber-400" />;
+                    badge = (
+                      <span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-tight">
+                        경고
+                      </span>
+                    );
+                    itemBorder = 'border-amber-500/30';
+                  } else if (item.status === 'failed') {
+                    icon = <XOctagon size={18} className="text-rose-400" />;
+                    badge = (
+                      <span className="bg-rose-500/15 text-rose-400 border border-rose-500/30 text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-tight animate-pulse">
+                        위험
+                      </span>
+                    );
+                    itemBorder = 'border-rose-500/40';
+                    itemBg = 'bg-rose-950/10';
+                  }
 
-                    <div>
-                      <h5 className="font-bold text-zinc-300 mb-1">
-                        위험도 통제 등급
-                      </h5>
-                      <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/10 text-[11px]">
-                        자가진단 점수: <span className="font-bold font-mono text-on-surface">{item.score} / 100</span>
-                        <div className="mt-1">
-                          {item.status === 'passed' && (
-                            <span className="text-emerald-400">완전 복구됨: 보안 리스크 0% 실현 완료.</span>
-                          )}
-                          {item.status === 'warning' && (
-                            <span className="text-amber-400">잔존 위험 제어: 인프라 보조 조치 검토 권장.</span>
-                          )}
-                          {item.status === 'failed' && (
-                            <span className="text-rose-400">즉각 조치 필요: 보안 무결성 상실 상태.</span>
-                          )}
+                  if (isOpen) {
+                    itemBorder = item.status === 'passed' ? 'border-primary/50 ring-1 ring-primary/20' : itemBorder;
+                  }
+
+                  return (
+                    <div
+                      key={item.step}
+                      className={`${itemBg} border ${itemBorder} rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md`}
+                    >
+                      {/* Header block */}
+                      <div
+                        onClick={() => toggleExpand(item.step)}
+                        className="flex items-center justify-between p-4 cursor-pointer select-none transition-colors hover:bg-surface-variant/20"
+                      >
+                        <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                          <div className="flex-shrink-0">{icon}</div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider">
+                                {item.category} ({item.step}단계)
+                              </span>
+                              {badge}
+                            </div>
+                            <h4 className="text-sm font-bold text-on-surface mt-0.5 truncate">
+                              {item.name}
+                            </h4>
+                          </div>
+                        </div>
+                        <div className="text-on-surface-variant ml-2">
+                          {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </div>
                       </div>
+
+                      {/* Expansive panel */}
+                      {isOpen && (
+                        <div className="border-t border-outline-variant/10 p-5 bg-surface-container text-xs leading-relaxed text-on-surface-variant space-y-4 animate-in slide-in-from-top-2 duration-300">
+                          <div>
+                            <h5 className="font-bold text-zinc-300 mb-1 flex items-center gap-1.5">
+                              <CheckCircle2 size={12} className="text-primary" /> 개선 결과 및 안전 수준
+                            </h5>
+                            <p className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/10 text-[11px] text-zinc-200">
+                              {item.details}
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <h5 className="font-bold text-zinc-300 mb-1 flex items-center gap-1.5">
+                                <FileCode size={12} className="text-tertiary" /> 실시간 검증 방식
+                              </h5>
+                              <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/10 text-[11px] font-mono text-tertiary">
+                                {item.logic}
+                              </div>
+                            </div>
+
+                            <div>
+                              <h5 className="font-bold text-zinc-300 mb-1">
+                                위험도 통제 등급
+                              </h5>
+                              <div className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/10 text-[11px]">
+                                자가진단 점수: <span className="font-bold font-mono text-on-surface">{item.score} / 100</span>
+                                <div className="mt-1">
+                                  {item.status === 'passed' && (
+                                    <span className="text-emerald-400">완전 복구됨: 보안 리스크 0% 실현 완료.</span>
+                                  )}
+                                  {item.status === 'warning' && (
+                                    <span className="text-amber-400">잔존 위험 제어: 인프라 보조 조치 검토 권장.</span>
+                                  )}
+                                  {item.status === 'failed' && (
+                                    <span className="text-rose-400">즉각 조치 필요: 보안 무결성 상실 상태.</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
           );
         })}
