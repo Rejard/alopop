@@ -197,6 +197,26 @@ app.prepare().then(() => {
     } catch (error) {
       console.error(`[StudioLog Batch] Error flushing logs:`, error);
       global.studioLogBuffer = logs.concat(global.studioLogBuffer);
+      
+      // OOM 방지를 위해 버퍼 크기 제한 (최대 3000개)
+      const MAX_BUFFER_SIZE = 3000;
+      if (global.studioLogBuffer.length > MAX_BUFFER_SIZE) {
+        console.warn(`[StudioLog Batch] Buffer size (${global.studioLogBuffer.length}) exceeded limit. Dumping excess logs to disk.`);
+        try {
+          const excessLogs = global.studioLogBuffer.slice(MAX_BUFFER_SIZE);
+          global.studioLogBuffer = global.studioLogBuffer.slice(0, MAX_BUFFER_SIZE);
+          
+          const logDir = path.join(__dirname, 'logs');
+          if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+          }
+          const backupFilePath = path.join(logDir, 'studio_logs_backup.jsonl');
+          const backupData = excessLogs.map(l => JSON.stringify(l)).join('\n') + '\n';
+          fs.appendFileSync(backupFilePath, backupData, 'utf8');
+        } catch (dumpError) {
+          console.error('[StudioLog Batch] Failed to dump excess logs to disk:', dumpError);
+        }
+      }
     }
   }
 
