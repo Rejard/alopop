@@ -29,7 +29,8 @@ const categories = [
   { id: 'batch', name: '백그라운드 배치', icon: '⚙️' },
   { id: 'file', name: '디스크 파일', icon: '💾' },
   { id: 'coin', name: '코인 제어', icon: '🪙' },
-  { id: 'infra', name: '인프라 리소스', icon: '🖥️' }
+  { id: 'infra', name: '인프라 리소스', icon: '🖥️' },
+  { id: 'perf', name: '성능 및 안정화', icon: '🚀' }
 ];
 
 export default function DiagnosticsPanel() {
