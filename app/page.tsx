@@ -850,15 +850,16 @@ export default function Home() {
     };
   }, [router]);
 
+  const { roomMessages } = useChatStore();
+
   useEffect(() => {
     const fetchLatestData = async () => {
       if (rooms.length === 0 || !user) return;
       const times: Record<string, number> = {};
       const unreads: Record<string, number> = {};
 
-      const { roomMessages: allRoomMsgs } = useChatStore.getState();
       rooms.forEach((r) => {
-        const msgs = allRoomMsgs[r.id] || [];
+        const msgs = roomMessages[r.id] || [];
         if (msgs.length > 0) {
           times[r.id] = Math.max(...msgs.map(m => m.createdAt));
 
@@ -870,7 +871,7 @@ export default function Home() {
       setUnreadCounts(prev => ({ ...prev, ...unreads }));
     };
     fetchLatestData();
-  }, [rooms, roomMemberReadTimes, user?.id]);
+  }, [rooms, roomMessages, roomMemberReadTimes, user?.id]);
 
   const sortedRooms = [...rooms].sort((a, b) => {
     const aTime = latestMessageTimes[a.id] || new Date(a.createdAt || 0).getTime();
@@ -878,8 +879,6 @@ export default function Home() {
     return bTime - aTime;
   });
 
-  // Zustand 상태에서 현재 방 메시지 구독
-  const { roomMessages } = useChatStore();
   const messages = roomMessages[currentRoom?.id || ''] || [];
 
   // AI 통계: 서버 API에서 fetch

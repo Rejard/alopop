@@ -27,9 +27,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const res = await fetch(`/api/messages?roomId=${roomId}&limit=100`);
       if (!res.ok) return;
       const data = await res.json();
-      set(state => ({
-        roomMessages: { ...state.roomMessages, [roomId]: data.messages }
-      }));
+      const serverMsgs: ChatMessage[] = data.messages || [];
+
+      set(state => {
+        const existing = state.roomMessages[roomId] || [];
+        const existingIds = new Set(existing.map(m => m.messageId));
+        const newFromServer = serverMsgs.filter(m => !existingIds.has(m.messageId));
+        const merged = [...existing, ...newFromServer].sort(
+          (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+        );
+        return { roomMessages: { ...state.roomMessages, [roomId]: merged } };
+      });
     } catch (err) {
       console.warn('[Chat] Failed to fetch messages:', err);
     }
