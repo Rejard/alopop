@@ -46,6 +46,7 @@ next-env.d.ts
 vapid.json
 *.bat
 /public/uploads
+/*_제주시-지원사업-사업계획서.html
 config/*key*.json
 config/*secret*.json
 
