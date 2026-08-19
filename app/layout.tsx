@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { PwaRegistry } from "@/components/PwaRegistry";
+import { CommerceAssistant } from "@/components/commerce/CommerceAssistant";
 import "./globals.css";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -61,6 +62,7 @@ export default function RootLayout({
         <PwaRegistry />
         <ConfirmProvider>
           {children}
+          <CommerceAssistant />
         </ConfirmProvider>
       </body>
     </html>
