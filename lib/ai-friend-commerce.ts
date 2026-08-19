@@ -68,16 +68,16 @@ export function decideAiFriendCommerce(
   const hasIntent = commerceIntentKeywords.some((keyword) => cleanConversation.includes(keyword));
   const category = inferCommerceCategory(cleanConversation);
 
-  if (!hasIntent || !category) {
-    return { mode: "none", systemContext: "", offerId: null };
-  }
-
   if (isRestrictedCommerceQuery(cleanConversation)) {
     return {
       mode: "restricted",
-      systemContext: "의료, 금융, 법률처럼 중요한 판단이 필요한 요청에는 상품 광고나 구매 링크를 제시하지 마세요.",
+      systemContext: "의료, 금융, 법률처럼 중요한 판단이 필요한 요청에는 상품명, 복용법, 광고, 구매·결제 링크를 제시하지 마세요. 확정적인 진단이나 효능을 주장하지 말고 필요한 경우 자격 있는 전문가나 긴급 지원을 안내하세요.",
       offerId: null,
     };
+  }
+
+  if (!hasIntent || !category) {
+    return { mode: "none", systemContext: "", offerId: null };
   }
 
   const region = inferRegion(cleanConversation, offers);

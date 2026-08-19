@@ -48,6 +48,9 @@ const categoryKeywords: Record<CommerceCategory, string[]> = {
 
 const restrictedKeywords = [
   "두통",
+  "머리 아파",
+  "머리가 아파",
+  "머리가 아퍼",
   "진통제",
   "약 추천",
   "처방",

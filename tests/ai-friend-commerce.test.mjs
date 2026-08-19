@@ -32,6 +32,11 @@ const restrictedDecision = decideAiFriendCommerce("[민수]: 두통 약 추천�
 assert.equal(restrictedDecision.mode, "restricted");
 assert.equal(restrictedDecision.offerId, null);
 
+const implicitMedicalDecision = decideAiFriendCommerce("[민수]: 머리가 아퍼", offers);
+assert.equal(implicitMedicalDecision.mode, "restricted");
+assert.equal(implicitMedicalDecision.offerId, null);
+assert.match(implicitMedicalDecision.systemContext, /구매·결제 링크/);
+
 const ordinaryDecision = decideAiFriendCommerce("[민수]: 오늘 기분이 좋아", offers);
 assert.equal(ordinaryDecision.mode, "none");
 
