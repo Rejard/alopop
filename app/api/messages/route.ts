@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { decryptMessageContent } from '@/lib/message-crypto';
+import { buildChatMessageHistoryPage } from '@/lib/chat-message-history';
 
 export async function GET(request: Request) {
   try {
@@ -25,6 +26,18 @@ export async function GET(request: Request) {
 
     const membership = await prisma.roomMember.findUnique({
       where: { userId_roomId: { userId: currentUser.id, roomId } },
+      include: {
+        room: {
+          select: {
+            members: {
+              select: {
+                userId: true,
+                user: { select: { username: true } },
+              },
+            },
+          },
+        },
+      },
     });
     if (!membership) {
       return NextResponse.json({ error: 'Not a member of this room' }, { status: 403 });
@@ -40,24 +53,17 @@ export async function GET(request: Request) {
       }),
     });
 
-    let nextCursor: string | null = null;
-    if (messages.length > limit) {
-      const extra = messages.pop()!;
-      nextCursor = extra.id;
-    }
+    const senderNames = new Map(
+      membership.room.members.map((member) => [member.userId, member.user.username]),
+    );
+    const historyPage = buildChatMessageHistoryPage(
+      messages,
+      limit,
+      decryptMessageContent,
+      senderNames,
+    );
 
-    const decrypted = messages.map((msg) => ({
-      id: msg.id,
-      messageId: msg.messageId,
-      roomId: msg.roomId,
-      senderId: msg.senderId,
-      receiverId: msg.receiverId,
-      type: msg.type,
-      content: decryptMessageContent(msg.content),
-      createdAt: msg.createdAt,
-    }));
-
-    return NextResponse.json({ messages: decrypted, nextCursor });
+    return NextResponse.json(historyPage);
   } catch (error) {
     console.error('Messages API error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
