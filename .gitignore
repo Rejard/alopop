@@ -62,7 +62,11 @@ config/*secret*.json
 
 # logs
 *.log
-data/diagnostics.jsonl
+*.jsonl
+*.pid
+*.pid.lock
+/logs/
+/data/diagnostics.jsonl
 
 # debug/test scripts
 get_token.js
@@ -73,13 +77,17 @@ type.ps1
 .antigravitycli/
 /_backups_temp/
 *.bak
-.sync-hospitals-result.json
-chaos_log.txt
+*.tmp
+*.temp
+/.sync-hospitals-result.json
+/chaos_log.txt
+/chaos_status.json
 /public/output/
 /public/repoart/
 /scratch/
+/temp/
+/tmp/
 .worktrees/
-/_backups_temp/
 /scripts/check-active-user.cjs
 /scripts/check-test01.cjs
 /scripts/find-room.cjs
@@ -95,8 +103,6 @@ chaos_log.txt
 /scripts/test-update.cjs
 /scripts/admin-users-api-check.mjs
 /scripts/admin-wallet-adjust-check.mjs
-/scripts/ai-friend-hard-test.mjs
-/scripts/ai-friend-policy-check.mjs
 /scripts/apply-admin-audit-schema.mjs
 /scripts/apply-offline-notification-schema.mjs
 /scripts/chat-badge-layout-check.mjs
@@ -108,11 +114,4 @@ chaos_log.txt
 /scripts/offline-notification-db-check.mjs
 /scripts/pet365-map-mobile-check.mjs
 /scripts/pet365-mobile-qa.mjs
-/scripts/sponsor-hard-test.mjs
-/scripts/sponsor-system-check.mjs
 /scripts/vibeCoder.mjs
-
-
-# reports
-/public/repoart/
-.vibe-diagnosis/config.json
