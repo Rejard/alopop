@@ -10,6 +10,9 @@ import { recordFreeEventUsage, resolveAiKeyForRequest } from '@/lib/ai-key-resol
 import { checkRateLimit } from '@/lib/rate-limit';
 import { decryptHostSponsorKey, resolveSponsorDelegateAccess, resolveSponsorModel } from '@/lib/sponsor-policy';
 import { canAccessAiFriend, canStartAutonomousAiWork } from '@/lib/ai-friend-access';
+import { decideAiFriendCommerce } from '@/lib/ai-friend-commerce';
+import { listCommerceOffers } from '@/lib/commerce-offers';
+import { appendCommerceCardMarker } from '@/lib/commerce-message';
 
 type Provider = 'openai' | 'gemini' | 'anthropic';
 
@@ -236,9 +239,14 @@ export async function POST(request: Request) {
       }
     }
 
+    const commerceDecision = decideAiFriendCommerce(content, listCommerceOffers());
+    const commerceSystemContext = commerceDecision.systemContext
+      ? `\n\n[Alopop commerce policy]\n${commerceDecision.systemContext}`
+      : '';
+
     const { text: finalReply } = await generateText({
       model: modelInstance,
-      system: `${personaPrompt}${injectedSearchContext}`,
+      system: `${personaPrompt}${injectedSearchContext}${commerceSystemContext}`,
       prompt: content,
       temperature: currentProvider === 'gemini' ? undefined : 0.85,
     });
@@ -275,7 +283,12 @@ export async function POST(request: Request) {
 
     await recordFreeEventUsage(effectiveAiUser.id, resolvedAi.freeEvent);
 
-    return NextResponse.json({ reply: finalReply || '응답을 생성할 수 없습니다.' });
+    const reply = finalReply || '응답을 생성할 수 없습니다.';
+    const replyWithCommerceCard = commerceDecision.offerId
+      ? appendCommerceCardMarker(reply, commerceDecision.offerId)
+      : reply;
+
+    return NextResponse.json({ reply: replyWithCommerceCard });
   } catch (error) {
     console.error('AI chat friend error:', error);
     const messageStr = error instanceof Error ? error.message : '';

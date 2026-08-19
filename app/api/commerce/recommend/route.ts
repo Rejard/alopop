@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import offersData from "@/config/commerce_offers.json";
 import { requireCurrentUser } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
-import {
-  recommendCommerceOffers,
-  type CommerceOffer,
-} from "@/lib/conversational-commerce";
+import { listCommerceOffers } from "@/lib/commerce-offers";
+import { recommendCommerceOffers } from "@/lib/conversational-commerce";
 
 const RecommendationSchema = z.object({
   query: z.string().trim().min(2).max(200),
@@ -34,7 +31,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = recommendCommerceOffers(offersData as CommerceOffer[], {
+  const result = recommendCommerceOffers(listCommerceOffers(), {
     query: parsed.data.query,
     region: parsed.data.region,
     budget: parsed.data.budget,
