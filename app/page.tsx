@@ -20,14 +20,9 @@ import { AiModelSelector } from '@/components/AiModelSelector';
 import { v4 as uuidv4 } from 'uuid';
 import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
 import { resolveAvatarProvider } from '@/lib/ai-avatar';
-
-
-
-
+import { CommerceMessageContent } from '@/components/commerce/CommerceMessageContent';
 import { LnbSidebar } from "@/components/layout/LnbSidebar";
 import { WalletTransactionList } from "@/components/wallet/WalletPanel";
-
-
 
 export default function Home() {
   const router = useRouter();
@@ -3403,6 +3398,7 @@ export default function Home() {
 
                 return messages?.map((msg, idx) => {
                   const isMe = msg.senderId === user?.id;
+                  const isAiMessage = Boolean(currentRoom?.members?.some((member) => member.userId === msg.senderId && member.user?.isAi));
 
 
                   const msgDate = new Date(msg.createdAt);
@@ -3583,7 +3579,7 @@ export default function Home() {
                         <div className="flex justify-end gap-2 w-full mt-2">
                           <div className="flex flex-col items-end max-w-[75%]">
                             <div className="bg-gradient-to-r from-primary to-primary-dim text-white p-4 rounded-xl rounded-tr-none text-[15px] shadow-ambient shadow-inner-glow leading-relaxed font-bold break-words whitespace-pre-wrap">
-                              {msg.content}
+                              <CommerceMessageContent content={msg.content} enabled={isAiMessage} />
                               {attachmentBlock}
                             </div>
                             {aiTag && <div className="mt-1 flex justify-end">{aiTag}</div>}
@@ -3616,7 +3612,7 @@ export default function Home() {
                           <div className="flex flex-col max-w-[75%]">
                             <span className="text-[11px] text-on-surface-variant mb-1 ml-1 font-bold">{msg.senderName || '익명'}</span>
                             <div className="bg-surface-variant text-on-surface p-4 rounded-xl rounded-tl-none text-[15px] shadow-sm leading-relaxed break-words whitespace-pre-wrap font-medium">
-                              {msg.content || ''}
+                              <CommerceMessageContent content={msg.content || ''} enabled={isAiMessage} />
                               {attachmentBlock}
                             </div>
                             {aiTag && <div className="mt-1 flex justify-start">{aiTag}</div>}

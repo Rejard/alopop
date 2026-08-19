@@ -1,4 +1,6 @@
-export type CommerceCategory = "food" | "cafe" | "travel" | "shopping" | "pet";
+export type CommerceCategory = "food" | "cafe" | "travel" | "shopping" | "pet" | "culture";
+
+export type CommerceActionType = "EXTERNAL_DISCOVERY" | "EXTERNAL_PURCHASE" | "EXTERNAL_BOOKING";
 
 export type CommerceOffer = {
   id: string;
@@ -14,6 +16,7 @@ export type CommerceOffer = {
   sponsored: boolean;
   actionLabel: string;
   actionUrl: string;
+  actionType?: CommerceActionType;
 };
 
 export type CommerceRecommendationRequest = {
@@ -40,10 +43,14 @@ const categoryKeywords: Record<CommerceCategory, string[]> = {
   travel: ["여행", "숙소", "호텔", "숙박", "관광", "명소", "펜션", "리조트"],
   shopping: ["쇼핑", "상품", "가격", "구매", "사고", "휴대폰", "노트북", "용품", "사료"],
   pet: ["반려동물", "강아지", "고양이", "동물병원", "펫", "산책"],
+  culture: ["공연", "콘서트", "전시", "영화", "티켓", "예매", "뮤지컬", "연극"],
 };
 
 const restrictedKeywords = [
   "두통",
+  "머리 아파",
+  "머리가 아파",
+  "머리가 아퍼",
   "진통제",
   "약 추천",
   "처방",
