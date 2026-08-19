@@ -26,7 +26,7 @@ type SearchResultItem = {
 };
 
 function defaultModelForProvider(provider: string) {
-  if (provider === 'gemini') return 'gemini-1.5-pro-latest';
+  if (provider === 'gemini') return 'gemini-3.6-flash';
   if (provider === 'anthropic') return 'claude-3-haiku-20240307';
   return 'gpt-5.4';
 }
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
 
-    const { content, imageUrl, byokKey, provider, aiModel } = await request.json();
+    const { content, imageUrl, provider, aiModel } = await request.json();
 
     if (!content && !imageUrl) {
       return NextResponse.json({ error: 'Content or image is required' }, { status: 400 });
@@ -46,8 +46,7 @@ export async function POST(request: Request) {
       user: currentUser,
       provider,
       aiModel,
-      byokKey,
-      allowEnvFallback: false,
+      allowEnvFallback: currentUser.isAdmin,
     });
 
     if (resolvedAi.limitExceeded) {
@@ -149,7 +148,7 @@ export async function POST(request: Request) {
         confidence: z.number().min(0).max(1),
         reason: z.string(),
       }),
-      temperature: finalAiModel === 'gpt-5.4-pro' ? undefined : 0.1,
+      temperature: currentProvider === 'gemini' || finalAiModel === 'gpt-5.4-pro' ? undefined : 0.1,
     });
 
     await recordFreeEventUsage(currentUser.id, resolvedAi.freeEvent);

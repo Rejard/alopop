@@ -4,23 +4,49 @@ import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { requireCurrentUser } from '@/lib/auth';
 import { logUserActivity } from '@/lib/auditLogger';
+import sharp from 'sharp';
+import { findInlineImageData, isSafeGeneratedSvg } from '@/lib/ai-avatar';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { z } from 'zod';
+import { resolveAiKeyForRequest } from '@/lib/ai-key-resolution';
+
+const AvatarRequestSchema = z.object({
+  mbti: z.string().trim().min(1).max(8),
+  gender: z.string().trim().min(1).max(20),
+  age: z.string().trim().min(1).max(30),
+  aiName: z.string().trim().max(30).optional().nullable(),
+  aiProvider: z.enum(['openai', 'gemini', 'gemini-free', 'pollinations', 'dicebear', 'robohash']),
+});
 
 export async function POST(request: Request) {
-  let currentUsr: any = null;
+  let currentUsr: { id: string } | null = null;
   let provider: string | null = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
     currentUsr = currentUser;
 
-    const { mbti, gender, age, aiName, aiProvider, apiKey } = await request.json();
-    provider = aiProvider;
-
-    if (!mbti || !gender || !age) {
-      return NextResponse.json({ error: '필수 정보(MBTI, 성별, 연령대)가 누락되었습니다.' }, { status: 400 });
+    if (!checkRateLimit(`ai-avatar:${currentUser.id}`, 5, 60000)) {
+      return NextResponse.json({ error: '프로필 사진 생성 요청이 너무 많습니다.' }, { status: 429 });
     }
 
-    // 0순위: 무료 즉석 아바타 생성 (DiceBear / Robohash)
+    const parsed = AvatarRequestSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || '잘못된 프로필 사진 요청입니다.' }, { status: 400 });
+    }
+    const { mbti, gender, age, aiName, aiProvider } = parsed.data;
+    provider = aiProvider;
+    const resolvedKey = aiProvider === 'openai' || aiProvider === 'gemini' || aiProvider === 'gemini-free'
+      ? await resolveAiKeyForRequest({
+        user: currentUser,
+        provider: aiProvider,
+        allowFreeEventFallback: false,
+        allowEnvFallback: currentUser.isAdmin,
+      })
+      : null;
+    const apiKey = resolvedKey?.apiKey || null;
+
+
     if (aiProvider === 'dicebear') {
       const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent((aiName || mbti) + Date.now())}`;
       await logUserActivity({
@@ -45,13 +71,13 @@ export async function POST(request: Request) {
     let finalAvatarUrl: string | null = null;
     let isSuccess = false;
 
-    // 성별 영문 매핑
+
     const englishGender = gender.includes('여') ? 'girl' : gender.includes('남') ? 'boy' : 'person';
-    
-    // 연령대와 성별, MBTI만 반영한 깔끔한 프롬프트 (증명사진/프로필 스타일 최적화)
+
+
     const imagePrompt = `A professional ID photo of an attractive ${age} Korean ${englishGender} with a friendly and confident expression, representing an ${mbti} personality. Clean gradient background, front-facing, shoulder-up view, wearing a neat stylish outfit. High-quality studio lighting, realistic photography style.`;
 
-    // 1순위: OpenAI DALL-E 3
+
     if (aiProvider === 'openai' && apiKey) {
       try {
         console.log('[Avatar Generator] Generating via DALL-E 3...');
@@ -77,7 +103,7 @@ export async function POST(request: Request) {
               const buffer = await imgRes.arrayBuffer();
               const fileName = `ai_avatar_${Date.now()}_dalle.jpg`;
               const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-              try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+              try { await fs.mkdir(uploadsDir, { recursive: true }); } catch {}
               const filePath = path.join(uploadsDir, fileName);
               await fs.writeFile(filePath, Buffer.from(buffer));
               finalAvatarUrl = `/uploads/${fileName}`;
@@ -92,8 +118,8 @@ export async function POST(request: Request) {
         console.error('[Avatar Generator] DALL-E 3 Exception:', err);
       }
     }
-    
-    // 1.5순위: Gemini (Google Generative AI Imagen 3)
+
+
     else if ((aiProvider === 'gemini' || aiProvider === 'gemini-free') && apiKey) {
       const ai = new GoogleGenAI({ apiKey: apiKey });
       try {
@@ -103,16 +129,16 @@ export async function POST(request: Request) {
           contents: imagePrompt,
         });
 
-        if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.inlineData?.data) {
-          const imageData = response.candidates[0].content.parts[0].inlineData.data;
+        const imageData = findInlineImageData(response.candidates?.[0]?.content?.parts || undefined);
+        if (imageData) {
           const buffer = Buffer.from(imageData as string, 'base64');
           const fileName = `ai_avatar_${Date.now()}_gemini.png`;
-          
+
           const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-          try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+          try { await fs.mkdir(uploadsDir, { recursive: true }); } catch {}
           const filePath = path.join(uploadsDir, fileName);
           await fs.writeFile(filePath, buffer);
-          
+
           finalAvatarUrl = `/uploads/${fileName}`;
           isSuccess = true;
           console.log('[Avatar Generator] Gemini (Imagen) SDK successfully generated!');
@@ -121,38 +147,42 @@ export async function POST(request: Request) {
         }
       } catch (err) {
         console.error('[Avatar Generator] Gemini Imagen SDK Exception, falling back to SVG generation:', err);
-        // Fallback: Text Model (gemini-3.1-flash-lite) to generate SVG
+
         try {
           console.log('[Avatar Generator] Fallback to Gemini 3.1 Flash Lite Preview for SVG generation...');
           const englishAge = age.replace('대', 's');
-          const svgPrompt = `Create a stunning SVG vector illustration of a ${englishAge} Korean ${englishGender} based on the ${mbti} personality type. 
+          const svgPrompt = `Create a stunning SVG vector illustration of a ${englishAge} Korean ${englishGender} based on the ${mbti} personality type.
           Follow these instructions strictly:
           1. Persona Context: Express the core traits, vibe, and energy of the ${mbti} personality type.
           2. Color Palette: Choose appropriate colors for the background, outfit, and skin tone that match the ${mbti} vibe and ${englishAge} demographic.
           3. Facial & Detail Features: Carefully design the hairstyle, eyes, mouth shape, and facial expressions to reflect the persona.
           4. Technical Constraints: Compose all elements using simple geometric shapes (Path, Circle, Rect). Strictly set the SVG canvas size to width="256" height="256" with viewBox="0 0 256 256". Use a center-focused Radial Gradient for background lighting effects.
           Respond ONLY with the pure <svg>...</svg> code string. Do not use markdown tags like \`\`\`svg. Output exactly starting with <svg> and ending with </svg>.`;
-          
+
           const svgResponse = await ai.models.generateContent({
-            model: "gemini-3.1-flash-lite-preview",
+            model: "gemini-3.6-flash",
             contents: svgPrompt,
           });
-          
+
           let svgText = svgResponse.text || svgResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          
+
           svgText = svgText.replace(/```xml/gi, '').replace(/```svg/gi, '').replace(/```html/gi, '').replace(/```/g, '').trim();
-          
+
           if (svgText.startsWith('<svg') && svgText.includes('</svg>')) {
              const startIndex = svgText.indexOf('<svg');
              const endIndex = svgText.lastIndexOf('</svg>') + 6;
              const pureSvg = svgText.slice(startIndex, endIndex);
-             
-             const fileName = `ai_avatar_${Date.now()}_gemini.svg`;
+
+             if (!isSafeGeneratedSvg(pureSvg)) {
+               throw new Error('Unsafe SVG output rejected');
+             }
+
+             const fileName = `ai_avatar_${Date.now()}_gemini.png`;
              const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-             try { await fs.mkdir(uploadsDir, { recursive: true }); } catch (e) {}
+             try { await fs.mkdir(uploadsDir, { recursive: true }); } catch {}
              const filePath = path.join(uploadsDir, fileName);
-             await fs.writeFile(filePath, pureSvg, 'utf-8');
-             
+             await sharp(Buffer.from(pureSvg, 'utf8')).png().toFile(filePath);
+
              finalAvatarUrl = `/uploads/${fileName}`;
              isSuccess = true;
              console.log('[Avatar Generator] Gemini SVG successfully generated as fallback!');
@@ -165,13 +195,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. 명시적으로 Pollinations AI를 선택했을 때
+
     else if (aiProvider === 'pollinations') {
       try {
         console.log('[Avatar Generator] Generating via Pollinations AI (URL mapping)...');
         const seed = Math.floor(Math.random() * 1000000);
         const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}?width=256&height=256&nologo=true&seed=${seed}`;
-        
+
         finalAvatarUrl = pollinationsUrl;
         isSuccess = true;
         console.log('[Avatar Generator] URL mapped via Pollinations successfully');
@@ -180,7 +210,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. 생성 실패 시 강제 우회하지 않고 명확한 에러 반환
+
     if (!isSuccess) {
       console.warn('[Avatar Generator] Generation attempt failed. No fallback triggered.');
       await logUserActivity({

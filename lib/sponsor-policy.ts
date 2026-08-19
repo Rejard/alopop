@@ -8,8 +8,11 @@ const SPONSOR_MODELS: Record<string, { provider: SponsorProvider; model: string 
   openai: { provider: 'openai', model: 'gpt-5.4' },
   'gpt-5.4': { provider: 'openai', model: 'gpt-5.4' },
   'gpt-5.4-pro': { provider: 'openai', model: 'gpt-5.4-pro' },
-  gemini: { provider: 'gemini', model: 'gemini-1.5-pro-latest' },
-  'gemini-1.5-pro-latest': { provider: 'gemini', model: 'gemini-1.5-pro-latest' },
+  gemini: { provider: 'gemini', model: 'gemini-3.6-flash' },
+  'gemini-3.6-flash': { provider: 'gemini', model: 'gemini-3.6-flash' },
+  'gemini-3.5-flash': { provider: 'gemini', model: 'gemini-3.6-flash' },
+  'gemini-3.1-flash-lite-preview': { provider: 'gemini', model: 'gemini-3.6-flash' },
+  'gemini-1.5-pro-latest': { provider: 'gemini', model: 'gemini-3.6-flash' },
   anthropic: { provider: 'anthropic', model: 'claude-3-haiku-20240307' },
   'claude-3-haiku-20240307': { provider: 'anthropic', model: 'claude-3-haiku-20240307' },
 };

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { decryptKey } from '@/lib/crypto';
+import { normalizeAiTextModel } from '@/lib/ai-model';
 
 type Provider = 'openai' | 'gemini' | 'anthropic';
 
@@ -44,8 +45,7 @@ function getEnvKeyForProvider(provider: Provider) {
   return process.env.OPENAI_API_KEY || null;
 }
 
-function getPersonalKey(user: UserApiKeys, provider: Provider, byokKey?: string | null) {
-  if (byokKey?.trim()) return byokKey.trim();
+function getPersonalKey(user: UserApiKeys, provider: Provider) {
   return decryptKey(getEncryptedKeyForProvider(user, provider) || null);
 }
 
@@ -99,23 +99,21 @@ export async function resolveAiKeyForRequest({
   user,
   provider,
   aiModel,
-  byokKey,
   allowFreeEventFallback = true,
   allowEnvFallback = false,
 }: {
   user: UserApiKeys;
   provider?: string | null;
   aiModel?: string | null;
-  byokKey?: string | null;
   allowFreeEventFallback?: boolean;
   allowEnvFallback?: boolean;
 }): Promise<ResolvedAiKey> {
   const requestedProvider = normalizeProvider(provider);
-  const requestedModel = aiModel || null;
+  const requestedModel = normalizeAiTextModel(requestedProvider, aiModel);
   const activeEvents = await findActiveFreeEvents();
   const matchingEvent = activeEvents.find((event) => eventMatches(event, requestedProvider, requestedModel));
 
-  const personalKey = getPersonalKey(user, requestedProvider, byokKey);
+  const personalKey = getPersonalKey(user, requestedProvider);
 
   if (matchingEvent) {
     if (await isEventAllowed(user.id, matchingEvent)) {

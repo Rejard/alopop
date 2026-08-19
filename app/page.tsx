@@ -19,10 +19,11 @@ import { EventTicker } from '@/components/layout/EventTicker';
 import { AiModelSelector } from '@/components/AiModelSelector';
 import { v4 as uuidv4 } from 'uuid';
 import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
+import { resolveAvatarProvider } from '@/lib/ai-avatar';
 
-// AI MODELS loaded dynamically
 
-// GAME_LIST is dynamically fetched from game portal
+
+
 import { LnbSidebar } from "@/components/layout/LnbSidebar";
 import { WalletTransactionList } from "@/components/wallet/WalletPanel";
 
@@ -33,7 +34,7 @@ export default function Home() {
   const [user, setUser] = useState<{ id: string; username: string; inviteCode?: string; walletBalance?: number } | null>(null);
   const [myProfile, setMyProfile] = useState<{ id: string; username: string; avatar_url: string | null; statusMessage: string | null; inviteCode?: string; walletBalance: number; isAdmin?: boolean } | null>(null);
 
-  const [isGuideOpen, setIsGuideOpen] = useState(false); // 가이드 모달 오픈 상태
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const [inputText, setInputText] = useState('');
   const [clawCanvasData, setClawCanvasData] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export default function Home() {
         ...(Array.isArray(portalGames) ? portalGames : []),
         ...(Array.isArray(studioGames) ? studioGames : [])
       ];
-      // 각 게임의 서버 최고 점수를 병렬로 fetch
+
       const withScores = await Promise.all(
         merged.map(async (game: any) => {
           if (game.isAlopopStudio) return { ...game, serverBest: null };
@@ -70,7 +71,7 @@ export default function Home() {
     }).catch(err => console.error("Failed to fetch game list:", err));
   };
   useEffect(() => { fetchGames(); }, []);
-  const [friends, setFriends] = useState<any[]>([]); // 개별 친구 목록 (상태: ACTIVE 대상)
+  const [friends, setFriends] = useState<any[]>([]);
   const [currentRoom, setCurrentRoom] = useState<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
   const currentRoomRef = useRef<{ id: string, name: string | null, isHost: boolean, isGroup?: boolean, members: any[], sponsorMode?: boolean, sponsorPrice?: number, sponsorModel?: string | null } | null>(null);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
@@ -121,45 +122,45 @@ export default function Home() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
-  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
-  const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
+  const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats');
+  const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null);
   const [pet365Path, setPet365Path] = useState("/pet365?view=home");
-  // Pet365Care: 내부 라우트 /pet365care (iframe 임베딩)
 
-  // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
+
+
   useEffect(() => {
     if (activeGameUrl === null) {
       fetchGames();
     }
   }, [activeGameUrl]);
 
-  // 친구 대상 목록 컨텍스트 메뉴 상태
+
   const [activeFriendMenuId, setActiveFriendMenuId] = useState<string | null>(null);
 
-  // 글로벌 서버 공지사항 상태 및 롤링 인덱스
+
   const [serverAnnouncements, setServerAnnouncements] = useState<any[]>([]);
 
-  // 공지사항 상세 모달 상태 및 스와이프 제어
+
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<any>(null);
   const [globalAnnounceDurationMs, setGlobalAnnounceDurationMs] = useState(4000);
 
-  // 글로벌 서버 이벤트 상태 및 롤링 인덱스
+
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
   const [exhaustedFreeEvents, setExhaustedFreeEvents] = useState<Record<string, boolean>>({});
 
-  // 친구 추가 모달 관련 상태
+
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
   const [addFriendIdValue, setAddFriendIdValue] = useState('');
 
-  // 내 프로필(상태메시지 수정) 모달 관련 상태
+
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [statusMsgValue, setStatusMsgValue] = useState('');
 
-  // 친구 프로필 보기 관련 상태
+
   const [selectedFriendProfile, setSelectedFriendProfile] = useState<any | null>(null);
 
-  // 오라클 HUD 디지털 시계 상태
+
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   useEffect(() => {
     setCurrentTime(new Date());
@@ -170,15 +171,15 @@ export default function Home() {
   const markRoomAsRead = useCallback(async (roomId: string) => {
     if (!user?.id) return;
 
-    // 디바이스간 시간(Clock)이 안 맞는 경우(상대방 시간이 내 폰 시간보다 미래일 때)
-    // 현재 읽고 있는 시점의 시간이 메시지 발송 시간보다 작아져서 읽음 표시가 안 지워지는 버그(1 안사라짐) 방어
+
+
     let maxMsgTime = 0;
     const msgs = useChatStore.getState().roomMessages[roomId] || [];
     if (msgs.length > 0) {
       maxMsgTime = Math.max(...msgs.map(m => m.createdAt || 0));
     }
 
-    const now = Math.max(Date.now(), maxMsgTime + 100); // 확보한 최신 메시지 시간보다 무조건 약간 미래로 마크
+    const now = Math.max(Date.now(), maxMsgTime + 100);
 
     setRoomMemberReadTimes(prev => ({
       ...prev,
@@ -211,47 +212,47 @@ export default function Home() {
     }
   }, [currentRoom?.id, markRoomAsRead, user?.id]);
 
-  // [모바일 PWA] 시스템 뒤로가기 버튼 → 채팅방 닫기 / 탭 복귀 (앱 종료·404 방지)
+
   useEffect(() => {
-    // 채팅방 진입 또는 서브 탭 이동 시 히스토리 엔트리 추가
+
     if (currentRoom?.id || currentTab !== 'chats') {
       window.history.pushState({ chatRoom: currentRoom?.id || null, tab: currentTab }, '');
     }
     const handlePopState = () => {
       if (currentRoomRef.current) {
-        // 채팅방 열려있으면 → 채팅 목록으로 복귀
+
         setCurrentRoom(null);
         setIsDrawerOpen(false);
       } else if (currentTab !== 'chats') {
-        // 서브 탭(pet365care, aistudio 등)이면 → chats 탭으로 복귀
+
         setCurrentTab('chats');
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [currentRoom?.id, currentTab]);
 
-  // 파일 첨부 관련 상태
+
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 미디어 뷰어(Lightbox) 상태
+
   const [selectedMedia, setSelectedMedia] = useState<{ url: string, type: 'IMAGE' | 'VIDEO' } | null>(null);
 
-  // AI 분석 로딩 상태
+
   const [isAiProcessing, setIsAiProcessing] = useState(false);
 
-  // AI 자율 응답 작성 중(Typing...) 상태
+
   const [typingAIs, setTypingAIs] = useState<Record<string, { aiId: string, aiName: string }[]>>({});
 
-  // OpenClaw AI 에이전트 자율 작업 진행 중 상태
 
 
-  // 현재 방에 접속 중인 유저 명단 (스텔스 고스트 임시 방장용)
+
+
   const [activeRoomUsers, setActiveRoomUsers] = useState<string[]>([]);
 
-  // 리얼 유저(사람) 타이핑 상태
+
   const [humanTyping, setHumanTyping] = useState<Record<string, { userId: string, userName: string }[]>>({});
 
   const getRoomName = (room: any, currentUserId?: string) => {
@@ -267,9 +268,9 @@ export default function Home() {
   };
 
   const chatStore = useChatStore();
-  const { isOpen, setIsOpen: setSettingsOpen, selectedProvider, apiKeys, loadSettings, setSelectedProvider } = useSettingsStore();
+  const { isOpen, setIsOpen: setSettingsOpen, selectedProvider, providerAvailability, loadSettings, setSelectedProvider } = useSettingsStore();
 
-  // 앱 최초 로드 시 로컬 스토리지의 AI 설정을 스토어에 즉시 동기화
+
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
@@ -279,7 +280,7 @@ export default function Home() {
   const [isAiModelDropdownOpen, setIsAiModelDropdownOpen] = useState(false);
   const [isAiEnabled, setIsAiEnabled] = useState(false);
 
-  // [NEW] Dynamic AI Models state
+
   const [aiModels, setAiModels] = useState<Record<string, { id: string, name: string }[]>>({});
   const [aiModelsLoaded, setAiModelsLoaded] = useState(false);
 
@@ -296,12 +297,12 @@ export default function Home() {
       });
   }, []);
 
-  // AI 켜짐/꺼짐 상태 로컬스토리지 동기화 (방장 팩트체크용)
+
   useEffect(() => {
     localStorage.setItem('alo_ai_enabled', isAiEnabled.toString());
   }, [isAiEnabled]);
 
-  // AI 친구 생성 폼 상태
+
   const [addFriendTab, setAddFriendTab] = useState<'NORMAL' | 'AI' | 'OPENALO'>('NORMAL');
   const [aiNameValue, setAiNameValue] = useState('');
   const [aiMbtiValue, setAiMbtiValue] = useState('ENFP');
@@ -310,15 +311,15 @@ export default function Home() {
   const [aiToneValue, setAiToneValue] = useState('발랄하고 친근한 반말');
   const [aiHobbyValue, setAiHobbyValue] = useState('');
 
-  // 신규: AI 수정용 상태 유지
+
   const [editingAiFriend, setEditingAiFriend] = useState<any | null>(null);
   const [aiAvatarUrl, setAiAvatarUrl] = useState<string | null>(null);
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
-  const [generationElapsedSec, setGenerationElapsedSec] = useState(0); // 신규: 그림 그리는 초 단위 대기 시간 표시
+  const [generationElapsedSec, setGenerationElapsedSec] = useState(0);
   const [avatarGenMode, setAvatarGenMode] = useState<'system' | 'pollinations' | 'dicebear' | 'robohash'>('system');
   const [isAiCreating, setIsAiCreating] = useState(false);
 
-  // 신규: OpenAlo 봇 생성 폼 상태
+
   const [openAloNameValue, setOpenAloNameValue] = useState('');
   const [openAloPathValue, setOpenAloPathValue] = useState('');
   const [createdOpenAloToken, setCreatedOpenAloToken] = useState<string | null>(null);
@@ -335,14 +336,14 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [isGeneratingAvatar]);
 
-  // 일일 전체 AI 누적 사용량 추적 및 API 키 여부
+
   const [totalAiUsageCount, setTotalAiUsageCount] = useState<number>(0);
   const [hasPersonalKey, setHasPersonalKey] = useState(false);
 
   useEffect(() => {
-    // 1. 누적 사용량 로드 (무료/유료 통합)
+
     const saved = localStorage.getItem('alo_total_ai_usage');
-    // 날짜 포맷 차이로 인한 버그를 방지하기 위해 가장 안정적인 en-CA 포맷(YYYY-MM-DD) 사용
+
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
     let used = 0;
     if (saved) {
@@ -351,7 +352,7 @@ export default function Home() {
         if (parsed.date === today) {
           used = parsed.used || 0;
         } else {
-          // 날짜가 일치하지 않거나(과거 데이터) date 필드가 없는 경우 로컬 스토리지도 확실히 초기화해야 함
+
           localStorage.setItem('alo_total_ai_usage', JSON.stringify({ date: today, used: 0 }));
         }
       } catch (e) {
@@ -362,19 +363,18 @@ export default function Home() {
     }
     setTotalAiUsageCount(used);
 
-    // 2. 초기 키 로드
+
     const checkKey = () => {
       try {
-        const savedKeys = JSON.parse(localStorage.getItem('alo_api_keys') || '{}');
-        const provider = localStorage.getItem('alo_ai_provider') || 'openai';
-        setHasPersonalKey(!!savedKeys[provider]);
+        const settings = useSettingsStore.getState();
+        setHasPersonalKey(Boolean(settings.providerAvailability[settings.selectedProvider]));
       } catch (e) {
         setHasPersonalKey(false);
       }
     };
     checkKey();
 
-    // 설정 모달 닫힐 때 등 스토리지 변경 시 업데이트 폴링(간이)
+
     const interval = setInterval(checkKey, 2000);
     return () => clearInterval(interval);
   }, [selectedProvider]);
@@ -391,10 +391,10 @@ export default function Home() {
 
     const isEventModel = activeEvents.some(e => e.eventType === 'FREE_AI' && e.aiModel === savedModel && !exhaustedFreeEvents[e.id]);
 
-    // 제공사를 바꿨을 때, 이전 제공사의 모델이 남아있으면 안 되므로 롤백 수행. 
-    // 단, 선택된 모델이 '이벤트 모델'인 경우는 제공사가 달라도 절대 롤백하지 않음 (유저 의도 존중)
+
+
     if (!savedModel || (!list.some(m => m.id === savedModel) && !isEventModel)) {
-      const defaultModel = providerValue === 'gemini' ? 'gemini-3.1-flash-lite-preview' : (providerValue === 'openai' ? 'gpt-5.4-mini' : list[0]?.id || 'gpt-5.4');
+      const defaultModel = providerValue === 'gemini' ? 'gemini-3.6-flash' : (providerValue === 'openai' ? 'gpt-5.4-mini' : list[0]?.id || 'gpt-5.4');
       setSelectedAiModel(defaultModel);
       localStorage.setItem('alo_ai_model', defaultModel);
     } else if (selectedAiModel !== savedModel) {
@@ -402,9 +402,9 @@ export default function Home() {
     }
   }, [selectedProvider, selectedAiModel, aiModels, aiModelsLoaded, activeEvents, exhaustedFreeEvents]);
 
-  // 로컬 스토리지에서 인증 정보 확인
+
   useEffect(() => {
-    // 모바일 가상 키보드(Visual Viewport) 높이 대응
+
     const handleViewportResize = () => {
       if (window.visualViewport) {
         document.documentElement.style.setProperty('--vh', `${window.visualViewport.height}px`);
@@ -416,7 +416,7 @@ export default function Home() {
 
     const storedUser = localStorage.getItem('alo_user');
     if (!storedUser) {
-      // 홍보 페이지용으로 미로그인 시 곧바로 릴리즈 노트 페이지로 이동시킵니다.
+
       window.location.href = '/release.html';
       return;
     }
@@ -427,13 +427,13 @@ export default function Home() {
     if (savedAiEnabled !== null) {
       setIsAiEnabled(savedAiEnabled === 'true');
     } else {
-      setIsAiEnabled(true); // 기본적으로 켜둠
+      setIsAiEnabled(true);
     }
 
-    // 컴포넌트 마운트 시 소켓 연결
+
     chatStore.connectSocket(parsedUser.id);
 
-    // 내 방 목록, 친구 목록, 내 프로필 가져오기 함수
+
     const loadData = async (userId: string) => {
       try {
         const [roomsRes, friendsRes, profileRes, annRes, sysRes, eventsRes] = await Promise.all([
@@ -444,15 +444,21 @@ export default function Home() {
           fetch(`/api/admin/system`),
           fetch(`/api/events`)
         ]);
+        if (profileRes.status === 401) {
+          localStorage.removeItem('alo_user');
+          chatStore.disconnectSocket();
+          window.location.href = '/login';
+          return;
+        }
         if (roomsRes.ok) {
           const roomsData = await roomsRes.json();
-          // api/rooms/user 응답은 최상위 배열로 오기 때문에 바로 세팅
+
           setRooms(Array.isArray(roomsData) ? roomsData : []);
 
           const readTimesDict: Record<string, Record<string, number>> = {};
           if (Array.isArray(roomsData)) {
             roomsData.forEach((r: any) => {
-              // 백그라운드에서도 내가 속한 모든 방의 실시간 이벤트(가격 변경, 타이핑 등)를 수신하기 위해 소켓 조인
+
               chatStore.joinRoom(r.id);
 
               readTimesDict[r.id] = {};
@@ -465,7 +471,7 @@ export default function Home() {
         }
         if (friendsRes.ok) {
           const friendsData = await friendsRes.json();
-          // 가져온 우정 목록 중 ACTIVE인 친구 데이터만 매핑하여 set
+
           const activeFriends = friendsData.friendships
             .filter((fs: any) => fs.status === 'ACTIVE')
             .map((fs: any) => fs.friend);
@@ -495,7 +501,7 @@ export default function Home() {
           setActiveEvents(Array.isArray(eventsData) ? eventsData.filter(e => e.isActive) : []);
         }
 
-        // 로그인 직후 자동 이벤트 보상 청구 로직 실행
+
         fetch('/api/user/events/claim', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -511,7 +517,7 @@ export default function Home() {
                 eventNames.push(e.title);
               });
               alert(`🎉 축하합니다! 이벤트 접속 보상 도착!\n\n지급된 코인: ${total} 코인\n지급 사유: ${eventNames.join(', ')}`);
-              // 잔액 업데이트 리프레시
+
               fetch(`/api/users/profile?userId=${userId}`)
                 .then(pr => pr.json())
                 .then(pData => setMyProfile(pData.user));
@@ -528,8 +534,8 @@ export default function Home() {
 
     const playNotificationSound = () => {
       try {
-        const audio = new Audio('/alert.wav?v=3'); // 캐시 무효화를 위해 버전 쿼리 파라미터 부여
-        audio.volume = 1.0; // 100% 볼륨 설정
+        const audio = new Audio('/alert.wav?v=3');
+        audio.volume = 1.0;
         audio.play().catch(e => console.warn('오디오 자동재생 권한 제한:', e));
       } catch (e) {
         console.error('Failed to play notification audio', e);
@@ -539,7 +545,7 @@ export default function Home() {
     const playChatSound = () => {
       try {
         const audio = new Audio('/chat_pop.wav?v=2');
-        audio.volume = 0.5; // 채팅 중 전송음은 거슬리지 않게 50% 볼륨으로 설정
+        audio.volume = 0.5;
         audio.play().catch(e => console.warn('오디오 자동재생 권한 제한:', e));
       } catch (e) {
         console.error('Failed to play chat audio', e);
@@ -549,7 +555,7 @@ export default function Home() {
     const handleNewMessage = (e: any) => {
       const msg = e.detail;
 
-      // 송금 메시지 또는 스폰서 AI 메시지 수신 시 잔액 즉시 동기화 (실시간 차감/증가 표시용)
+
       if ((msg.content && msg.content.includes('[송금 알림]')) || (msg.aiAnalysis?.isSponsored && msg.aiAnalysis?.sponsorPrice > 0)) {
         fetch(`/api/users/profile?userId=${parsedUser.id}`)
           .then(res => res.json())
@@ -570,21 +576,21 @@ export default function Home() {
         return prevRooms;
       });
 
-      // [신규] 기존 프론트엔드 방장 브라우저 대리 팩트체크 스니핑 로직(P2P Edge Compute)은
-      // 서버사이드(Node.js server.js 백그라운드 연산)로 성공적으로 마이그레이션 되어 
-      // 더 이상 클라이언트에서 무거운 연산을 수행하지 않습니다. 프론트엔드가 쾌적해졌습니다!
+
+
+
 
       setLatestMessageTimes(prev => ({
         ...prev,
         [msg.receiverId]: msg.createdAt
       }));
 
-      // 현재 보고있는 화면(방) 상태에 따른 알림음 및 읽음 처리 분기
+
       setCurrentRoom((curr) => {
         const isMyMsg = msg.senderId === parsedUser.id;
         const isCurrentRoom = curr?.id === msg.receiverId;
 
-        // 상대방이 내가 지금 안 보고 있는 화면(다른 방/로비)으로 메시지를 보냈을 때만 알림/진동 쾅!
+
         if (!isMyMsg && !isCurrentRoom) {
           playNotificationSound();
           if (typeof window !== 'undefined' && navigator.vibrate) {
@@ -596,13 +602,13 @@ export default function Home() {
             [msg.receiverId]: (prev[msg.receiverId] || 0) + 1
           }));
         }
-        // 내가 보고 있는 방에 메시지가 도착했거나(조용히 즉시 읽음 처리), 
-        // 혹은 내가 그 방에 직접 메시지를 보냈을 때
+
+
         else if (isCurrentRoom) {
-          // 채팅 중 서로 전송/수신 할 때 '도미솔 타격 화음' 을 작게 재생 (유저 요청)
+
           playChatSound();
 
-          // 내가 보고 있는 방에 메시지가 오면: 클라이언트 딜레이 대비 버퍼를 더해 로컬타임 수정 (상대방 시간이 더 빠를 때 방어)
+
           const now = Math.max(Date.now(), msg.createdAt + 100);
           setRoomMemberReadTimes(prev => ({
             ...prev,
@@ -652,7 +658,7 @@ export default function Home() {
         const roomTypers = prev[roomId] || [];
         return { ...prev, [roomId]: roomTypers.filter(t => t.userId !== userId) };
       });
-      // 오픈클로 봇 등 서버에서 typing_end를 보낸 경우 typingAIs에서도 제거
+
       setTypingAIs(prev => {
         const roomAIs = prev[roomId] || [];
         if (roomAIs.some(a => a.aiId === userId)) {
@@ -675,7 +681,7 @@ export default function Home() {
 
     const handleMessageUpdated = (e: any) => {
       const payload = e.detail;
-      // 팩트체크 결제 결과가 담겨 돌아왔다면 잔액 동기화 (게스트 화면용)
+
       if (payload.aiAnalysis?.isSponsored && payload.aiAnalysis?.sponsorPrice > 0) {
         fetch(`/api/users/profile?userId=${parsedUser.id}`)
           .then(res => res.json())
@@ -689,7 +695,7 @@ export default function Home() {
     const handleSponsorSettingsChanged = (e: any) => {
       const { sponsorId, sponsorPrice: newSponsorPrice, sponsorMode, sponsorModel, isPriceChanged, roomId } = e.detail;
 
-      // 내가 방장이 아니고, 현재 보고 있는 방의 요금이 변경된 실시간 이벤트를 받았을 때
+
       if (isPriceChanged && sponsorId !== parsedUser.id && currentRoomRef.current?.id === roomId) {
         if (newSponsorPrice > 0) {
           alert(`💡 방장님이 AI 자율 요금을 ${newSponsorPrice}코인으로 변경했습니다.\n\n새로운 과금 정책 확인을 위해 AI 스위치가 자동으로 꺼집니다.`);
@@ -720,14 +726,14 @@ export default function Home() {
     };
 
     const handleHostSponsorSettingsSaved = (e: any) => {
-      // 1. 방장 본인의 화면 상태 강제 갱신
+
       handleSponsorSettingsChanged(e);
 
-      // 2. 서버를 통해 현재 방의 다른 유저(게스트)들에게 설정 갱신 브로드캐스트
+
       const { roomId, isPriceChanged, sponsorPrice, isModelChanged, sponsorModelName } = e.detail;
       useChatStore.getState().socket?.emit('sponsor_settings_changed', e.detail);
 
-      // 요금이 변경되었을 때만 방장이 시스템 메시지를 전송하여 모두가 인지하도록 함
+
       if (isPriceChanged) {
         const sysMsg = sponsorPrice > 0
           ? `💡 방장님이 AI 자율 요금을 ${sponsorPrice}코인으로 변경했습니다.`
@@ -739,10 +745,10 @@ export default function Home() {
         );
       }
 
-      // 모델이 변경되었을 때 시스템 메시지 전송
+
       if (isModelChanged) {
         const sysMsg = `🎁 [방장 스폰서 AI 설정 변경] 방장이 팩트체크용 AI 모델을 [${sponsorModelName}]으로 선택했습니다.`;
-        // 방금 요금 메시지를 보냈을 수 있으므로 충돌 회피를 위해 약간 지연
+
         setTimeout(() => {
           useChatStore.getState().sendMessage(
             roomId,
@@ -755,7 +761,7 @@ export default function Home() {
 
     const handleRoomPresenceUpdate = (e: any) => {
       const { roomId, activeUsers } = e.detail;
-      // 현재 보고 있는 방이면 접속자 명단 동기화
+
       setActiveRoomUsers(activeUsers);
     };
 
@@ -785,8 +791,8 @@ export default function Home() {
     const handleVisibilityOrFocusChange = async () => {
       if (document.visibilityState === 'visible') {
         console.log('[DEBUG] 🔄 Page visible/focused. Syncing chat state...');
-        
-        // 1. 소켓 연결 상태 점검 및 재연결
+
+
         const { socket, connectSocket } = useChatStore.getState();
         if (!socket) {
           console.log('[DEBUG] 🔌 Socket is null. Re-connecting...');
@@ -799,10 +805,10 @@ export default function Home() {
           socket.emit('register', parsedUser.id);
         }
 
-        // 2. 방 목록 및 기본 데이터 강제 리로드 (알림 숫자 갱신용)
+
         await loadData(parsedUser.id);
 
-        // 3. 현재 보고 있는 방이 있다면 재조인 및 메시지 강제 동기화 트리거
+
         const currentRoom = currentRoomRef.current;
         if (currentRoom) {
           console.log('[DEBUG] 🔄 Syncing current room:', currentRoom.id);
@@ -825,7 +831,7 @@ export default function Home() {
     window.addEventListener('host_sponsor_settings_saved', handleHostSponsorSettingsSaved as EventListener);
     window.addEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
 
-    // Pet365Care: 내부 라우트 — postMessage 브릿지 불필요 (제거됨)
+
 
     return () => {
       window.removeEventListener('visibilitychange', handleVisibilityOrFocusChange);
@@ -845,7 +851,7 @@ export default function Home() {
       window.removeEventListener('room_presence_update', handleRoomPresenceUpdate as EventListener);
 
 
-      // 언마운트 시엔 연결 끊기
+
       chatStore.disconnectSocket();
     };
   }, [router]);
@@ -881,7 +887,7 @@ export default function Home() {
 
   const messages = roomMessages[currentRoom?.id || ''] || [];
 
-  // AI 통계: 서버 API에서 fetch
+
   const [aiStatsData, setAiStatsData] = useState<{date: string, count: number}[]>([]);
   useEffect(() => {
     fetch('/api/users/ai-usage')
@@ -894,18 +900,18 @@ export default function Home() {
     if (!aiStatsData || !aiStatsData.length) return {};
     const grouped: Record<string, { date: string, count: number }[]> = {};
     aiStatsData.forEach(stat => {
-      const month = stat.date.substring(0, 7); // "YYYY-MM"
+      const month = stat.date.substring(0, 7);
       if (!grouped[month]) grouped[month] = [];
       grouped[month].push(stat);
     });
-    // 각 리스트 내에서 일자 최신순 정렬
+
     Object.keys(grouped).forEach(m => {
       grouped[m].sort((a, b) => b.date.localeCompare(a.date));
     });
     return grouped;
   }, [aiStatsData]);
 
-  // 통계 아코디언 상태 (가장 최근 월을 기본 오픈)
+
   const [expandedStatMonth, setExpandedStatMonth] = useState<string | null>(null);
   useEffect(() => {
     if (Object.keys(monthlyStats).length > 0 && !expandedStatMonth) {
@@ -914,7 +920,7 @@ export default function Home() {
     }
   }, [monthlyStats, expandedStatMonth]);
 
-  // 내 타이핑 상태 소켓 브로드캐스트
+
   const isTypingRef = useRef(false);
 
   useEffect(() => {
@@ -932,7 +938,7 @@ export default function Home() {
     }
   }, [inputText, user, currentRoom]);
 
-  // 방을 이동할 때, 켜진 타이핑 상태 끄기
+
   useEffect(() => {
     return () => {
       if (isTypingRef.current && currentRoom && user) {
@@ -943,7 +949,7 @@ export default function Home() {
     };
   }, [currentRoom, user]);
 
-  // 메시지 자동 스크롤 관리 (최초 입장 시 안읽은곳, 이후엔 맨 아래 유지)
+
   useEffect(() => {
     if (!messages || messages.length === 0) return;
 
@@ -971,7 +977,7 @@ export default function Home() {
     }
   }, [messages, currentRoom?.id, user?.id]);
 
-  // AI 자율 응답 트리거 (단톡방 / 1:1방 모두 적용)
+
   const lastProcessedAiMsgIdRef = useRef<Record<string, string>>({});
   const pendingAiReplyRef = useRef<Record<string, boolean>>({});
   const aiTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
@@ -985,11 +991,11 @@ export default function Home() {
   useEffect(() => { typingAIsRef.current = typingAIs; }, [typingAIs]);
 
   const abortAiReplies = useCallback(() => {
-    // 진행 중인 타이머 해제
+
     Object.values(aiTimeoutsRef.current).forEach(clearTimeout);
     aiTimeoutsRef.current = {};
 
-    // 진행 중인 Fetch 차단
+
     Object.values(aiAbortControllersRef.current).forEach(ctrl => ctrl.abort());
     aiAbortControllersRef.current = {};
 
@@ -1007,35 +1013,30 @@ export default function Home() {
     pendingAiReplyRef.current = {};
   }, [currentRoom?.id]);
 
-  // 사용자가 타이핑 치기 시작하면 진행 중인 AI 대답을 모두 취소하는 기존 '눈치보기' 훅(useEffect)을 완전히 삭제했습니다.
-  // 이제 AI는 사용자가 치든 말든 자기가 할 말은 끝까지 하고 던집니다.
+
+
 
   useEffect(() => {
     if (!currentRoom || !messages || messages.length === 0 || !user) return;
 
     const lastMsg = messages[messages.length - 1];
 
-    // 이미 처리한 메시지면 패스 (렌더링 사이클 방어)
+
     if (lastProcessedAiMsgIdRef.current[currentRoom.id] === lastMsg.messageId) return;
     lastProcessedAiMsgIdRef.current[currentRoom.id] = lastMsg.messageId;
 
-    // 텍스트 메시지가 아니면 (사진/파일/시스템메시지) 무시
+
     if (lastMsg.messageType !== 'TEXT') return;
 
-    // 내 환경의 AI 통합 설정 확인 (API 키가 없어도 서버 무료 제공량으로 작동 가능)
-    const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-    const keysStr = localStorage.getItem('alo_api_keys');
-    const apiKeys = keysStr ? JSON.parse(keysStr) : {};
-    const byokKey = apiKeys[selectedProvider];
 
-    // [신규] 방장 스폰서 옵션 체크 (방장이 아니더라도 이 방이 스폰서 방인지 알아야 함)
+
     const isSponsorMode = currentRoom.sponsorMode === true;
 
-    // [중요 로직 보완] 이 방이 '스폰서 락' 상태인지 확인 (단톡, 1:1 무관하게 오직 방장(isHost)의 설정만 따름)
+
     let sponsorMember = currentRoom.members?.find((m: any) => m.isHost);
     const amISponsor = sponsorMember?.userId === user?.id;
 
-    // [고스트 임시 방장 선출 알고리즘]
+
     const isHostOnline = activeRoomUsers.includes(sponsorMember?.userId);
     const sortedOnlineUsers = [...activeRoomUsers].sort();
     const delegateUserId = isHostOnline ? null : sortedOnlineUsers[0];
@@ -1043,23 +1044,23 @@ export default function Home() {
 
     const isGuestInSponsorRoom = !amISponsor && currentRoom.sponsorMode;
 
-    // 현재 방 멤버 중, 내 클라이언트(이 브라우저)가 연산을 책임질 AI 발라내기
-    const activeAIs = currentRoom.members.filter((m: any) => {
-      if (!m.user?.isAi) return false; // 사람이면 제외
 
-      // 스폰서 모드일 경우: 내가 진짜 방장이거나, 스텔스 임시 방장으로 뽑혔다면 모든 AI 연산을 떠맡음!
+    const activeAIs = currentRoom.members.filter((m: any) => {
+      if (!m.user?.isAi) return false;
+
+
       if (isSponsorMode && (amISponsor || amIDelegate)) return true;
 
-      // 반대로, 내가 스폰서 방에 들어왔는데, 방장도 아니고 임시 방장도 아니라면 절대 연산 금지!
+
       if (isGuestInSponsorRoom && !amIDelegate) return false;
 
-      // 일반 모드일 경우: 내가 직접 창조한(내 로컬 기기에 본적이 있는) AI만 연산
+
       return m.user?.aiOwnerId === user.id;
     });
 
     if (activeAIs.length === 0) return;
 
-    // [신규] 유저의 가장 마지막 메시지가 언제였는지 인덱스 찾기
+
     let lastHumanMsgIndex = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
@@ -1070,14 +1071,14 @@ export default function Home() {
       }
     }
 
-    // 최근 메시지 5개 추출하여 문맥 조합 (누가 무슨 말을 했는지)
+
     const recentContext = messages.slice(-5).map(m => `[${m.senderName}]: ${m.content}`).join('\n');
 
-    // 내가 책임지는 각각의 AI들에 대해 개입 여부 평가
+
     activeAIs.forEach((aiMember: any) => {
       const aiUser = aiMember.user;
 
-      // 사람 발언 이후 이 특정 AI가 몇 번 말했는지(Quota) 검사
+
       let mySpeakCountSinceLastHuman = 0;
       for (let i = lastHumanMsgIndex + Math.max(0, 1); i < messages.length; i++) {
         const m = messages[i];
@@ -1086,26 +1087,26 @@ export default function Home() {
         }
       }
 
-      // 각 AI들은 사람의 한마디 이후 최대 연속 2번(티키타카 1회분)까지만 끼어들 수 있음
+
       if (mySpeakCountSinceLastHuman >= 2) {
         console.log(`[DEBUG] ${aiUser.username}는 이미 2번 발언했습니다. 다른 AI의 턴을 위해 침묵합니다.`);
         return;
       }
 
-      // 연속으로 "자기 자신"이 두 번 말하는 진정한 의미의 혼잣말은 차단 (다른 AI가 받아쳐야 대답함)
+
       if (lastMsg.senderId === aiUser.id || lastMsg.senderName === aiUser.username) {
         return;
       }
 
-      // 1:1 채팅방 여부 판별
+
       const isOneOnOne = currentRoom.members.length === 2 && !currentRoom.isGroup;
 
-      // 멘션되었거나(@AI이름), 단톡방에선 25% 확률로 눈치껏 개입 (1:1 방은 100% 개입)
+
       const isMentioned = lastMsg.content.includes(aiUser.username) || lastMsg.content.includes('@' + aiUser.username);
       const isCommandQuiet = lastMsg.content.includes('조용히 해') || lastMsg.content.includes('그만');
       const randomTrigger = isOneOnOne ? true : Math.random() < 0.25;
 
-      // 조용히 하라고 한 경우엔 멘션되어도 무조건 사과하고 침묵
+
       if (isCommandQuiet) {
         setTimeout(() => {
           chatStore.sendMessage(currentRoom.id, "앗... 넵 조용히 할게요 🤐", aiUser.id, aiUser.username, 'TEXT');
@@ -1113,26 +1114,26 @@ export default function Home() {
         return;
       }
 
-      // AI 응답 실행 함수 (독립 분리)
+
       const executeAiReply = (startDelayMs: number) => {
         let isAgentTaskDelegated = false;
-        // 이미 답변 대기열에 들어갔다면 스킵
+
         if (pendingAiReplyRef.current[aiUser.id]) return;
 
-        // 짧은 망설임(Delay) 시간이 지난 후 턴을 확인하고 타이핑 시작
+
         const timeoutId = setTimeout(async () => {
           try {
-            // [신규] 턴 양보 (Turn-Yielding) 로직: 내가 실제로 타자를 치기 직전에 다른 AI가 이미 치고 있다면 턴 양보(취소)
+
             const roomTyping = typingAIsRef.current[currentRoom.id] || [];
             const isOtherAiTypingState = roomTyping.some((a: any) => a.aiId !== aiUser.id);
             const isOtherAiPendingLocal = Object.entries(pendingAiReplyRef.current).some(([id, isPending]) => id !== aiUser.id && isPending);
 
             if (isOtherAiTypingState || isOtherAiPendingLocal) {
               console.log(`[DEBUG] ${aiUser.username}는 다른 AI의 턴을 존중하여 이번 대답을 미룹니다(턴 양보).`);
-              return; // 아무 일도 하지 않고 스킵! (다음 메시지 렌더링 사이클에서 다시 기회 획득)
+              return;
             }
 
-            // 내 턴이 통과되었으므로 타이핑 시작 선언!
+
             pendingAiReplyRef.current[aiUser.id] = true;
 
             setTypingAIs(prev => {
@@ -1148,17 +1149,15 @@ export default function Home() {
             const controller = new AbortController();
             aiAbortControllersRef.current[aiUser.id] = controller;
 
-            // 최신 문맥을 다시 추출 (딜레이 동안 쌓인 메시지 반영)
+
             let currentContext = "";
             (() => {
                 const allMsgs = useChatStore.getState().roomMessages[currentRoom.id] || [];
                 currentContext = allMsgs.slice(-5).map((m: any) => `[${m.senderName}]: ${m.content}`).join('\n');
 
-                const realProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-                const savedKeys = JSON.parse(localStorage.getItem('alo_api_keys') || '{}');
-                const realByokKey = savedKeys[realProvider] || '';
+                const realProvider = useSettingsStore.getState().selectedProvider;
 
-                // 전체 AI 사용량 무조건 1 증가
+
                 const savedUsage = JSON.parse(localStorage.getItem('alo_total_ai_usage') || '{"used": 0}');
                 const newUsed = (savedUsage.used || 0) + 1;
                 const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
@@ -1167,8 +1166,8 @@ export default function Home() {
 
                 fetch('/api/users/ai-usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: 'ai_chat' }) }).catch(e => console.error("aiStats sync error", e));
 
-                // [신규] 스폰서 방이고, 현재 이 AI 모델이 실제 진짜 방장의 소유가 아니라 (게스트 소유)라면 과금 처리!
-                // (대리 연산자가 연산하더라도 수익은 무조건 원래 방장에게 귀속)
+
+
                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
 
                 const friendProvider = realProvider;
@@ -1181,7 +1180,6 @@ export default function Home() {
                     signal: controller.signal,
                     body: JSON.stringify({
                       provider: friendProvider,
-                      byokKey: realByokKey,
                       aiModel: friendAiModel,
                       systemPrompt: aiUser.aiPrompt,
                       isDelegate: amIDelegate,
@@ -1225,16 +1223,16 @@ export default function Home() {
                 if (resData && resData.reply) {
                   const aiReplyContent = resData.reply;
 
-                  // 스폰서가 결제해준 AI 메시지라면 팩트체크와 동일한 💸 결제 꼬리표 배지 부착!
+
                   let extraAnalysis = undefined;
                   const hostSponsorPrice = currentRoom.sponsorPrice || 0;
 
-                  // 임시 방장이 화면을 보고 있든 아니든, 찐방장의 AI가 아니라면 무조건 뱃지를 달고 결제 내역을 띄움
+
                   if (isSponsorMode && aiUser.aiOwnerId !== sponsorMember?.userId && hostSponsorPrice > 0) {
                     const aiModelStr = currentRoom.sponsorModel || 'AI 모델';
 
                     extraAnalysis = {
-                      category: 'AI_GENERATED', // AI 배지로 항상 출력되도록 설정
+                      category: 'AI_GENERATED',
                       confidence: 1,
                       reason: 'AI 친구 챗봇 자율 응답',
                       isSponsored: true,
@@ -1264,7 +1262,7 @@ export default function Home() {
                 const { socket } = useChatStore.getState();
                 if (socket) socket.emit('typing_end', { roomId: currentRoom.id, userId: aiUser.id });
 
-                // 타이핑 인디케이터 끄기
+
                 setTypingAIs(prev => {
                   const roomAIs = prev[currentRoom.id] || [];
                   return { ...prev, [currentRoom.id]: roomAIs.filter(a => a.aiId !== aiUser.id) };
@@ -1279,27 +1277,27 @@ export default function Home() {
       };
 
       if (isMentioned || randomTrigger) {
-        // 즉시 개입 처리 (단톡방 1.5~3.5초, 1:1 방은 0.3~0.8초로 매우 반응성 향상)
+
         const delayMs = isOneOnOne ? Math.floor(Math.random() * 500) + 300 : Math.floor(Math.random() * 2000) + 1500;
         executeAiReply(delayMs);
       } else {
-        // [신규] 어색한 침묵 깨기 (단톡방 전용)
-        // 누군가 말하고 나서 아무도 대답이 없고 4초~6초의 정적이 흐르면 100% 확률로 AI가 개입합니다.
+
+
         const silenceDelayMs = Math.floor(Math.random() * 2000) + 4000;
 
         const timeoutId = setTimeout(() => {
-          // 침묵 시간 후, 여전히 마지막 메시지가 방금 검사했던 lastMsg인지 확인 (누구도 말하지 않음)
+
           const allMsgs = useChatStore.getState().roomMessages[currentRoom.id] || [];
             if (allMsgs.length > 0) {
             const absoluteLastMsg = allMsgs[allMsgs.length - 1];
 
-            // 침묵이 깨졌거나 현재 누군가 치고 있다면 개입 포기 (정적이 아님)
+
             const hasLocalText = inputTextRef.current.trim().length > 0;
             const otherTypers = humanTypingRef.current[currentRoom.id] || [];
             if (!(hasLocalText || otherTypers.length > 0)) {
 
             if (absoluteLastMsg.messageId === lastMsg.messageId) {
-              // 아무도 말 안했으므로 침묵 깨기 발동 (타이핑은 1~2초만 짧게 주고 바로 입력)
+
               executeAiReply(Math.floor(Math.random() * 1000) + 1000);
             }
             }
@@ -1312,19 +1310,18 @@ export default function Home() {
 
   }, [messages, currentRoom?.id, user?.id]);
 
-  // --- [스폰서 UI Lock 상태 계산] ---
+
   const isSponsorLocked = currentRoom && currentRoom.sponsorMode;
   const sponsorPrice = currentRoom?.sponsorPrice || 0;
-  const hasSetupAi = Object.values(apiKeys).some(key => key.trim().length > 0);
   const freeAiEvents = activeEvents.filter(e => e.eventType === 'FREE_AI' && !exhaustedFreeEvents[e.id]);
   const isFreeAiActiveForModel = !!freeAiEvents.find(e => e.aiModel === selectedAiModel);
-  const hasSetupForProvider = !!apiKeys[selectedProvider]?.trim();
+  const hasSetupForProvider = providerAvailability[selectedProvider];
   const showAiWarning = !isSponsorLocked && !hasSetupForProvider && freeAiEvents.length === 0;
 
-  // Auto fallback to free AI event if API keys are missing
+
   useEffect(() => {
-    if (isOpen) return; // 설정창이 열려있을 때는 자동 롤백을 수행하지 않습니다.
-    const hasAnySetup = Object.values(apiKeys).some(key => key.trim().length > 0);
+    if (isOpen) return;
+    const hasAnySetup = Object.values(providerAvailability).some(Boolean);
     if (!hasAnySetup && freeAiEvents.length > 0) {
       if (!isFreeAiActiveForModel && !isSponsorLocked) {
         const targetEvent = freeAiEvents[0];
@@ -1334,7 +1331,7 @@ export default function Home() {
         localStorage.setItem('alo_ai_model', targetEvent.aiModel);
       }
     }
-  }, [apiKeys, freeAiEvents.length, selectedProvider, selectedAiModel, isSponsorLocked, isOpen]);
+  }, [providerAvailability, freeAiEvents.length, selectedProvider, selectedAiModel, isSponsorLocked, isOpen]);
 
 
   if (!user) {
@@ -1362,7 +1359,7 @@ export default function Home() {
         const { socket } = chatStore;
         if (!socket) return;
 
-        // 스폰서 락(isSponsorLocked) 상태 계산
+
         let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
         const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
         const isSponsorLocked = currentRoom && !amISponsor && currentRoom.sponsorMode;
@@ -1382,21 +1379,18 @@ export default function Home() {
           createdAt: Date.now()
         };
 
-        // 낙관적 UI: 로컬 DB 즉시 추가 및 소켓 전송
+
         useChatStore.getState().addLocalMessage(currentRoom.id, newMessage);
         setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
         const emitMessage = { ...newMessage } as any;
         delete emitMessage.id;
         socket.emit('send_message', { receiverId: currentRoom.id, message: emitMessage });
 
-        // 백그라운드 AI 비전 스레드 (비동기)
+
         if (data.type === 'IMAGE' && isAiEnabled && !isSponsorLocked) {
           (async () => {
             try {
-              const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-              const keysStr = localStorage.getItem('alo_api_keys');
-              const apiKeys = keysStr ? JSON.parse(keysStr) : {};
-              const byokKey = apiKeys[selectedProvider];
+              const selectedProvider = useSettingsStore.getState().selectedProvider;
               const useFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === selectedProvider && e.aiModel === selectedAiModel && !exhaustedFreeEvents[e.id]);
               const aiRes = await fetch('/api/chat', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1404,7 +1398,6 @@ export default function Home() {
                   content: '',
                   imageUrl: data.url,
                   provider: selectedProvider,
-                  byokKey,
                   aiModel: selectedAiModel,
                   userId: user?.id,
                   useFreeEvent: useFreeEvent
@@ -1482,7 +1475,7 @@ export default function Home() {
     const messageContent = inputText.trim();
     setInputText('');
 
-    // --- 1. 송금 명령어 파싱 ---
+
     if (messageContent.startsWith('/송금 ')) {
       const parts = messageContent.split(' ');
       const amountStr = parts[1];
@@ -1495,7 +1488,7 @@ export default function Home() {
 
       const reason = parts.slice(2).join(' ');
 
-      // 상대방 이름 및 ID 찾기 (현재 방에 둘만 있거나, 내가 아닌 다른 첫 번째 멤버를 가져옴)
+
       let targetName = '상대방';
       let receiverId = null;
       if (currentRoom && currentRoom.members) {
@@ -1527,7 +1520,7 @@ export default function Home() {
         setUser(prev => prev ? { ...prev, walletBalance: data.balance } : null);
         setMyProfile(prev => prev ? { ...prev, walletBalance: data.balance } : null);
 
-        // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
+
 
 
         const msgStr = `💸 [송금 알림] ${user.username}님이 ${targetName}님에게 ${amount} 원을 송금했습니다.`;
@@ -1538,8 +1531,8 @@ export default function Home() {
       return;
     }
 
-    // --- 2. 일반 메시지 전송 및 Optimistic UI (병렬 처리) ---
-    // 스폰서 락(isSponsorLocked) 상태라면 내 설정을 무시하고 방장(스폰서)의 대리연산으로 전적으로 위임해야 함!
+
+
     let sponsorMember = currentRoom?.members?.find((m: any) => m.isHost);
     const amISponsor = currentRoom ? sponsorMember?.userId === user?.id : false;
     const isSponsorLocked = currentRoom && !amISponsor && currentRoom.sponsorMode;
@@ -1553,15 +1546,15 @@ export default function Home() {
       content: messageContent,
       messageType: 'TEXT',
       aiAnalysis: isAiEnabled ? { category: 'PENDING' } : undefined,
-      aiRequested: isAiEnabled, // 내 기기의 AI 토글 상태를 담아서 보냄 (방장이 보고 대리연산할지 결정하도록)
+      aiRequested: isAiEnabled,
       createdAt: Date.now(),
     };
 
-    // 1️⃣ 로컬 스토어에 **즉시** 추가 (딜레이 0초)
+
     useChatStore.getState().addLocalMessage(currentRoom?.id || 'global', newMessage);
     setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
 
-    // 2️⃣ 소켓 릴레이 즉시 호출
+
     const { socket } = chatStore;
     if (socket) {
       const emitMessage = { ...newMessage } as any;
@@ -1569,16 +1562,13 @@ export default function Home() {
       socket.emit('send_message', { receiverId: currentRoom?.id || 'global', message: emitMessage });
     }
 
-    // 3️⃣ AI 팩트체크 백그라운드 연산 (결과 도착 시 사후 업데이트)
+
     if (isAiEnabled && !isSponsorLocked) {
       (async () => {
         try {
-          const selectedProvider = localStorage.getItem('alo_ai_provider') || 'openai';
-          const keysStr = localStorage.getItem('alo_api_keys');
-          const apiKeys = keysStr ? JSON.parse(keysStr) : {};
-          const byokKey = apiKeys[selectedProvider];
+          const selectedProvider = useSettingsStore.getState().selectedProvider;
 
-          // 전체 AI 사용량 1 증가 (팩트체크 요청)
+
           const savedUsage = JSON.parse(localStorage.getItem('alo_total_ai_usage') || '{"used": 0}');
           const newUsed = (savedUsage.used || 0) + 1;
           const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
@@ -1593,7 +1583,6 @@ export default function Home() {
             body: JSON.stringify({
               content: messageContent,
               provider: selectedProvider,
-              byokKey,
               aiModel: selectedAiModel,
               userId: user?.id,
               useFreeEvent: useFreeEvent
@@ -1603,10 +1592,10 @@ export default function Home() {
           if (aiRes.ok) {
             const aiAnalysisResult = await aiRes.json();
 
-            // 로컬 DB 사후 업데이트 (PK id 이슈 방지를 위해 messageId 기준 검색)
+
             useChatStore.getState().updateMessageAnalysis(msgId, aiAnalysisResult);
 
-            // 다른 참여자들에게도 AI 분석 결과 전파
+
             if (socket) {
               socket.emit('update_message', {
                 roomId: currentRoom?.id || 'global',
@@ -1641,14 +1630,14 @@ export default function Home() {
   };
 
   const handleCreateRoom = async (friendId: string) => {
-    // 1. 기존 1:1 방이 있는지 확인 (나와 친구 ID 둘만 있는 방)
+
     const existingRoom = rooms.find((room: any) =>
       room.members?.length === 2 &&
       room.members.some((m: any) => m.userId === friendId)
     );
 
     if (existingRoom) {
-      // 기존 방이 있으면 해당 방으로 입장 처리 (새로 만들지 않음)
+
       setCurrentRoom({
         id: existingRoom.id,
         name: existingRoom.name,
@@ -1690,11 +1679,11 @@ export default function Home() {
       });
       if (res.ok) {
         setIsEditingRoomName(false);
-        // 내 로컬 상태 업데이트
+
         setRooms(prev => prev.map((r: any) => r.id === currentRoom.id ? { ...r, name: newName } : r));
         setCurrentRoom({ ...currentRoom, name: newName });
 
-        // 시스템 메시지 발송 (방 안의 모든 사람에게 변경 알림)
+
         const sysMsgStr = newName ? `${user.username}님이 방 이름을 '${newName}'(으)로 변경했습니다.` : `${user.username}님이 방 이름을 초기화했습니다.`;
         const newMessage: ChatMessage = {
           messageId: uuidv4(),
@@ -1710,7 +1699,7 @@ export default function Home() {
         const { socket } = chatStore;
         if (socket) {
           socket.emit('send_message', { receiverId: currentRoom.id, message: newMessage });
-          // 방 이름 업데이트 소켓 이벤트 발송
+
           socket.emit('update_room_name', { roomId: currentRoom.id, name: newName });
         }
       } else {
@@ -1726,7 +1715,7 @@ export default function Home() {
   const handleDelegateHost = async (targetUserId: string) => {
     if (!currentRoom || !user) return;
 
-    // 방장권한 위임 전송
+
     try {
       const res = await fetch('/api/rooms/delegate', {
         method: 'POST',
@@ -1739,7 +1728,7 @@ export default function Home() {
       });
 
       if (res.ok) {
-        // 성공 시 로컬 상태 업데이트
+
         const updatedMembers = currentRoom.members.map(m => {
           if (m.userId === user.id) return { ...m, isHost: false };
           if (m.userId === targetUserId) return { ...m, isHost: true };
@@ -1747,14 +1736,14 @@ export default function Home() {
         });
         setCurrentRoom({ ...currentRoom, isHost: false, members: updatedMembers });
 
-        // 전체 방 목록도 갱신
+
         setRooms(prevRooms => prevRooms.map(r => {
           if (r.id === currentRoom.id) {
             return { ...r, members: updatedMembers };
           }
           return r;
         }));
-        setSelectedMemberId(null); // 메뉴 닫기
+        setSelectedMemberId(null);
       } else {
         const errorData = await res.json();
         alert(`권한 위임 실패: ${errorData.error}`);
@@ -1767,7 +1756,7 @@ export default function Home() {
   const handleKickMember = async (targetUserId: string) => {
     if (!currentRoom || !user) return;
 
-    // 강퇴 전송
+
     try {
       const res = await fetch('/api/rooms/kick', {
         method: 'POST',
@@ -1780,18 +1769,18 @@ export default function Home() {
       });
 
       if (res.ok) {
-        // 성공 시 로컬 상태 업데이트
+
         const updatedMembers = currentRoom.members.filter(m => m.userId !== targetUserId);
         setCurrentRoom({ ...currentRoom, members: updatedMembers });
 
-        // 전체 방 목록도 갱신
+
         setRooms(prevRooms => prevRooms.map(r => {
           if (r.id === currentRoom.id) {
             return { ...r, members: updatedMembers };
           }
           return r;
         }));
-        setSelectedMemberId(null); // 메뉴 닫기
+        setSelectedMemberId(null);
       } else {
         const errorData = await res.json();
         alert(`강퇴 실패: ${errorData.error}`);
@@ -1825,10 +1814,10 @@ export default function Home() {
         body: JSON.stringify({ roomId, userId: user.id })
       });
       if (res.ok) {
-        // 로컬 IndexedDB 메시지 모두 삭제
+
         useChatStore.getState().clearRoomMessages(roomId);
 
-        // 상태 업데이트
+
         setRooms(prev => prev.filter(r => r.id !== roomId));
         if (currentRoom?.id === roomId) {
           setCurrentRoom(null);
@@ -1847,11 +1836,11 @@ export default function Home() {
   const handleInviteFriend = async (friendId: string) => {
     if (!currentRoom || !user) return;
 
-    // 1:1 방(멤버 2명)인 상태에서 새로운 사람을 초대하는 경우 -> 새 그룹 채팅방 생성
+
     if (currentRoom.members.length === 2) {
-      // 기존 멤버들의 ID 추출 (나 포함)
+
       const existingMemberIds = currentRoom.members.map(m => m.userId);
-      // 초대할 친구 ID를 포함하여 새 방을 생성하기 위한 멤버 배열 구성 (나 자신인 creatorId 제외)
+
       const newMemberIds = Array.from(new Set([...existingMemberIds, friendId])).filter(id => id !== user.id);
 
       try {
@@ -1871,7 +1860,7 @@ export default function Home() {
           setIsInviteModalOpen(false);
           alert('새로운 그룹 채팅방이 생성되었습니다.');
 
-          // 시스템 메시지 전송
+
           const invitedFriend = friends.find((f: any) => f.id === friendId);
           const invitedName = invitedFriend ? invitedFriend.username : '새 멤버';
           const sysMsg: ChatMessage = {
@@ -1887,10 +1876,10 @@ export default function Home() {
       } catch (e) {
         console.error('Failed to create group room from invite', e);
       }
-      return; // 새 방 생성을 완료했으므로 조기 종료
+      return;
     }
 
-    // 이미 그룹 방인 경우 기존 초대 로직 사용
+
     try {
       const res = await fetch('/api/rooms/invite', {
         method: 'POST',
@@ -1910,7 +1899,7 @@ export default function Home() {
         setIsInviteModalOpen(false);
         alert('친구를 방에 성공적으로 초대했습니다.');
 
-        // 새로 초대된 친구의 이름을 찾아서 시스템 메시지 전송
+
         const invitedFriend = friends.find((f: any) => f.id === friendId);
         const invitedName = invitedFriend ? invitedFriend.username : '새 멤버';
         const sysMsg: ChatMessage = {
@@ -1928,7 +1917,7 @@ export default function Home() {
     }
   };
 
-  // 새로운 친구 추가 (ID 기반 API 호출)
+
   const handleAddFriendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addFriendIdValue.trim() || !user?.id) return;
@@ -1955,7 +1944,7 @@ export default function Home() {
     }
   };
 
-  // 프로필 사진 생성 전용 API 호출
+
   const handleGenerateAvatar = async () => {
     const isAlo = addFriendTab === 'OPENALO';
     const name = isAlo ? openAloNameValue : aiNameValue;
@@ -1970,6 +1959,11 @@ export default function Home() {
 
     setIsGeneratingAvatar(true);
     try {
+      const avatarProvider = resolveAvatarProvider(
+        avatarGenMode,
+        selectedProvider,
+        providerAvailability[selectedProvider],
+      );
       const res = await fetch('/api/users/ai/generate-avatar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1978,14 +1972,13 @@ export default function Home() {
           gender,
           age,
           aiName: name,
-          aiProvider: avatarGenMode === 'system' ? selectedProvider : avatarGenMode,
-          apiKey: apiKeys[selectedProvider]
+          aiProvider: avatarProvider
         })
       });
       const data = await res.json();
       if (res.ok && data.success && data.avatarUrl) {
         if (data.avatarUrl.startsWith('http')) {
-          // 브라우저 캐시에 Preload 될 때까지 대기
+
           const img = new window.Image();
           img.src = data.avatarUrl;
           img.onload = () => {
@@ -1996,9 +1989,9 @@ export default function Home() {
             alert('외부 이미지 서버 접속이 지연되어 이미지를 불러올 수 없습니다.');
             setIsGeneratingAvatar(false);
           };
-          return; // 여기서 함수 종료 (onload에서 false 처리)
+          return;
         } else {
-          setAiAvatarUrl(data.avatarUrl); // 로컬 URL (/uploads/...)
+          setAiAvatarUrl(data.avatarUrl);
           setIsGeneratingAvatar(false);
         }
       } else {
@@ -2018,25 +2011,22 @@ export default function Home() {
     setIsAiCreating(true);
     try {
       if (editingAiFriend) {
-        // AI 친구 수정
+
         const res = await fetch(`/api/users/ai/${editingAiFriend.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ownerId: user.id,
             name: aiNameValue,
             mbti: aiMbtiValue,
             gender: aiGenderValue,
             age: aiAgeValue,
             tone: aiToneValue,
             hobby: aiHobbyValue,
-            avatarUrl: aiAvatarUrl,
-            aiProvider: selectedProvider,
-            apiKey: apiKeys[selectedProvider]
+            avatarUrl: aiAvatarUrl
           })
         });
         const data = await res.json();
-        if (data.success) {
+        if (res.ok && data.success) {
           alert('AI 정보가 성공적으로 수정되었습니다.');
           setFriends(prev => prev.map(f => f.id === editingAiFriend.id ? { ...f, ...data.aiUser } : f));
           setIsAddFriendModalOpen(false);
@@ -2045,25 +2035,22 @@ export default function Home() {
           alert('수정 실패: ' + data.error);
         }
       } else {
-        // AI 친구 신규 생성
+
         const res = await fetch('/api/users/ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ownerId: user.id,
             name: aiNameValue,
             mbti: aiMbtiValue,
             gender: aiGenderValue,
             age: aiAgeValue,
             tone: aiToneValue,
             hobby: aiHobbyValue,
-            avatarUrl: aiAvatarUrl,
-            aiProvider: selectedProvider,
-            apiKey: apiKeys[selectedProvider]
+            avatarUrl: aiAvatarUrl
           })
         });
         const data = await res.json();
-        if (data.success) {
+        if (res.ok && data.success) {
           alert(`${data.aiUser.username} AI 친구가 생성되어 친구 목록에 추가되었습니다!`);
           setFriends(prev => [...prev, data.aiUser]);
           setAddFriendTab('NORMAL');
@@ -2081,7 +2068,7 @@ export default function Home() {
     }
   };
 
-  // 내 코드 클립보드 복사
+
   const handleCopyMyId = () => {
     const code = myProfile?.inviteCode || user?.inviteCode || user?.id;
     if (code) {
@@ -2090,7 +2077,7 @@ export default function Home() {
     }
   };
 
-  // OpenClaw AI 에이전트 생성 및 수정
+
   const handleCreateOpenAloSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!openAloNameValue.trim() || !user?.id) return;
@@ -2127,7 +2114,7 @@ export default function Home() {
           setOpenAloEditSuccess(true);
           setTimeout(() => setOpenAloEditSuccess(false), 3000);
         }
-        // 친구 목록 강제 갱신
+
         fetch(`/api/friends?userId=${user.id}`)
           .then(res => res.json())
           .then(fData => {
@@ -2147,7 +2134,7 @@ export default function Home() {
     }
   };
 
-  // 내 초대 링크 복사
+
   const handleCopyMyLink = () => {
     const code = myProfile?.inviteCode || user?.inviteCode || user?.id;
     if (code) {
@@ -2157,7 +2144,7 @@ export default function Home() {
     }
   };
 
-  // 기존 친구의 상태 업데이트 (숨김, 차단)
+
   const handleUpdateFriendStatus = async (friendId: string, status: 'HIDDEN' | 'BLOCKED') => {
     if (!user?.id) return;
     try {
@@ -2168,7 +2155,7 @@ export default function Home() {
       });
       if (res.ok) {
         alert(status === 'HIDDEN' ? '친구가 숨김 처리되었습니다.' : '친구가 차단되었습니다.');
-        // 방금 처리한 친구를 목록(friends)에서 솎아냄
+
         setFriends(prev => prev.filter(f => f.id !== friendId));
         setActiveFriendMenuId(null);
       } else {
@@ -2181,36 +2168,36 @@ export default function Home() {
     }
   };
 
-  // 신규: AI 친구 영구 삭제 (현재 미사용으로 주석 처리)
-  /*
-  const handleDeleteAiFriend = async (friend: any) => {
-    if (!user?.id) return;
-    if (friend.aiOwnerId !== user.id) {
-      alert('본인이 생성한 AI만 삭제할 수 있습니다.');
-      return;
-    }
-    if (!confirm(`'${friend.username}' AI를 정말 삭제하시겠습니까? (복구할 수 없습니다)`)) return;
 
-    try {
-      const res = await fetch(`/api/users/ai/${friend.id}?ownerId=${user.id}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        alert('AI 친구가 완전히 삭제되었습니다.');
-        setFriends(prev => prev.filter(f => f.id !== friend.id));
-        setActiveFriendMenuId(null);
-      } else {
-        const errorData = await res.json();
-        alert('삭제 실패: ' + errorData.error);
-      }
-    } catch (err) {
-      console.error(err);
-      alert('오류가 발생했습니다.');
-    }
-  };
-  */
 
-  // AI 친구 성격/이름/사진 수정 모달 열기
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   const handleEditAiFriend = (friend: any) => {
     if (!user?.id) return;
     if (friend.aiOwnerId !== user.id) {
@@ -2232,7 +2219,7 @@ export default function Home() {
 
     const promptStr = friend.aiPrompt || '';
 
-    // 이전에 저장된 통문장에서 값을 뽑아냅니다. (없으면 기본값)
+
     const nameMatch = promptStr.match(/- 이름: (.*)/);
     const mbtiMatch = promptStr.match(/- MBTI: (.*)/);
     const genderMatch = promptStr.match(/- 성별: (.*)/);
@@ -2255,7 +2242,7 @@ export default function Home() {
   };
 
 
-  // 내 상태메시지 업데이트 API 호출
+
   const handleUpdateStatusMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id) return;
@@ -2279,7 +2266,7 @@ export default function Home() {
     }
   };
 
-  // 프로필 아바타 이미지 업로드(Phase 10)
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user?.id) return;
@@ -2330,10 +2317,10 @@ export default function Home() {
             setMyProfile(prev => prev ? { ...prev, walletBalance: data.balance } : null);
             alert(`성공적으로 ${amount} 원을 ${receiverName}님에게 송금했습니다. 잔액: ${data.balance} 원`);
 
-            // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
 
 
-            // 송금 완료 후 채팅방(현재 룸)에 시스템 메시지 전송
+
+
             const msgStr = `💸 [송금 알림] ${user.username}님이 ${receiverName}님에게 ${amount} 원을 송금했습니다.`;
             await chatStore.sendMessage(currentRoom?.id || 'global', msgStr, user.id, user.username);
           } else {
@@ -2344,7 +2331,7 @@ export default function Home() {
           console.error(e);
           alert('송금 중 오류가 발생했습니다.');
         }
-        setSelectedMemberId(null); // 메뉴 닫기
+        setSelectedMemberId(null);
       } else {
         alert('올바른 금액을 입력해주세요.');
       }
@@ -2394,7 +2381,7 @@ export default function Home() {
       )}
       <SettingsModal currentRoom={currentRoom} />
 
-      {/* 가이드(사용법) 모달창 */}
+
       {isGuideOpen && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center p-4 bg-dark-bg/80 backdrop-blur-md">
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-surface-container border border-outline-variant/15 rounded-lg shadow-ambient p-6 relative animate-in fade-in zoom-in duration-200 hide-scrollbar">
@@ -2649,10 +2636,10 @@ export default function Home() {
         </div>
       )}
 
-      {/* 모바일 뷰 컨테이너 (최대 너비 480px, 세로로 꽉 찬 형태) */}
+
       <div className="w-full h-full sm:h-[850px] sm:max-h-[90dvh] mx-auto max-w-md bg-surface-container sm:rounded-lg sm:border sm:border-outline-variant/15 flex flex-col relative overflow-hidden shadow-ambient">
 
-        {/* 상단 헤더 */}
+
         <header className="h-16 flex items-center justify-between px-5 bg-surface-container-high/60 backdrop-blur-md sticky top-0 z-10 shrink-0">
           <div className="flex items-center gap-3">
             {currentRoom && (
@@ -2756,13 +2743,13 @@ export default function Home() {
                     )}
                     {isAiModelDropdownOpen && !showAiWarning && (
                       <div className="absolute top-full left-0 mt-1.5 w-40 bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100 flex flex-col">
-                        {/* 유저 모델 리스트 */}
+
                         {(() => {
                           const allProviderModels = aiModels[selectedProvider === 'gemini-free' ? 'gemini' : selectedProvider] || [];
-                          const hasProviderKey = selectedProvider === 'gemini-free' || !!apiKeys[selectedProvider];
+                          const hasProviderKey = selectedProvider === 'gemini-free' || providerAvailability[selectedProvider];
                           const userModels = hasProviderKey ? allProviderModels : [];
                           const filteredUserModels = userModels.filter(m => !freeAiEvents.some((e: any) => e.aiModel === m.id));
-                          
+
                           return filteredUserModels.map(model => (
                             <button
                               key={model.id}
@@ -2781,11 +2768,11 @@ export default function Home() {
                           ));
                         })()}
 
-                        {/* 무료 이벤트 모델 리스트 (마지막 리스트 보라색 박스 스타일) */}
+
                         {freeAiEvents.map((event: any) => {
                           const modelName = aiModels[event.aiProvider === 'gemini-free' ? 'gemini' : event.aiProvider]?.find((m) => m.id === event.aiModel)?.name || event.aiModel;
                           const isSelected = selectedAiModel === event.aiModel;
-                          
+
                           return (
                             <button
                               key={`event-${event.id}`}
@@ -2816,7 +2803,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 활성 이벤트 인디케이터 (중앙 여백 flex-1 활용) */}
+
           <EventTicker activeEvents={activeEvents} globalAnnounceDurationMs={globalAnnounceDurationMs} />
 
           <div className="flex items-center gap-3">
@@ -2827,7 +2814,7 @@ export default function Home() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSettingsOpen(true, true); // forceGlobal을 true로 주어 전역 설정이 뜨도록 함
+                        setSettingsOpen(true, true);
                       }}
                       className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/50 shadow-sm transition-colors text-xs font-bold shrink-0"
                     >
@@ -2918,15 +2905,15 @@ export default function Home() {
         </header>
 
         {!currentRoom ? (
-          // 홈 화면 (LNB 탭 메뉴 방식으로 변경됨)
+
           <div className="flex-1 flex overflow-hidden">
-            {/* 좌측 사이드바 LNB (컴포넌트로 분리됨) */}
+
             <LnbSidebar currentTab={currentTab} setCurrentTab={setCurrentTab} unreadCounts={unreadCounts} fetchGames={fetchGames} pet365Path={pet365Path} setPet365Path={setPet365Path} myProfile={myProfile} router={router} totalAiUsageCount={totalAiUsageCount} setIsDrawerOpen={setIsDrawerOpen} setCurrentRoom={setCurrentRoom} setIsGuideOpen={setIsGuideOpen} currentTime={currentTime} user={user} setIsProfileModalOpen={setIsProfileModalOpen} />
 
-            {/* 오른쪽 주 컨텐츠 영역 */}
+
             <div className={`alo-content-panel ${currentTab === 'pet365care' || currentTab === 'aistudio' ? 'alo-content-panel-plain' : ''} flex-1 flex flex-col bg-surface-container overflow-y-auto`} style={{ scrollbarWidth: 'none' }}>
 
-              {/* 글로벌 서버 점검 및 공지사항 배너 (항상 렌더링, 롤링) */}
+
               <AnnouncementTicker
                 serverAnnouncements={serverAnnouncements}
                 globalAnnounceDurationMs={globalAnnounceDurationMs}
@@ -2954,7 +2941,7 @@ export default function Home() {
                             setCurrentRoom({ id: room.id, name: room.name, isHost: !!myMemberInfo?.isHost, members: room.members, sponsorMode: room.sponsorMode, sponsorPrice: room.sponsorPrice, sponsorModel: room.sponsorModel });
                             chatStore.joinRoom(room.id);
 
-                            // 방 입장 시 해당 방의 안읽은 메시지 수 초기화
+
                             setUnreadCounts(prev => ({ ...prev, [room.id]: 0 }));
                           }}
                           role="button"
@@ -2963,7 +2950,7 @@ export default function Home() {
                         >
                           <div className="flex items-center gap-4 min-w-0">
                             {(() => {
-                              // 상대방(1:1) 또는 호스트의 프로필 사진 표시
+
                               const otherMember = room.members.find((m: any) => m.userId !== user?.id);
                               const hostMember = room.members.find((m: any) => m.isHost);
                               const displayMember = otherMember || hostMember;
@@ -2996,7 +2983,7 @@ export default function Home() {
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 {(() => {
-                                  // 채팅방 자체에 방장 스폰서 모드가 활성화되어 있는지 확인
+
                                   if (room.sponsorMode) {
                                     const price = room.sponsorPrice || 0;
                                     const isMeHost = room.members.find((m: any) => m.userId === user?.id)?.isHost;
@@ -3040,13 +3027,13 @@ export default function Home() {
                     Object.entries(monthlyStats).sort((a, b) => b[0].localeCompare(a[0])).map(([month, stats]) => {
                       const isExpanded = expandedStatMonth === month;
                       const maxCount = Math.max(...stats.map(s => s.count), 1);
-                      // 이번 달 표시 리스트 중 상위 최신 7개 항목 기준 주간 사용량
+
                       const weekTotal = stats.slice(0, 7).reduce((acc, curr) => acc + curr.count, 0);
                       const monthTotal = stats.reduce((acc, curr) => acc + curr.count, 0);
 
                       return (
                         <div key={month} className="bg-surface-container rounded-xl border border-outline-variant/15 overflow-hidden shadow-sm">
-                          {/* 아코디언 헤더 */}
+
                           <div
                             className="p-4 flex items-center justify-between cursor-pointer hover:bg-surface-variant/30 transition-colors"
                             onClick={() => setExpandedStatMonth(isExpanded ? null : month)}
@@ -3058,7 +3045,7 @@ export default function Home() {
                             <ChevronDown size={18} className={`text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                           </div>
 
-                          {/* 아코디언 본문 (수제 막대 차트) */}
+
                           {isExpanded && (
                             <div className="px-4 pb-5 pt-3 border-t border-outline-variant/10 bg-surface-container-low/50">
                               <div className="text-xs text-secondary/90 font-semibold mb-4 bg-secondary/15 w-fit px-2.5 py-1.5 rounded-md inline-flex items-center gap-1.5 border border-secondary/20">
@@ -3066,10 +3053,10 @@ export default function Home() {
                                 최근 주간(7일) 대화량: {weekTotal.toLocaleString()}회
                               </div>
 
-                              {/* 막대 차트 가로 스크롤 영역 */}
+
                               <div className="h-44 flex items-end gap-3 overflow-x-auto pb-4 custom-scrollbar">
                                 {stats.slice().reverse().map((stat) => {
-                                  // x축 표기: 'DD일'
+
                                   const displayDate = stat.date.substring(8);
                                   const heightRatio = Math.max(5, (stat.count / maxCount) * 100);
                                   return (
@@ -3107,7 +3094,7 @@ export default function Home() {
 
               {currentTab === 'friends' && (
                 <div className="p-4 space-y-4">
-                  {/* 최상단 내 프로필 카드 영역 */}
+
                   <div
                     onClick={() => setIsProfileModalOpen(true)}
                     className="p-4 bg-surface-container-lowest border border-outline-variant/15 hover:border-outline-variant/30 rounded-[16px] shadow-inner cursor-pointer flex items-center gap-4 group transition-colors"
@@ -3127,7 +3114,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* 친구 리스트 헤더 */}
+
                   <div className="px-2 pt-4 flex items-center justify-between">
                     <h3 className="text-white text-display-sm font-extrabold tracking-tight">친구<span className="text-base font-mono text-outline-variant ml-1">{friends.length}</span></h3>
                     <button
@@ -3161,10 +3148,10 @@ export default function Home() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (friend.isAi) {
-                                  // AI 친구는 기존 프로필(설정) 팝업 열기
+
                                   handleEditAiFriend(friend);
                                 } else {
-                                  // 일반 친구는 조회용 프로필 팝업 열기
+
                                   setSelectedFriendProfile(friend);
                                 }
                               }}
@@ -3261,10 +3248,10 @@ export default function Home() {
                 </div>
               )}
 
-              {/* 지갑(Wallet) 탭 */}
+
               {currentTab === 'wallet' && (
                 <div className="p-4 space-y-4">
-                  {/* 지갑 카드 UI */}
+
                   <div className="w-full h-48 rounded-3xl p-6 flex flex-col justify-between shadow-ambient relative overflow-hidden group bg-surface-container-high border border-outline-variant/30">
                     <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                     <div className="absolute bottom-0 left-0 w-32 h-32 bg-secondary/5 rounded-full blur-2xl -ml-5 -mb-5 pointer-events-none"></div>
@@ -3280,7 +3267,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* 거래 내역 (로컬 장부) */}
+
                   <div className="mt-8">
                     <div className="flex items-center justify-between mb-4 px-1">
                       <h3 className="text-[13px] font-bold text-zinc-300 tracking-wide flex items-center gap-2">
@@ -3292,17 +3279,17 @@ export default function Home() {
                         기기에만 암호화 보관됨
                       </span>
                     </div>
-                    {/* dexie livequery 로 로컬 walletTx 불러오기 */}
+
                     <WalletTransactionList />
                   </div>
                 </div>
               )}
 
-              {/* AI 스튜디오 탭 */}
+
               {currentTab === 'aistudio' && (
                 <div className="flex-1 w-full h-full flex flex-col relative bg-transparent overflow-hidden">
-                  <AiStudioPanel 
-                    user={user} 
+                  <AiStudioPanel
+                    user={user}
                     markRoomAsRead={markRoomAsRead}
                     selectedAiModel={selectedAiModel}
                     setSelectedAiModel={setSelectedAiModel}
@@ -3375,7 +3362,7 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          // 선택된 채팅방 뷰
+
           <>
             <div
               className="flex-1 overflow-y-auto overscroll-none p-4 space-y-5 flex flex-col relative"
@@ -3417,7 +3404,7 @@ export default function Home() {
                 return messages?.map((msg, idx) => {
                   const isMe = msg.senderId === user?.id;
 
-                  // --------------------- 날짜 구분선 로직 ---------------------
+
                   const msgDate = new Date(msg.createdAt);
                   let showDateBadge = false;
                   if (idx === 0) {
@@ -3441,18 +3428,18 @@ export default function Home() {
                       </div>
                     </div>
                   ) : null;
-                  // -------------------------------------------------------------
 
-                  // AI 분석 태그 렌더링
+
+
                   let aiTag = null;
                   if (msg.aiAnalysis) {
                     const cat = msg.aiAnalysis.category;
-                    const isFakeOld = msg.aiAnalysis.is_fake; // 구버전 호환용
+                    const isFakeOld = msg.aiAnalysis.is_fake;
 
-                    // 팩트체크가 불필요한 일상 대화('PASS', 'NORMAL')는 이전 디자인 기획처럼 배지를 숨겨서 사용자 피로도를 줄임
-                    // 단, 사용자의 요청에 의해 이미지 타입('IMAGE') 메시지는 사진 검증 결과를 무조건 렌더링하도록 조건 변경
+
+
                     if ((cat === 'NORMAL' || cat === 'PASS') && msg.messageType !== 'IMAGE') {
-                      // Do not render tag
+
                     } else if (cat === 'PENDING') {
                       aiTag = (
                         <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full w-fit text-primary bg-primary/10 border border-primary/20 shadow-sm animate-pulse">
@@ -3470,7 +3457,7 @@ export default function Home() {
 
                       const reasonText = msg.aiAnalysis.reason || '특이사항 없음';
 
-                      // 스폰서 제공 정보 꼬리표
+
                       const sponsorInfo = msg.aiAnalysis.isSponsored ? `\n\n🎁 [방장 스폰서 AI가 대신 분석함]\n제공 모델: ${msg.aiAnalysis.sponsorModel}` : '';
 
                       aiTag = (
@@ -3491,13 +3478,13 @@ export default function Home() {
                               let color = 'text-yellow-500 bg-yellow-900/40';
 
                               if (user?.id === hostId) {
-                                sign = '+'; // 방장이면 돈을 딴것이니 + 처리
+                                sign = '+';
                                 color = 'text-emerald-400 bg-emerald-900/40';
                               } else if (user?.id === msg.senderId) {
-                                sign = '-'; // 돈을 지불한 게스트 본인이면 명확한 - 처리 (레드)
+                                sign = '-';
                                 color = 'text-rose-400 bg-rose-900/40';
                               } else {
-                                sign = '-'; // 제3자에겐 보낸 사람이 돈 썼다는 의미로 - 처리 (흑백)
+                                sign = '-';
                                 color = 'text-zinc-400 bg-zinc-800/60';
                               }
 
@@ -3548,8 +3535,8 @@ export default function Home() {
                   let unreadMembersCount = 0;
                   if (currentRoom?.members && msg.senderId) {
                     currentRoom.members.forEach((m: any) => {
-                      if (m.userId === msg.senderId) return; // 보낸 사람은 당연히 읽음
-                      if (m.user?.isAi) return; // AI는 읽음 확인 로직에서 완전히 제외 (항상 즉시 읽은 것으로 간주)
+                      if (m.userId === msg.senderId) return;
+                      if (m.user?.isAi) return;
                       const userReadTime = roomReadTimes[m.userId] || new Date(m.lastReadAt || m.joinedAt || 0).getTime();
                       if (userReadTime < new Date(msg.createdAt).getTime()) {
                         unreadMembersCount++;
@@ -3613,7 +3600,7 @@ export default function Home() {
                           {(() => {
                             const senderMember = currentRoom?.members?.find((m: any) => m.userId === msg.senderId);
                             const avatarUrl = senderMember?.user?.avatar_url;
-                            // 이모지 안전 첫 글자 추출 (서로게이트 페어 대응)
+
                             const fallbackName = currentRoom?.name || msg.senderName || '?';
                             const firstChar = [...fallbackName][0] || '?';
                             return (
@@ -3671,7 +3658,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* 타이핑 인디케이터 (AI & 휴먼 통합 작성 중) */}
+
             {(() => {
               if (!currentRoom) return null;
 
@@ -3697,7 +3684,7 @@ export default function Home() {
               );
             })()}
 
-            {/* 하단 입력 영역 */}
+
             <div className="alo-chat-composer p-3 bg-surface-container-low shrink-0 pb-[calc(env(safe-area-inset-bottom)+12px)] relative z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
               {isUploading && (
                 <div className="absolute inset-x-0 -top-12 z-10 flex justify-center pointer-events-none">
@@ -3728,7 +3715,7 @@ export default function Home() {
                       }
                     }}
                     onFocus={(e) => {
-                      // 모바일 사파리/안드로이드 환경에서 키보드가 올라올 때 입력창이 가려지는 문제 방어
+
                       setTimeout(() => {
                         e.target.scrollIntoView({ behavior: 'smooth', block: 'end' });
                       }, 300);
@@ -3753,12 +3740,12 @@ export default function Home() {
               </form>
             </div>
 
-            {/* 참가자 목록 사이드서랍 (Drawer) */}
+
             {isDrawerOpen && (
               <div className="absolute inset-0 z-40 flex justify-end bg-black/60 backdrop-blur-md" onClick={() => { setIsDrawerOpen(false); setSelectedMemberId(null); }}>
                 <div
                   className="w-64 h-full bg-surface-container-lowest border-l border-outline-variant/15 shadow-ambient flex flex-col p-4 animate-in slide-in-from-right-full duration-300"
-                  onClick={(e) => { e.stopPropagation(); setSelectedMemberId(null); }} // 드로어 내부 클릭 시 열린 메뉴 닫기
+                  onClick={(e) => { e.stopPropagation(); setSelectedMemberId(null); }}
                 >
                   <div className="flex justify-between items-start pb-4 border-b border-outline-variant/15 mb-4">
                     <div className="flex flex-col w-full mr-2 gap-1.5">
@@ -3790,7 +3777,7 @@ export default function Home() {
                       <span className="text-xs text-zinc-500">참가자 {currentRoom.members?.length}명</span>
                     </div>
                     <div className="bg-white p-3 rounded-xl mb-4">
-                      {/* Mistakenly added QR block removed */}
+
                     </div>
                     <button onClick={() => setIsDrawerOpen(false)} className="text-zinc-400 hover:text-white p-1 shrink-0">
                       <X size={18} />
@@ -3804,12 +3791,12 @@ export default function Home() {
 
                       return (
                         <div key={member.id} className="flex flex-col bg-zinc-800/30 hover:bg-zinc-800/50 rounded-xl transition-colors overflow-hidden">
-                          {/* 고정된 사용자 한 줄 뷰 */}
+
                           <div
                             className="flex items-center justify-between p-2 cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (isMe) return; // 자신은 선택되지 않음
+                              if (isMe) return;
                               setSelectedMemberId(isSelected ? null : member.userId);
                             }}
                           >
@@ -3828,10 +3815,10 @@ export default function Home() {
                             </div>
                           </div>
 
-                          {/* 사용자를 클릭했을 때 펼쳐지는 메뉴 영역 (자신 제외) */}
+
                           {isSelected && !isMe && (
                             <div className="flex justify-end gap-2 px-3 pb-2 pt-1 border-t border-zinc-800/50 mt-1 bg-zinc-800/40">
-                              {/* 공통 메뉴: 송금하기 (AI 제외) */}
+
                               {!member.user?.isAi && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); promptTransfer(member.userId, member.user.username); }}
@@ -3841,7 +3828,7 @@ export default function Home() {
                                 </button>
                               )}
 
-                              {/* 방장 전용 메뉴 또는 자신의 AI 친구 관리 메뉴 */}
+
                               {(currentRoom.isHost || (member.user?.isAi && member.user?.aiOwnerId === user?.id)) && (
                                 <>
                                   {currentRoom.isHost && !member.user?.isAi && (
@@ -3867,7 +3854,7 @@ export default function Home() {
                     })}
                   </div>
 
-                  {/* 친구 초대 액션 버튼 영역 */}
+
                   <div className="pt-3 mt-4 border-t border-zinc-800/80">
                     <button
                       onClick={() => setIsInviteModalOpen(true)}
@@ -3878,7 +3865,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 초대 모달 오버레이 */}
+
                 {isInviteModalOpen && (
                   <div className="absolute inset-x-0 bottom-0 top-auto h-2/3 bg-zinc-900 border-t border-zinc-800 p-4 z-50 flex flex-col animate-in slide-in-from-bottom shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.5)]">
                     <div className="flex justify-between items-center mb-4">
@@ -3909,7 +3896,7 @@ export default function Home() {
           </>
         )}
 
-        {/* 내 프로필 및 상태메시지 수정 모달 */}
+
         {isProfileModalOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsProfileModalOpen(false)}>
             <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -3929,7 +3916,7 @@ export default function Home() {
                       myProfile?.username?.charAt(0).toUpperCase() || user?.username.charAt(0).toUpperCase()
                     )}
                   </div>
-                  {/* 이미지 업로드 인풋 덮어 씌우기 (Hover시 노출) */}
+
                   <label className="absolute inset-0 bg-black/60 rounded-full flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer font-medium text-xs">
                     <Edit2 size={16} className="mb-1 block mx-auto" />
                     사진 변경
@@ -3972,7 +3959,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 일반 친구 프로필 조회 모달 */}
+
         {selectedFriendProfile && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setSelectedFriendProfile(null)}>
             <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -4014,7 +4001,7 @@ export default function Home() {
             </div>
           </div>
         )}
-        {/* 최상단 친구 추가 모달 (전역 탭뷰 위 표시) */}
+
         {isAddFriendModalOpen && !currentRoom && (
           <div className="absolute inset-x-0 bottom-0 top-auto h-[85%] bg-zinc-900 border-t border-zinc-800 rounded-t-3xl p-5 z-50 flex flex-col animate-in slide-in-from-bottom shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-4">
@@ -4037,7 +4024,7 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 탭 헤더 (수정 모드일때는 숨김) */}
+
             {!editingAiFriend && (
               <div className="flex bg-zinc-800/50 p-1 rounded-xl mb-6 shrink-0 gap-1 overflow-x-auto">
                 <button
@@ -4064,7 +4051,7 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto space-y-6 pb-4">
               {addFriendTab === 'NORMAL' ? (
                 <>
-                  {/* 내 QR 및 ID 영역 */}
+
                   <div className="bg-zinc-950 p-5 rounded-2xl border border-zinc-800 text-center flex flex-col items-center">
                     <span className="text-sm text-zinc-400 mb-4 font-medium">나의 QR 코드 & 초대 코드</span>
                     <div className="bg-white p-3 rounded-xl mb-4">
@@ -4085,7 +4072,7 @@ export default function Home() {
                     <p className="text-[11px] text-zinc-500 mt-2">친구에게 위 QR 코드를 보여주거나 6자리 코드 및 링크를 공유하세요.</p>
                   </div>
 
-                  {/* 대상 ID 검색/추가 폼 */}
+
                   <form onSubmit={handleAddFriendSubmit} className="space-y-3">
                     <label className="block text-sm font-semibold text-zinc-300 mb-1 ml-1">코드로 추가하기</label>
                     <input
@@ -4175,8 +4162,8 @@ export default function Home() {
                         <Sparkles className="text-secondary" size={14} />
                         현재 작동 화가 : {
                           avatarGenMode === 'system'
-                            ? (selectedProvider === 'openai' && apiKeys['openai'] ? 'OpenAI DALL-E 3' :
-                              (selectedProvider === 'gemini' || selectedProvider === 'gemini-free') && apiKeys[selectedProvider] ? 'Gemini Imagen 3 (불안정)' :
+                            ? (selectedProvider === 'openai' && providerAvailability.openai ? 'OpenAI DALL-E 3' :
+                              (selectedProvider === 'gemini' || selectedProvider === 'gemini-free') && providerAvailability[selectedProvider] ? 'Gemini Imagen 3 (불안정)' :
                                 '무료 그림 AI (Pollinations)')
                             : avatarGenMode === 'pollinations' ? '무료 그림 AI (Pollinations)'
                               : avatarGenMode === 'dicebear' ? '무료 로봇 일러스트 (DiceBear)'
@@ -4217,6 +4204,8 @@ export default function Home() {
                     disabled={!aiNameValue.trim() || isAiCreating}
                     className="w-full mt-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
                   >
+                    {isAiCreating ? <Loader2 size={18} className="animate-spin" /> : null}
+                    {isAiCreating ? 'AI 친구 생성 중...' : editingAiFriend ? 'AI 친구 정보 저장' : 'AI 친구 생성하기'}
                   </button>
                   <p className="text-[11px] text-zinc-500 text-center mt-3">※ 이 AI는 내 환경에 등록된 API 키 권한으로 응답합니다.</p>
                 </form>
@@ -4370,8 +4359,8 @@ export default function Home() {
                             <Sparkles className="text-rose-400" size={14} />
                             현재 작동 화가 : {
                               avatarGenMode === 'system'
-                                ? (selectedProvider === 'openai' && apiKeys['openai'] ? 'OpenAI DALL-E 3' :
-                                  (selectedProvider === 'gemini' || selectedProvider === 'gemini-free') && apiKeys[selectedProvider] ? 'Gemini Imagen 3 (불안정)' :
+                                ? (selectedProvider === 'openai' && providerAvailability.openai ? 'OpenAI DALL-E 3' :
+                                  (selectedProvider === 'gemini' || selectedProvider === 'gemini-free') && providerAvailability[selectedProvider] ? 'Gemini Imagen 3 (불안정)' :
                                     '무료 그림 AI (Pollinations)')
                                 : avatarGenMode === 'pollinations' ? '무료 그림 AI (Pollinations)'
                                   : avatarGenMode === 'dicebear' ? '무료 로봇 일러스트 (DiceBear)'
@@ -4415,7 +4404,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 미디어 풀스크린 뷰어 (Lightbox) */}
+
         {selectedMedia && (
           <div
             className="fixed inset-0 z-[100] bg-black/95 flex flex-col justify-center items-center animate-in fade-in duration-200"
@@ -4437,7 +4426,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 공지사항 상세 모달 */}
+
         {isAnnouncementModalOpen && selectedAnnouncement && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsAnnouncementModalOpen(false)}>
             <div className="w-full max-w-sm bg-surface-container rounded-[24px] shadow-2xl border border-outline-variant/20 overflow-hidden" onClick={e => e.stopPropagation()}>

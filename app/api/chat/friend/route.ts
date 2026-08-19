@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateText, tool } from 'ai';
-import { z } from 'zod';
+import { generateText } from 'ai';
 import { search } from 'duck-duck-scrape';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -10,13 +9,14 @@ import { requireCurrentUser } from '@/lib/auth';
 import { recordFreeEventUsage, resolveAiKeyForRequest } from '@/lib/ai-key-resolution';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { decryptHostSponsorKey, resolveSponsorDelegateAccess, resolveSponsorModel } from '@/lib/sponsor-policy';
+import { canAccessAiFriend, canStartAutonomousAiWork } from '@/lib/ai-friend-access';
 
 type Provider = 'openai' | 'gemini' | 'anthropic';
 
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || '';
 
 function defaultModelForProvider(provider: Provider) {
-  if (provider === 'gemini') return 'gemini-1.5-pro-latest';
+  if (provider === 'gemini') return 'gemini-3.6-flash';
   if (provider === 'anthropic') return 'claude-3-haiku-20240307';
   return 'gpt-4o';
 }
@@ -38,7 +38,6 @@ export async function POST(request: Request) {
 
     const {
       provider,
-      byokKey,
       aiModel,
       content,
       isDelegate,
@@ -89,17 +88,47 @@ export async function POST(request: Request) {
       },
     }) : null;
 
+    const activeFriendship = aiUser ? await prisma.friendship.findFirst({
+      where: {
+        userId: currentUser.id,
+        friendId: aiUser.id,
+        status: 'ACTIVE',
+      },
+      select: { id: true },
+    }) : null;
+    const currentUserInRoom = Boolean(sponsorRoom?.members.some(
+      (member) => member.userId === currentUser.id && !member.isHidden,
+    ));
+    const aiUserInRoom = Boolean(aiUser && sponsorRoom?.members.some(
+      (member) => member.userId === aiUser.id && !member.isHidden,
+    ));
+
+    if (aiUser && !canAccessAiFriend({
+      currentUserId: currentUser.id,
+      aiOwnerId: aiUser.aiOwnerId,
+      hasActiveFriendship: Boolean(activeFriendship),
+      currentUserInRoom,
+      aiUserInRoom,
+    })) {
+      return NextResponse.json({ error: 'AI friend access denied' }, { status: 403 });
+    }
+
+    if (isAutonomous) {
+      if (!aiUser || !canStartAutonomousAiWork(currentUser.id, aiUser.aiOwnerId, aiUser.isAgent)) {
+        return NextResponse.json({ error: 'Autonomous AI work access denied' }, { status: 403 });
+      }
+      return NextResponse.json({ error: 'Autonomous AI worker is unavailable' }, { status: 503 });
+    }
+
     const effectiveAiUser = aiOwner || currentUser;
-    const requestByokKey = effectiveAiUser.id === currentUser.id ? byokKey : null;
     const personaPrompt = aiUser?.aiPrompt || 'You are a friendly AI companion in Alopop Messenger. Reply naturally and stay in character.';
 
     let resolvedAi = await resolveAiKeyForRequest({
       user: effectiveAiUser,
       provider,
       aiModel,
-      byokKey: requestByokKey,
       allowFreeEventFallback: false,
-      allowEnvFallback: false,
+      allowEnvFallback: effectiveAiUser.isAdmin,
     });
 
     let apiKey = resolvedAi.apiKey;
@@ -145,8 +174,7 @@ export async function POST(request: Request) {
         user: effectiveAiUser,
         provider,
         aiModel,
-        byokKey: requestByokKey,
-        allowEnvFallback: false,
+        allowEnvFallback: effectiveAiUser.isAdmin,
       });
 
       apiKey = resolvedAi.apiKey;
@@ -159,25 +187,7 @@ export async function POST(request: Request) {
       if (limitExceededFlag) {
         return NextResponse.json({ error: 'Daily free AI usage limit exceeded.' }, { status: 429 });
       }
-      if (isAutonomous) {
-        return NextResponse.json({ error: 'No API key or sponsored model is available for autonomous work.' }, { status: 400 });
-      }
       return NextResponse.json({ error: `No API Key provided for ${provider || 'openai'}` }, { status: 400 });
-    }
-
-    if (isAutonomous) {
-      const cp = require('child_process');
-      const doSpawn = new Function('cp', 'cwd', 'userId', 'roomId', 'aiUserId', 'provider', 'apiKey', 'model', 'content', `
-        return cp.spawn('node', [
-          cwd + '/scripts/vibeCoder.mjs',
-          userId, roomId, aiUserId, provider, apiKey, model, content
-        ], { detached: true, stdio: 'ignore', cwd: cwd });
-      `);
-
-      const p = doSpawn(cp, process.cwd(), effectiveAiUser.id, roomId || '', aiUserId || '', currentProvider, apiKey, finalAiModel, content);
-      p.unref();
-
-      return NextResponse.json({ reply: 'AI autonomous work has started in the background. I will notify you when it finishes.' });
     }
 
     const modelInstance = buildModel(currentProvider, apiKey, finalAiModel);
@@ -201,8 +211,6 @@ export async function POST(request: Request) {
     }
 
     const isAgent = !!aiUser?.isAgent;
-    const agentPath = aiUser?.agentPath || process.cwd();
-    let agentTools: any = undefined;
 
     if (isAgent) {
       const port = process.env.PORT || 3099;
@@ -226,92 +234,14 @@ export async function POST(request: Request) {
       } catch (error) {
         return NextResponse.json({ reply: `[System notice] Internal connection error: ${String(error)}` });
       }
-    } else {
-      const executeAgentTool = async (toolName: string, args: any) => {
-        const port = process.env.PORT || 3099;
-        const res = await fetch(`http://127.0.0.1:${port}/api/internal/agent-tool`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-alopop-internal': INTERNAL_API_SECRET },
-          body: JSON.stringify({ aiUserId, tool: toolName, args }),
-        });
-        if (!res.ok) {
-          const errText = await res.text();
-          return { error: `[Agent disconnected] The target PC is offline or cannot execute the command: ${errText}` };
-        }
-        return res.json();
-      };
-
-      agentTools = {
-        run_command: tool({
-          description: 'Run a shell command on the remote PC. Provide the command string.',
-          parameters: z.object({ command: z.string() }),
-          // @ts-ignore
-          execute: async (args: any) => executeAgentTool('run_command', args),
-        }),
-        read_file: tool({
-          description: 'Read the contents of a file on the remote PC. Provide the absolute or relative path.',
-          parameters: z.object({ path: z.string() }),
-          // @ts-ignore
-          execute: async (args: any) => executeAgentTool('read_file', args),
-        }),
-        write_file: tool({
-          description: 'Write contents to a file on the remote PC. Provide the path and content.',
-          parameters: z.object({ path: z.string(), content: z.string() }),
-          // @ts-ignore
-          execute: async (args: any) => executeAgentTool('write_file', args),
-        }),
-        list_dir: tool({
-          description: 'List contents of a directory.',
-          parameters: z.object({ path: z.string() }),
-          // @ts-ignore
-          execute: async (args: any) => executeAgentTool('list_dir', args),
-        }),
-      };
     }
 
-    const finalSystemPrompt = isAgent
-      ? `${personaPrompt}${injectedSearchContext}
-
-[Default work directory] ${agentPath}
-Use the available tools to inspect the actual PC state before answering system, file, or command questions. Report concrete tool output without inventing missing details.`
-      : `${personaPrompt}${injectedSearchContext}`;
-
-    let finalReply = '';
-    const messages: any[] = [{ role: 'user', content }];
-
-    for (let step = 0; step < (isAgent ? 3 : 1); step += 1) {
-      const { text, toolCalls } = await generateText({
-        model: modelInstance,
-        system: finalSystemPrompt,
-        messages,
-        temperature: 0.85,
-        tools: isAgent ? agentTools : undefined,
-      });
-
-      if (toolCalls && toolCalls.length > 0) {
-        const manualToolResults = [];
-        for (const call of toolCalls) {
-          const toolFunc = agentTools[call.toolName];
-          if (toolFunc?.execute) {
-            try {
-              const callArgs = (call as any).args || (call as any).arguments || {};
-              const res = await toolFunc.execute(callArgs);
-              manualToolResults.push({ tool: call.toolName, result: res });
-            } catch (error) {
-              manualToolResults.push({ tool: call.toolName, error: String(error) });
-            }
-          }
-        }
-        messages.push({ role: 'assistant', content: text || 'Tool calls executed.' });
-        messages.push({
-          role: 'user',
-          content: `[System notice: tool results]\n${JSON.stringify(manualToolResults, null, 2)}\n\nUse these tool results to answer the previous user request.`,
-        });
-      } else {
-        finalReply = text;
-        break;
-      }
-    }
+    const { text: finalReply } = await generateText({
+      model: modelInstance,
+      system: `${personaPrompt}${injectedSearchContext}`,
+      prompt: content,
+      temperature: currentProvider === 'gemini' ? undefined : 0.85,
+    });
 
     if (sponsorBilling) {
       const paymentResult = await prisma.$transaction(async (tx) => {

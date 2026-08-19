@@ -4,19 +4,26 @@ import { useState, useMemo } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 
+type AiEvent = {
+  id: string;
+  eventType: string;
+  aiProvider: string;
+  aiModel: string;
+};
+
 interface AiModelSelectorProps {
   selectedAiModel: string;
   setSelectedAiModel: (modelId: string) => void;
   aiModels: Record<string, { id: string; name: string }[]>;
-  activeEvents?: any[];
+  activeEvents?: AiEvent[];
   exhaustedFreeEvents?: Record<string, boolean>;
   disabled?: boolean;
-  studioId?: string; // 특정 스튜디오별 개별 저장 시 사용
-  className?: string; // 모바일/데스크톱 대응 또는 특화 스타일 레이아웃용
-  dropdownClassName?: string; // 드롭다운 특수 위치 조정용
-  variant?: 'default' | 'chat-hud'; // HUD 전용 테마 플래그
-  isSponsorLocked?: boolean; // 스폰서 락 모드
-  lockedModelName?: string; // 스폰서 락 시 보여질 강제 모델 이름
+  studioId?: string;
+  className?: string;
+  dropdownClassName?: string;
+  variant?: 'default' | 'chat-hud';
+  isSponsorLocked?: boolean;
+  lockedModelName?: string;
 }
 
 export function AiModelSelector({
@@ -28,7 +35,7 @@ export function AiModelSelector({
   disabled = false,
   studioId,
   className = '',
-  dropdownClassName = 'mt-1.5 w-40', // 기본값
+  dropdownClassName = 'mt-1.5 w-40',
   variant = 'default',
   isSponsorLocked = false,
   lockedModelName = '스폰서 전용 AI',
@@ -36,40 +43,35 @@ export function AiModelSelector({
   const {
     selectedProvider: globalProvider,
     setSelectedProvider: setGlobalProvider,
-    apiKeys,
+    providerAvailability,
     setIsOpen: setSettingsOpen
   } = useSettingsStore();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // 무료 이벤트 AI 판별용 유도 변수 계산
   const freeAiEvents = useMemo(
-    () => activeEvents.filter((e: any) => e.eventType === 'FREE_AI' && !exhaustedFreeEvents[e.id]),
+    () => activeEvents.filter((event) => event.eventType === 'FREE_AI' && !exhaustedFreeEvents[event.id]),
     [activeEvents, exhaustedFreeEvents]
   );
   
   const isFreeAiActiveForModel = useMemo(
-    () => !!freeAiEvents.find((e: any) => e.aiModel === selectedAiModel),
+    () => !!freeAiEvents.find((event) => event.aiModel === selectedAiModel),
     [freeAiEvents, selectedAiModel]
   );
 
-  const hasProviderKey = globalProvider === 'gemini-free' || !!apiKeys[globalProvider];
+  const hasProviderKey = globalProvider === 'gemini-free' || providerAvailability[globalProvider];
   const allProviderModels = aiModels[globalProvider === 'gemini-free' ? 'gemini' : globalProvider] || [];
   
-  // 유저가 설정한 모델 리스트 (키가 없으면 빈 리스트)
   const userModels = hasProviderKey ? allProviderModels : [];
 
-  // 중복 제거된 유저 모델 리스트 (무료 이벤트 모델과 겹치는 경우 숨김)
   const filteredUserModels = userModels.filter(
-    (model) => !freeAiEvents.some((event: any) => event.aiModel === model.id)
+    (model) => !freeAiEvents.some((event) => event.aiModel === model.id)
   );
 
-  // 둘 다 없을 때만 AI 연결 필요 경고 노출 (스폰서 락 모드가 아닐 때만)
   const showAiWarning = !isSponsorLocked && filteredUserModels.length === 0 && freeAiEvents.length === 0;
 
-  // 현재 선택된 모델 이름 계산
   let displayModelName = selectedAiModel || 'AI 선택';
-  const selectedEvent = freeAiEvents.find((e: any) => e.aiModel === selectedAiModel);
+  const selectedEvent = freeAiEvents.find((event) => event.aiModel === selectedAiModel);
   if (isSponsorLocked) {
     displayModelName = lockedModelName;
   } else if (selectedEvent) {
@@ -78,7 +80,6 @@ export function AiModelSelector({
     displayModelName = allProviderModels.find((m) => m.id === selectedAiModel)?.name || selectedAiModel || 'AI 선택';
   }
 
-  // 테마 분기
   const isChatHud = variant === 'chat-hud';
 
   return (
@@ -90,7 +91,7 @@ export function AiModelSelector({
           disabled={disabled}
           onClick={(e) => {
             e.stopPropagation();
-            setSettingsOpen(true, true); // forceGlobal을 true로 주어 전역 설정이 뜨도록 함
+            setSettingsOpen(true, true);
           }}
           className={`flex items-center gap-1.5 px-2 rounded shadow-sm transition-colors text-[9px] font-extrabold ${
             isChatHud 
@@ -136,7 +137,6 @@ export function AiModelSelector({
           isChatHud ? 'bg-zinc-800 border border-zinc-700' : 'bg-[#1b1227] border border-purple-800/40'
         } rounded-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-100 z-50 max-h-60 overflow-y-auto no-scrollbar flex flex-col`}>
           
-          {/* 유저 모델 리스트 */}
           {filteredUserModels.length > 0 && (
             <div className={`flex flex-col ${isChatHud ? '' : 'border-b border-purple-800/40 pb-1 mb-1'}`}>
               {filteredUserModels.map((model) => (
@@ -150,7 +150,6 @@ export function AiModelSelector({
                       localStorage.setItem(`alo_ai_model_studio_${studioId}`, model.id);
                     }
                     
-                    // 공용 제공사(provider)도 함께 변경
                     let nextProvider: 'openai' | 'gemini' | 'anthropic' = 'gemini';
                     if (model.id.startsWith('gpt-')) nextProvider = 'openai';
                     else if (model.id.startsWith('claude-')) nextProvider = 'anthropic';
@@ -164,27 +163,26 @@ export function AiModelSelector({
                   }}
                   className={`w-full text-left px-3 py-2 text-[11px] transition-colors ${
                     isChatHud
-                      ? selectedAiModel === model.id && !freeAiEvents.some((e: any) => e.aiModel === selectedAiModel)
+                      ? selectedAiModel === model.id && !freeAiEvents.some((event) => event.aiModel === selectedAiModel)
                         ? 'bg-purple-900/30 text-purple-300'
                         : 'text-zinc-300 hover:bg-zinc-700'
-                      : selectedAiModel === model.id && !freeAiEvents.some((e: any) => e.aiModel === selectedAiModel)
+                      : selectedAiModel === model.id && !freeAiEvents.some((event) => event.aiModel === selectedAiModel)
                         ? 'bg-purple-900/30 text-purple-300'
                         : 'text-zinc-300 hover:bg-zinc-800'
                   }`}
                 >
                   <div className="flex justify-between items-center">
                     <span className="truncate pr-1">{model.name}</span>
-                    {selectedAiModel === model.id && !freeAiEvents.some((e: any) => e.aiModel === selectedAiModel) ? <Check size={12} className="shrink-0 text-purple-400" /> : null}
+                    {selectedAiModel === model.id && !freeAiEvents.some((event) => event.aiModel === selectedAiModel) ? <Check size={12} className="shrink-0 text-purple-400" /> : null}
                   </div>
                 </button>
               ))}
             </div>
           )}
 
-          {/* 무료 이벤트 모델 리스트 (마지막 리스트 보라색 박스 스타일) */}
           {freeAiEvents.length > 0 && (
             <div className="flex flex-col">
-              {freeAiEvents.map((event: any) => {
+              {freeAiEvents.map((event) => {
                 const modelName = aiModels[event.aiProvider === 'gemini-free' ? 'gemini' : event.aiProvider]?.find((m) => m.id === event.aiModel)?.name || event.aiModel;
                 const isSelected = selectedAiModel === event.aiModel;
                 
@@ -213,7 +211,6 @@ export function AiModelSelector({
                         EVENT
                       </span>
                     </div>
-                    {/* 사진에 있던 우측 작은 아이콘(v 형태)과 유사한 표시를 위해 ChevronDown 사용 */}
                     {!isChatHud && <ChevronDown size={10} className="text-purple-500/70 shrink-0" />}
                   </button>
                 );

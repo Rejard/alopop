@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireCurrentUser } from '@/lib/auth';
 import { z } from 'zod';
 import { logUserActivity } from '@/lib/auditLogger';
+import { decryptKey } from '@/lib/crypto';
+import { hasProviderAccess } from '@/lib/ai-key-availability';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,9 +50,9 @@ export async function GET(request: Request) {
       statusMessage: user.statusMessage,
       walletBalance: user.walletBalance,
       isAdmin: user.isAdmin,
-      hasOpenAiKey: !!user.openaiKey,
-      hasGeminiKey: !!user.geminiKey,
-      hasAnthropicKey: !!user.anthropicKey,
+      hasOpenAiKey: hasProviderAccess('openai', user.isAdmin, decryptKey(user.openaiKey)),
+      hasGeminiKey: hasProviderAccess('gemini', user.isAdmin, decryptKey(user.geminiKey)),
+      hasAnthropicKey: hasProviderAccess('anthropic', user.isAdmin, decryptKey(user.anthropicKey)),
     };
 
     return NextResponse.json({ success: true, user: safeUser });
@@ -61,7 +63,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  let currentUsr: any = null;
+  let currentUsr: { id: string } | null = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;

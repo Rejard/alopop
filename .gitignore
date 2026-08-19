@@ -87,6 +87,7 @@ type.ps1
 /scratch/
 /temp/
 /tmp/
+/.codex-tmp/
 .worktrees/
 /scripts/check-active-user.cjs
 /scripts/check-test01.cjs
@@ -115,3 +116,16 @@ type.ps1
 /scripts/pet365-map-mobile-check.mjs
 /scripts/pet365-mobile-qa.mjs
 /scripts/vibeCoder.mjs
+.vibe-diagnosis/active_port.json
+.vibe-diagnosis/active_context.json
+.vibe-diagnosis/config.json
+.vibe-diagnosis/byok.local.json
+.vibe-diagnosis/history.json
+.vibe-diagnosis/milestones.json
+.vibe-diagnosis/runs/
+.vibe-diagnosis/cache.json
+.vibe-diagnosis/repair-plans/
+.vibe-diagnosis/repair-history.json
+.vibe-diagnosis/trash/
+.gemini/
+.codex-remote-attachments/
