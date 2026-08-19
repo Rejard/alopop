@@ -749,7 +749,7 @@ export function exportStore(): string {
   const backupStore = {
     ...store,
     medicalRecords: store.medicalRecords.map(record => {
-      const { attachments, ...rest } = record;
+      const { attachments: _, ...rest } = record;
       return rest;
     })
   };

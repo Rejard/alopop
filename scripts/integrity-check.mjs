@@ -40,7 +40,18 @@ function sample(items, limit = 10) {
 }
 
 async function checkOfflineMessageSchema() {
-  const columns = await prisma.$queryRawUnsafe("PRAGMA table_info('OfflineMessage')");
+  let columns = [];
+  try {
+    const rawCols = await prisma.$queryRawUnsafe("PRAGMA table_info('OfflineMessage')");
+    columns = rawCols.map((col) => ({ name: col.name }));
+  } catch (err) {
+    const pgCols = await prisma.$queryRawUnsafe(`
+      SELECT column_name as name
+      FROM information_schema.columns
+      WHERE table_name = 'OfflineMessage'
+    `);
+    columns = pgCols.map((col) => ({ name: col.name }));
+  }
   const names = new Set(columns.map((column) => column.name));
   for (const required of ['id', 'receiverId', 'payload', 'createdAt', 'kind', 'status', 'expiresAt', 'deliveredAt', 'attemptCount']) {
     if (!names.has(required)) fail(`OfflineMessage is missing required column: ${required}`);
@@ -146,10 +157,10 @@ async function checkTransactions() {
   if (invalidTransactions.length) fail('Transactions with non-positive amount exist', invalidTransactions);
 
   const selfTransferRows = await prisma.$queryRawUnsafe(`
-    SELECT id, senderId, receiverId, amount, reason, createdAt
+    SELECT id, "senderId", "receiverId", amount, reason, "createdAt"
     FROM "Transaction"
-    WHERE senderId = receiverId
-    ORDER BY createdAt DESC
+    WHERE "senderId" = "receiverId"
+    ORDER BY "createdAt" DESC
   `);
   const rewardSelfTransfers = selfTransferRows.filter((row) => String(row.reason || '').includes('이벤트 보상'));
   const suspiciousSelfTransfers = selfTransferRows.filter((row) => !String(row.reason || '').includes('이벤트 보상'));
@@ -163,9 +174,9 @@ async function checkTransactions() {
 
 async function checkFriendships() {
   const duplicateRows = await prisma.$queryRawUnsafe(`
-    SELECT userId, friendId, COUNT(*) as count
-    FROM Friendship
-    GROUP BY userId, friendId
+    SELECT "userId", "friendId", COUNT(*) as count
+    FROM "Friendship"
+    GROUP BY "userId", "friendId"
     HAVING COUNT(*) > 1
   `);
   if (duplicateRows.length) fail('Duplicate friendship rows exist', duplicateRows);

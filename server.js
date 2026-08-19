@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Alonics Inc. (二쇱떇?뚯궗 ?뚮줈?됱뒪). All rights reserved.
+// Copyright (c) 2026 Alonics Inc. (알로닉스). All rights reserved.
 // Licensed under the AGPL-3.0 License. 
 // For commercial use, investment, or partnerships, please contact the author.
 const express = require('express');
@@ -8,8 +8,58 @@ const next = require('next');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { spawn } = require('child_process');
 const { loadEnvConfig } = require('@next/env');
+const cron = require('node-cron');
+
+function spawnAsync(cmd, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { ...options, windowsHide: true });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Command ${cmd} exited with code ${code}`));
+    });
+    child.on('error', (err) => reject(err));
+  });
+}
+
+global.ecoConfigLock = global.ecoConfigLock || Promise.resolve();
+
+function safeModifyEcosystemConfig(fn) {
+  global.ecoConfigLock = global.ecoConfigLock.then(async () => {
+    try {
+      await fn();
+    } catch (err) {
+      console.error('[Ecosystem Lock Error]:', err);
+      throw err;
+    }
+  });
+  return global.ecoConfigLock;
+}
+
+const socketRateLimits = new Map();
+function checkSocketRateLimit(userId, event, limit = 5, intervalMs = 1000) {
+  const key = `${userId}:${event}`;
+  const now = Date.now();
+  if (!socketRateLimits.has(key)) {
+    socketRateLimits.set(key, { tokens: limit, lastRefill: now });
+    return true;
+  }
+
+  const limitState = socketRateLimits.get(key);
+  const elapsed = now - limitState.lastRefill;
+
+  if (elapsed > intervalMs) {
+    limitState.tokens = limit;
+    limitState.lastRefill = now;
+  }
+
+  if (limitState.tokens > 0) {
+    limitState.tokens -= 1;
+    return true;
+  }
+  return false;
+}
 
 
 loadEnvConfig(process.cwd());
@@ -21,7 +71,22 @@ const internalApiSecret = process.env.INTERNAL_API_SECRET || process.env.SESSION
 if (!internalApiSecret) {
   console.error('INTERNAL_API_SECRET, SESSION_SECRET, or ENCRYPTION_KEY must be set for sponsor background checks.');
 }
+if (process.env.NODE_ENV === 'production' && internalApiSecret === 'ALO_POP_INTERNAL_SECRET_DEFAULT') {
+  console.error('CRITICAL SECURITY ERROR: Default INTERNAL_API_SECRET must not be used in production.');
+  process.exit(1);
+}
 const SESSION_COOKIE_NAME = 'alo_session';
+
+let cachedTemplates = null;
+function getStudioTemplates() {
+  if (cachedTemplates) return cachedTemplates;
+  const TEMPLATES_PATH = path.join(__dirname, 'config', 'studio_templates.json');
+  if (!fs.existsSync(TEMPLATES_PATH)) {
+    throw new Error('스튜디오 템플릿 설정 파일이 존재하지 않습니다.');
+  }
+  cachedTemplates = JSON.parse(fs.readFileSync(TEMPLATES_PATH, 'utf8'));
+  return cachedTemplates;
+}
 
 function getSessionSecret() {
   const secret = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY;
@@ -75,7 +140,6 @@ function verifySessionToken(token) {
   }
 }
 
-// --- AES-256-GCM Encryption for Chat Messages ---
 const ALGO = 'aes-256-gcm';
 const IV_LEN = 12;
 const KEY_LEN = 32;
@@ -96,9 +160,9 @@ function encryptText(plainText) {
 
 function decryptText(payload) {
   if (!payload) return '';
-  if (!payload.startsWith('v1:')) return payload; // Fallback for plain text
+  if (!payload.startsWith('v1:')) return payload;
   const [version, ivB64, tagB64, encryptedB64] = String(payload).split(':');
-  if (version !== 'v1' || !ivB64 || !tagB64 || !encryptedB64) return payload; // Cannot parse
+  if (version !== 'v1' || !ivB64 || !tagB64 || !encryptedB64) return payload;
   try {
     const decipher = crypto.createDecipheriv(ALGO, getEncryptionKey(), Buffer.from(ivB64, 'base64'));
     decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
@@ -108,14 +172,10 @@ function decryptText(payload) {
     return '[Encrypted message cannot be read]';
   }
 }
-// -------------------------------------------------
 
-// Next.js ??珥덇린??
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-// ?ㅽ봽?쇱씤 硫붿떆吏 ?곹깭 愿由? 硫붾え由?RAM) ?섏〈 ?쒓굅
-// ?댁젣遺??offlineQueue(Map) ???Prisma DB(OfflineMessage)瑜??ъ슜?섏뿬 OOM(硫붾え由??꾩닔)瑜??꾨꼍??諛⑹??⑸땲??
 const roomPresence = new Map();
 const OFFLINE_NOTICE_TTL_MS = Number(process.env.OFFLINE_NOTICE_TTL_DAYS || 7) * 24 * 60 * 60 * 1000;
 const WEB_PUSH_TTL_SECONDS = Number(process.env.WEB_PUSH_TTL_SECONDS || 24 * 60 * 60);
@@ -124,21 +184,73 @@ app.prepare().then(() => {
   const expressApp = express();
   const { PrismaClient } = require('@prisma/client');
   const prisma = new PrismaClient();
+  prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL;').catch(e => console.error('Failed to set WAL mode:', e));
   const { logSocketAudit } = require('./lib/auditLogger');
 
-  // 인메모리 벌크 배치 버퍼 초기화
-  global.readReceiptBuffer = global.readReceiptBuffer || new Map();
+  if (!global.readReceiptBuffer) {
+    const MAX_RECEIPT_LIMIT = 5000;
+    const originalMap = new Map();
+    const readReceiptBufferProxy = {
+      get(target, prop, _receiver) {
+        if (prop === 'set') {
+          return function (key, value) {
+            if (target.size >= MAX_RECEIPT_LIMIT && !target.has(key)) {
+              console.warn(`[ReadReceipt Buffer] Limit (${MAX_RECEIPT_LIMIT}) reached. Dumping excess items to disk.`);
+              try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                  fs.mkdirSync(logDir, { recursive: true });
+                }
+                const backupPath = path.join(logDir, 'read_receipt_backup.jsonl');
+                fs.appendFileSync(backupPath, JSON.stringify({ key, value }) + '\n', 'utf8');
+                return target;
+              } catch (err) {
+                console.error('[ReadReceipt Buffer] Failed to dump backup:', err);
+              }
+            }
+            return Reflect.apply(target.set, target, arguments);
+          };
+        }
+        const val = target[prop];
+        return typeof val === 'function' ? val.bind(target) : val;
+      }
+    };
+    global.readReceiptBuffer = new Proxy(originalMap, readReceiptBufferProxy);
+  }
   global.studioLogBuffer = global.studioLogBuffer || [];
 
-  // 1분 주기 대화방 읽음 일괄 처리
   setInterval(async () => {
-    if (!global.readReceiptBuffer || global.readReceiptBuffer.size === 0) return;
-    const items = Array.from(global.readReceiptBuffer.values());
-    global.readReceiptBuffer.clear();
-    console.log(`[ReadReceipt Batch] Processing ${items.length} items...`);
+    let items = [];
+    if (global.readReceiptBuffer && global.readReceiptBuffer.size > 0) {
+      items = Array.from(global.readReceiptBuffer.values());
+      global.readReceiptBuffer.clear();
+    }
+
+    const backupPath = path.join(__dirname, 'logs', 'read_receipt_backup.jsonl');
+    let backupItems = [];
+    if (fs.existsSync(backupPath)) {
+      try {
+        const fileContent = await fs.promises.readFile(backupPath, 'utf8');
+        fs.unlinkSync(backupPath);
+        const lines = fileContent.trim().split('\n');
+        for (const line of lines) {
+          if (!line) continue;
+          const parsed = JSON.parse(line);
+          backupItems.push(parsed.value);
+        }
+        console.log(`[ReadReceipt Batch] Loaded ${backupItems.length} items from disk backup.`);
+      } catch (err) {
+        console.error('[ReadReceipt Batch] Failed to load disk backup:', err);
+      }
+    }
+
+    const allItems = [...items, ...backupItems];
+    if (allItems.length === 0) return;
+
+    console.log(`[ReadReceipt Batch] Processing ${allItems.length} items...`);
     try {
       await prisma.$transaction(
-        items.map(item =>
+        allItems.map(item =>
           prisma.roomMember.upsert({
             where: {
               userId_roomId: {
@@ -157,19 +269,18 @@ app.prepare().then(() => {
           })
         )
       );
-      console.log(`[ReadReceipt Batch] Successfully updated ${items.length} read receipts.`);
+      console.log(`[ReadReceipt Batch] Successfully updated ${allItems.length} read receipts.`);
     } catch (error) {
       console.error(`[ReadReceipt Batch] Error updating batch:`, error);
-      items.forEach(item => {
+      allItems.forEach(item => {
         const key = `${item.userId}:${item.roomId}`;
-        if (!global.readReceiptBuffer.has(key)) {
+        if (global.readReceiptBuffer && !global.readReceiptBuffer.has(key)) {
           global.readReceiptBuffer.set(key, item);
         }
       });
     }
   }, 60 * 1000);
 
-  // 30초 주기 AI 스튜디오 실행 로그 일괄 처리 및 플러시 함수
   async function flushStudioLogs() {
     if (!global.studioLogBuffer || global.studioLogBuffer.length === 0) return;
     const logs = [...global.studioLogBuffer];
@@ -183,12 +294,39 @@ app.prepare().then(() => {
     } catch (error) {
       console.error(`[StudioLog Batch] Error flushing logs:`, error);
       global.studioLogBuffer = logs.concat(global.studioLogBuffer);
+
+      const MAX_BUFFER_SIZE = 3000;
+      if (global.studioLogBuffer.length > MAX_BUFFER_SIZE) {
+        console.warn(`[StudioLog Batch] Buffer size (${global.studioLogBuffer.length}) exceeded limit. Dumping excess logs to disk.`);
+        try {
+          const excessLogs = global.studioLogBuffer.slice(MAX_BUFFER_SIZE);
+          global.studioLogBuffer = global.studioLogBuffer.slice(0, MAX_BUFFER_SIZE);
+
+          const logDir = path.join(__dirname, 'logs');
+          if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+          }
+          const backupFilePath = path.join(logDir, 'studio_logs_backup.jsonl');
+          const backupData = excessLogs.map(l => JSON.stringify(l)).join('\n') + '\n';
+          fs.appendFileSync(backupFilePath, backupData, 'utf8');
+        } catch (dumpError) {
+          console.error('[StudioLog Batch] Failed to dump excess logs to disk:', dumpError);
+        }
+      }
     }
   }
 
   setInterval(flushStudioLogs, 30 * 1000);
 
-  // createOfflineNotice is no longer used since we serialize the whole message
+  setInterval(async () => {
+    console.log('[TTL Batch] Running expired messages cleanup...');
+    try {
+      await deleteExpiredOfflineMessages();
+      console.log('[TTL Batch] Expired messages cleanup completed.');
+    } catch (error) {
+      console.error('[TTL Batch] Error cleaning up expired messages:', error);
+    }
+  }, 60 * 60 * 1000);
 
   function parseOfflineNotice(payload) {
     try {
@@ -208,21 +346,54 @@ app.prepare().then(() => {
   }
 
   async function deleteExpiredOfflineMessages() {
-    if (await hasEnhancedOfflineQueue()) {
-      await prisma.$executeRawUnsafe(
-        'DELETE FROM OfflineMessage WHERE expiresAt <= ?',
-        new Date().toISOString()
-      );
-    } else {
-      await prisma.offlineMessage.deleteMany({
-        where: { createdAt: { lte: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) } }
-      });
+    try {
+      if (await hasEnhancedOfflineQueue()) {
+        await prisma.$executeRawUnsafe(
+          'DELETE FROM OfflineMessage WHERE expiresAt <= ?',
+          new Date().toISOString()
+        );
+      } else {
+        await prisma.offlineMessage.deleteMany({
+          where: { createdAt: { lte: new Date(Date.now() - OFFLINE_NOTICE_TTL_MS) } }
+        });
+      }
+    } catch (e) {
+      console.error('Failed to delete expired offline messages:', e);
     }
 
-    // TTL 7일이 지난 Message 파기
+    const now = new Date();
+
+    try {
+      const expiredMediaMessages = await prisma.message.findMany({
+        where: {
+          expiresAt: { lte: now },
+          type: { in: ['IMAGE', 'FILE', 'VIDEO'] }
+        }
+      });
+
+      for (const msg of expiredMediaMessages) {
+        try {
+          const decrypted = decryptText(msg.content);
+          if (decrypted) {
+            if (decrypted.startsWith('/uploads/') || decrypted.startsWith('/output/') || decrypted.startsWith('/repoart/')) {
+              const filePath = path.join(__dirname, 'public', decrypted);
+              if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`[TTL File Cleanup] Deleted file: ${filePath}`);
+              }
+            }
+          }
+        } catch (fileErr) {
+          console.error('[TTL File Cleanup] Failed to delete file for message:', msg.id, fileErr);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to query expired media messages:', e);
+    }
+
     try {
       const deleted = await prisma.message.deleteMany({
-        where: { expiresAt: { lte: new Date() } }
+        where: { expiresAt: { lte: now } }
       });
       if (deleted.count > 0) {
         console.log(`[TTL] Deleted ${deleted.count} expired messages from DB`);
@@ -230,11 +401,74 @@ app.prepare().then(() => {
     } catch (e) {
       console.error('Failed to delete expired TTL messages:', e);
     }
+
+    try {
+      const expiredPosts = await prisma.petPost.findMany({
+        where: { expiresAt: { lte: now } }
+      });
+
+      for (const post of expiredPosts) {
+        if (post.images) {
+          try {
+            const images = JSON.parse(post.images);
+            if (Array.isArray(images)) {
+              for (const imgPath of images) {
+                if (typeof imgPath === 'string' && (imgPath.startsWith('/uploads/') || imgPath.startsWith('/output/') || imgPath.startsWith('/repoart/'))) {
+                  const filePath = path.join(__dirname, 'public', imgPath);
+                  if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[TTL PetPost Cleanup] Deleted file: ${filePath}`);
+                  }
+                }
+              }
+            }
+          } catch (jsonErr) {
+            console.error('[TTL PetPost Cleanup] Failed to parse images JSON for post:', post.id, jsonErr);
+          }
+        }
+      }
+
+      const deletedPosts = await prisma.petPost.deleteMany({
+        where: { expiresAt: { lte: now } }
+      });
+      if (deletedPosts.count > 0) {
+        console.log(`[TTL PetPost] Deleted ${deletedPosts.count} expired posts from DB`);
+      }
+    } catch (e) {
+      console.error('Failed to clean up expired PetPosts:', e);
+    }
+
+    try {
+      const deletedComments = await prisma.petComment.deleteMany({
+        where: { expiresAt: { lte: now } }
+      });
+      if (deletedComments.count > 0) {
+        console.log(`[TTL PetComment] Deleted ${deletedComments.count} expired comments from DB`);
+      }
+    } catch (e) {
+      console.error('Failed to clean up expired PetComments:', e);
+    }
   }
 
   async function saveOfflineMessage(receiverId, message) {
     if (!receiverId || !message) return null;
-    const payload = JSON.stringify(message);
+
+    if (message.roomId) {
+      try {
+        const room = await prisma.room.findUnique({
+          where: { id: message.roomId },
+          select: { isSecret: true }
+        });
+        if (room && room.isSecret) {
+          console.log(`[OfflineMessage Bypass] Skip saving offline message for secret room: ${message.roomId}`);
+          return null;
+        }
+      } catch (err) {
+        console.error('Failed to check room isSecret in saveOfflineMessage:', err);
+      }
+    }
+
+    const payload = encryptText(JSON.stringify(message));
     if (!(await hasEnhancedOfflineQueue())) {
       return prisma.offlineMessage.create({
         data: { receiverId, payload }
@@ -304,7 +538,6 @@ app.prepare().then(() => {
     const userId = socket.userId;
     if (!userId) return;
     try {
-      await deleteExpiredOfflineMessages();
       const enhancedOfflineQueue = await hasEnhancedOfflineQueue();
       const records = enhancedOfflineQueue
         ? await prisma.$queryRawUnsafe(
@@ -326,17 +559,18 @@ app.prepare().then(() => {
         const rooms = new Map();
         const offlineMessages = [];
         for (const record of records) {
-          const messageObj = parseOfflineNotice(record.payload);
+          const decryptedPayload = decryptText(record.payload);
+          const messageObj = parseOfflineNotice(decryptedPayload);
           if (!messageObj) continue;
-          
+
           offlineMessages.push(messageObj);
 
           const destRoomId = messageObj.roomId || messageObj.receiverId;
           if (destRoomId) {
-             const room = rooms.get(destRoomId) || { roomId: destRoomId, count: 0, latestAt: 0 };
-             room.count += 1;
-             room.latestAt = Math.max(room.latestAt, messageObj.createdAt || new Date(record.createdAt).getTime());
-             rooms.set(destRoomId, room);
+            const room = rooms.get(destRoomId) || { roomId: destRoomId, count: 0, latestAt: 0 };
+            room.count += 1;
+            room.latestAt = Math.max(room.latestAt, messageObj.createdAt || new Date(record.createdAt).getTime());
+            rooms.set(destRoomId, room);
           }
         }
 
@@ -350,7 +584,7 @@ app.prepare().then(() => {
           socket.emit('receive_offline_messages', { messages: offlineMessages });
           console.log(`Emitted ${offlineMessages.length} offline messages to ${userId}`);
         }
-        
+
         const ids = records.map(r => r.id);
         if (ids.length > 0 && enhancedOfflineQueue) {
           const placeholders = ids.map(() => '?').join(',');
@@ -372,7 +606,6 @@ app.prepare().then(() => {
     }
   }
 
-  // Web Push 珥덇린??
   const webpush = require('web-push');
   const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
   const privateVapidKey = process.env.VAPID_PRIVATE_KEY;
@@ -380,19 +613,16 @@ app.prepare().then(() => {
     webpush.setVapidDetails('mailto:support@alonics.com', publicVapidKey, privateVapidKey);
   }
 
-  // ?몄떆 諛쒖넚???ы띁 ?⑥닔
-  async function sendWebPush(targetUserId, messageData) {
+  async function sendWebPush(targetUserId, _messageData) {
     if (!publicVapidKey || !privateVapidKey) return;
     try {
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
       const subscriptions = await prisma.pushSubscription.findMany({
         where: { userId: targetUserId }
       });
       if (!subscriptions || subscriptions.length === 0) return;
-      
+
       const payload = JSON.stringify({
-        title: '?뚮줈??- 새 메시지',
+        title: '알로팝 - 새 메시지',
         body: '새 메시지가 도착했습니다.',
         url: `/`
       });
@@ -408,10 +638,10 @@ app.prepare().then(() => {
             urgency: 'normal',
             topic: `alopop-${targetUserId}`.slice(0, 32),
           });
-          console.log(`?벒 Successfully sent Web Push to ${targetUserId}`);
+          console.log(`📬 Successfully sent Web Push to ${targetUserId}`);
         } catch (err) {
           if (err.statusCode === 404 || err.statusCode === 410) {
-            console.log(`?뿊截?Subscription expired for ${targetUserId}, deleting from DB`);
+            console.log(`⚠️ Subscription expired for ${targetUserId}, deleting from DB`);
             await prisma.pushSubscription.delete({ where: { id: sub.id } });
           } else {
             console.error('Web Push Send Error:', err);
@@ -424,12 +654,53 @@ app.prepare().then(() => {
     }
   }
 
-  // ?고????뚯씪(?꾨줈???ъ쭊 ?? 利됱떆 ?쒓났???꾪빐 public/uploads 寃쎈줈瑜?express static?쇰줈 留ㅽ븨
-  expressApp.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+  expressApp.get('/api/health', async (req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return res.status(200).json({
+        status: 'UP',
+        database: 'CONNECTED',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('[Healthcheck Failed]:', error);
+      return res.status(500).json({
+        status: 'DOWN',
+        database: 'DISCONNECTED',
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  expressApp.get('/uploads/:fileName', (req, res) => {
+    const cookies = parseCookieHeader(req.headers.cookie);
+    const payload = verifySessionToken(cookies.get(SESSION_COOKIE_NAME));
+    if (!payload) {
+      return res.status(401).send('Unauthorized');
+    }
+
+    const fileName = req.params.fileName;
+    const uploadDir = path.join(__dirname, 'public', 'uploads');
+    const filePath = path.join(uploadDir, fileName);
+    const resolvedPath = path.resolve(filePath);
+
+    if (!resolvedPath.startsWith(path.resolve(uploadDir))) {
+      console.warn(`[Path Traversal Prevented in upload serving]: Unauthorized access to ${resolvedPath}`);
+      return res.status(403).send('Forbidden');
+    }
+
+    if (fs.existsSync(resolvedPath)) {
+      return res.sendFile(resolvedPath);
+    }
+    res.status(404).send('File not found');
+  });
+
+  expressApp.use('/repoart', express.static(path.join(__dirname, 'public', 'repoart')));
+  expressApp.use(express.static(path.join(__dirname, 'public')));
 
   const httpServer = createServer(expressApp);
-  
-  // Socket.io ?몄뒪?댁뒪 ?앹꽦
+
   const io = new Server(httpServer, {
     cors: {
       origin: ['https://alopop.alonics.com', 'http://127.0.0.1:3099'],
@@ -440,20 +711,19 @@ app.prepare().then(() => {
 
   const SERVER_START_TIME = Date.now().toString();
 
-  // Socket.io ?듭떊 泥섎━
   io.on('connection', async (socket) => {
-    console.log('?뵕 User connected:', socket.id);
+    console.log('🔌 User connected:', socket.id);
     logSocketAudit({ socketId: socket.id, event: 'CONNECT', details: `Transport: ${socket.conn.transport.name}` });
     let socketUser = null;
     const agentToken = socket.handshake.auth?.token;
-    
+
     if (agentToken) {
       socketUser = await prisma.user.findUnique({
         where: { agentToken: agentToken },
         select: { id: true, username: true, isAdmin: true, isAgent: true }
       });
       if (socketUser && socketUser.isAgent) {
-        console.log(`?쨼 OpenAlo Agent connected: ${socketUser.id} (${socketUser.username})`);
+        console.log(`🤖 OpenAlo Agent connected: ${socketUser.id} (${socketUser.username})`);
         socket.isAgent = true;
       } else {
         socketUser = null;
@@ -469,19 +739,16 @@ app.prepare().then(() => {
     }
     socket.userId = socketUser.id;
     socket.emit('server_version', SERVER_START_TIME);
-    
-    // 1. ?좎? ?몄쬆 ?꾨즺 ?? ?먯떊??ID濡???諛?room)??議곗씤 (媛쒖씤 DM ?먮뒗 ?뚮┝ ?섏떊??
+
     socket.on('register', () => {
       socket.userId = socketUser.id;
       socket.join(socket.userId);
       console.log(`User ${socket.userId} registered and joined their personal room`);
       logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'REGISTER' });
 
-      // ?묒냽 ???ㅽ봽?쇱씤 ?먯뿉 蹂닿???硫붿떆吏媛 ?덈떎硫?利됱떆 ?잛븘??(洹몃━怨???젣)
       deliverOfflineMessages(socket);
     });
 
-    // 2. ?ㅼ쨷 梨꾪똿諛?Room) ?낆옣 泥섎━
     socket.on('join_room', async (roomId) => {
       const room = await getRoomWithMembers(roomId);
       if (!isRoomMember(room, socket.userId)) {
@@ -490,7 +757,7 @@ app.prepare().then(() => {
       }
       socket.join(roomId);
       socket.currentRoom = roomId;
-      
+
       if (!roomPresence.has(roomId)) {
         roomPresence.set(roomId, new Set());
       }
@@ -499,14 +766,14 @@ app.prepare().then(() => {
         const activeUsers = Array.from(roomPresence.get(roomId));
         io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
       }
-      console.log(`?슞 Socket ${socket.id} (User: ${socket.userId}) joined room ${roomId}`);
+      console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) joined room ${roomId}`);
       logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'JOIN_ROOM', details: roomId });
     });
 
     socket.on('leave_room', async (roomId) => {
       socket.leave(roomId);
       socket.currentRoom = null;
-      
+
       if (socket.userId && roomPresence.has(roomId)) {
         try {
           const socketsInRoom = await io.in(roomId).fetchSockets();
@@ -514,32 +781,29 @@ app.prepare().then(() => {
             const localSocket = io.sockets.sockets.get(s.id);
             return localSocket && localSocket.userId === socket.userId && localSocket.id !== socket.id;
           });
-          
+
           if (!stillInRoom) {
             roomPresence.get(roomId).delete(socket.userId);
             const activeUsers = Array.from(roomPresence.get(roomId));
             io.to(roomId).emit('room_presence_update', { roomId, activeUsers });
           }
-        } catch(e) {
+        } catch (e) {
           console.error('Presence update error on leave_room', e);
         }
       }
-      console.log(`?슞 Socket ${socket.id} (User: ${socket.userId}) left room ${roomId}`);
+      console.log(`🚪 Socket ${socket.id} (User: ${socket.userId}) left room ${roomId}`);
       logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'LEAVE_ROOM', details: roomId });
     });
 
-    // 3. 梨꾪똿諛??대쫫 ?ㅼ떆媛?蹂寃?釉뚮줈?쒖틦?ㅽ듃
     socket.on('update_room_name', async (payload) => {
       const room = await getRoomWithMembers(payload.roomId);
       if (!isRoomMember(room, socket.userId)) return;
-      console.log(`[DEBUG] ?뤇截?Room name updated:`, payload);
-      // ?먯떊???ы븿?섏뿬 諛⑹뿉 ?덈뒗 紐⑤뱺 ?щ엺?먭쾶 諛쒖넚 (send_message???먯떊 ?쒖쇅吏留??대쫫 蹂寃쎌? 紐⑤몢媛 遊먯빞??
+      console.log(`[DEBUG] ✏️ Room name updated:`, payload);
       io.to(payload.roomId).emit('room_name_updated', payload);
     });
 
-    // 3.1. [?좉퇋] 硫붿떆吏 ?ы썑 ?낅뜲?댄듃 (AI ?⑺듃泥댄겕 寃곌낵 ?쒕쾭 以묎퀎?? 釉뚮줈?쒖틦?ㅽ듃
     socket.on('update_message', async (payload) => {
-      console.log(`[DEBUG] ?봽 Message updated by sponsor (Fact-check):`, payload.messageId);
+      console.log(`[DEBUG] 🔄 Message updated by sponsor (Fact-check):`, payload.messageId);
       try {
         const room = await getRoomWithMembers(payload.roomId);
         if (!isRoomMember(room, socket.userId)) return;
@@ -547,7 +811,6 @@ app.prepare().then(() => {
         if (room && room.members) {
           room.members.forEach((member) => {
             const targetId = member.userId;
-            // ?대떦 硫ㅻ쾭媛 ?묒냽 以묒씤吏 ?뺤씤 ?? 猷?ID媛 ?꾨땶 ?ъ슜??媛쒖씤 怨좎쑀 梨꾨꼸濡??ㅼ씠?됲듃 ?꾩넚!
             const roomSet = io.sockets.adapter.rooms.get(targetId);
             if (roomSet && roomSet.size > 0 && targetId !== socket.userId) {
               io.to(targetId).emit('message_updated', payload);
@@ -559,8 +822,8 @@ app.prepare().then(() => {
       }
     });
 
-    // 3.5. ?대㉫ ?좎? ??댄븨 ?곹깭 由대젅??(?먯떊???쒖쇅??諛?硫ㅻ쾭?먭쾶 釉뚮줈?쒖틦?ㅽ듃)
     socket.on('typing_start', async (payload) => {
+      if (!checkSocketRateLimit(socket.userId, 'typing_start', 10, 1000)) return;
       const room = await getRoomWithMembers(payload.roomId);
       if (!isRoomMember(room, socket.userId)) return;
       socket.to(payload.roomId).emit('typing_start', { ...payload, userId: socket.userId });
@@ -572,13 +835,11 @@ app.prepare().then(() => {
     });
 
     socket.on('sponsor_settings_changed', async (payload) => {
-      // payload: { roomId: string, sponsorId: string, sponsorPrice: number, sponsorMode: boolean, sponsorModel: string }
       const room = await getRoomWithMembers(payload.roomId);
       if (!isRoomHost(room, socket.userId)) return;
       socket.to(payload.roomId).emit('sponsor_settings_changed', { ...payload, sponsorId: socket.userId });
     });
 
-    // ---- OpenClaw Bridge ?대깽??泥섎━ ----
     socket.on('claw_canvas', (payload) => {
       socket.broadcast.emit('claw_canvas_update', { aiId: socket.userId, data: payload.data });
     });
@@ -595,18 +856,17 @@ app.prepare().then(() => {
       const { roomId, finalOutput } = payload;
       if (!roomId || !finalOutput) return;
       const aiUserId = socket.userId;
-      
+
       const message = {
         messageId: 'claw_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
         senderId: aiUserId,
         receiverId: roomId,
         messageType: 'TEXT',
-        content: finalOutput.trim() || "[?묒뾽 ?꾨즺]",
+        content: finalOutput.trim() || "[작업 완료]",
         createdAt: Date.now(),
         unreadCount: 0
       };
 
-      // Turn off the typing indicator now that the response is ready
       io.to(roomId).emit('typing_end', { roomId, userId: aiUserId });
 
       const room = await getRoomWithMembers(roomId);
@@ -628,16 +888,15 @@ app.prepare().then(() => {
       }
     });
 
-    // 4. No-Log Relay 硫붿떆吏 ?꾩넚 濡쒖쭅 (諛?媛쒖씤 怨듯넻)
-    // 3. No-Log Relay 硫붿떆吏 ?꾩넚 濡쒖쭅 (諛?媛쒖씤 怨듯넻)
     socket.on('send_message', async (payload) => {
+      if (!checkSocketRateLimit(socket.userId, 'send_message', 5, 1000)) {
+        socket.emit('rate_limit_exceeded', { event: 'send_message', error: 'Too many messages. Please wait.' });
+        return;
+      }
       const { receiverId, message } = payload;
-      
-      try {
-        // ?쒕쾭 痢≪뿉??Prisma DB瑜?議고쉶???대떦 諛⑹뿉 ?랁븳 硫ㅻ쾭?ㅼ쓣 媛?몄샃?덈떎.
-        const room = await getRoomWithMembers(receiverId);
 
-        // 1. 諛⑹쓣 李얠븯?쇰㈃ (諛⑺뼢 硫붿떆吏) -> 硫ㅻ쾭 媛쒓컻?몄쓽 ID瑜??寃잛쑝濡?諛쒖넚
+      try {
+        const room = await getRoomWithMembers(receiverId);
         if (room && room.members) {
           if (!isRoomMember(room, socket.userId)) {
             socket.emit('message_denied', { receiverId, error: 'Forbidden' });
@@ -650,113 +909,105 @@ app.prepare().then(() => {
             return;
           }
           message.senderId = requestedSenderId;
-          
-          // [TTL 7일 저장] 비밀방이 아닌 경우 암호화하여 Message DB에 보관
+
           if (!room.isSecret && message.messageType !== 'SYSTEM') {
-            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-            prisma.message.create({
-              data: {
-                messageId: message.messageId,
-                roomId: room.id,
-                senderId: message.senderId,
-                type: message.messageType || 'TEXT',
-                content: encryptText(message.content),
-                createdAt: new Date(message.createdAt || Date.now()),
-                expiresAt
-              }
-            }).catch(err => console.error('Failed to store TTL message:', err));
+            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            try {
+              await prisma.message.create({
+                data: {
+                  messageId: message.messageId,
+                  roomId: room.id,
+                  senderId: message.senderId,
+                  type: message.messageType || 'TEXT',
+                  content: encryptText(message.content),
+                  createdAt: new Date(message.createdAt || Date.now()),
+                  expiresAt
+                }
+              });
+            } catch (err) {
+              console.error('Failed to store TTL message:', err);
+              socket.emit('message_save_error', { messageId: message.messageId, error: 'Database save failed' });
+            }
           }
 
           if (!room.isGroup) {
-            // 1:1 諛⑹씪 寃쎌슦 ?섍컮???④? 泥섎━?? ?좎? ?먮룞 遺??Re-join) 濡쒖쭅 泥섎━
             const hiddenMembers = room.members.filter(m => m.isHidden && m.userId !== message.senderId);
             for (const hm of hiddenMembers) {
               await prisma.roomMember.update({
                 where: { userId_roomId: { userId: hm.userId, roomId: receiverId } },
                 data: { isHidden: false }
               });
-              console.log(`?뫛 Unhid member ${hm.userId} in room ${receiverId} (Kakao auto-rejoin)`);
-              hm.isHidden = false; // 硫붾え由???媛앹껜??媛깆떊?섏뿬 諛붾줈 諛쒖넚 ??곸뿉 ?ы븿
+              console.log(`👋 Unhid member ${hm.userId} in room ${receiverId} (Kakao auto-rejoin)`);
+              hm.isHidden = false;
             }
           }
 
           room.members.forEach((member) => {
             const targetId = member.userId;
-            
-            // 蹂몄씤??蹂대궦 硫붿떆吏??濡쒖뺄?먯꽌 ?대? 泥섎━?덉쑝誘濡??뚯폆 以묐났 諛쒖넚 ?쒖쇅
+
             if (targetId === message.senderId) return;
 
-            // ?대떦 ?좎?媛 ?꾩옱 ?⑤씪?몄씤吏(蹂몄씤 ID濡???Personal Room???묒냽 以묒씤吏) ?뺤씤
-            // v4?먯꽌??in(room).fetchSockets()?대굹 adapter.rooms.get() ?ъ슜
             const roomSet = io.sockets.adapter.rooms.get(targetId);
-            
+
             if (roomSet && roomSet.size > 0) {
-              // ?⑤씪?몄씠硫??대떦 硫ㅻ쾭??媛쒖씤 Room?쇰줈 利됱떆 諛쒖넚?섎릺, ??꾩븘??ACK ?곸슜
               io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                 if (err || !responses || Object.keys(responses).length === 0) {
-                  console.log(`?좑툘 ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
+                  console.log(`⏰ ACK Timeout/Error for ${targetId}, saving to OfflineMessage DB`);
                   await saveOfflineMessage(targetId, message);
-                  
-                  sendWebPush(targetId, message).catch(console.error); // 鍮꾨룞湲?Fire-and-forget
+
+                  sendWebPush(targetId, message).catch(console.error);
                 } else {
-                  console.log(`??ACK Received from ${targetId} (in room ${receiverId})`);
+                  console.log(`✅ ACK Received from ${targetId} (in room ${receiverId})`);
                 }
               });
             } else {
-              // ?ㅽ봽?쇱씤?대㈃ DB???곴뎄 蹂닿? (?쒕쾭 ?ъ떆???κ린 誘몄젒????硫붾え由??꾩닔 諛⑹?)
               saveOfflineMessage(targetId, message).then(() => {
-                console.log(`?뱿 Paused message for offline member ${targetId} into DB`);
+                console.log(`📦 Paused message for offline member ${targetId} into DB`);
               });
-              
-              // ?깆씠 ?꾩쟾??醫낅즺?섏뿀嫄곕굹 諛깃렇?쇱슫?쒖씤 寃쎌슦 ?몄떆 ?뚮┝ ?몃━嫄?(鍮꾨룞湲?泥섎━濡??쒕쾭 釉붾줈???쒓굅)
+
               sendWebPush(targetId, message).catch(console.error);
             }
           });
 
-          // [?좉퇋] 100% ?쒕쾭?ъ씠??諛깃렇?쇱슫??AI ?⑺듃泥댄겕 ?由??곗궛 (諛⑹옣??爰쇱졇?덉뼱???숈옉)
           if (room.sponsorMode && message.messageType !== 'SYSTEM') {
             const hostMember = room.members.find(m => m.isHost);
-            // 諛쒖넚?먭? 諛⑹옣 蹂몄씤???꾨땲硫??ㅽ룿???곗궛 ?몃━嫄?
             if (hostMember && hostMember.userId !== message.senderId) {
-              console.log(`[DEBUG] ?쭬 Triggering Background Server AI check for msg ${message.messageId}`);
-              
+              console.log(`[DEBUG] 🧠 Triggering Background Server AI check for msg ${message.messageId}`);
+
               fetch(`http://127.0.0.1:${port}/api/chat/sponsor`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-alopop-internal': internalApiSecret },
                 body: JSON.stringify({ roomId: receiverId, message })
               })
-              .then(res => res.json())
-              .then(data => {
-                if (data.success && data.aiAnalysis) {
-                  const updatePayload = {
-                    roomId: receiverId,
-                    messageId: message.messageId,
-                    aiAnalysis: data.aiAnalysis
-                  };
-                  // AI 泥섎━ 寃곌낵 釉뚮줈?쒖틦?ㅽ듃
-                  room.members.forEach((member) => {
-                    const targetId = member.userId;
-                    const rSet = io.sockets.adapter.rooms.get(targetId);
-                    if (rSet && rSet.size > 0 && targetId !== message.senderId) {
-                      io.to(targetId).emit('message_updated', updatePayload);
+                .then(res => res.json())
+                .then(data => {
+                  if (data.success && data.aiAnalysis) {
+                    const updatePayload = {
+                      roomId: receiverId,
+                      messageId: message.messageId,
+                      aiAnalysis: data.aiAnalysis
+                    };
+                    room.members.forEach((member) => {
+                      const targetId = member.userId;
+                      const rSet = io.sockets.adapter.rooms.get(targetId);
+                      if (rSet && rSet.size > 0 && targetId !== message.senderId) {
+                        io.to(targetId).emit('message_updated', updatePayload);
+                      }
+                    });
+                    const senderRoom = io.sockets.adapter.rooms.get(message.senderId);
+                    if (senderRoom && senderRoom.size > 0) {
+                      io.to(message.senderId).emit('message_updated', updatePayload);
                     }
-                  });
-                  // 諛쒖떊 ?뱀궗?먯뿉寃뚮룄 寃곌낵 由ы꽩
-                  const senderRoom = io.sockets.adapter.rooms.get(message.senderId);
-                  if (senderRoom && senderRoom.size > 0) {
-                    io.to(message.senderId).emit('message_updated', updatePayload);
+                  } else if (data.skipped) {
+                    console.log(`[DEBUG] AI check skipped: ${data.reason}`);
+                  } else {
+                    console.error('[DEBUG] AI check failed:', data.error);
                   }
-                } else if (data.skipped) {
-                  console.log(`[DEBUG] AI check skipped: ${data.reason}`);
-                } else {
-                  console.error('[DEBUG] AI check failed:', data.error);
-                }
-              })
-              .catch(err => console.error('Background AI POST Error:', err));
+                })
+                .catch(err => console.error('Background AI POST Error:', err));
             }
           }
         } else {
-          // 2. 諛⑹씠 ?꾨땲?쇰㈃ (1:1 媛쒖씤???⑥씪 ?寃잜똿??寃쎌슦)
           if (!message?.senderId || !(await canSendAs(null, socket.userId, message.senderId))) {
             socket.emit('message_denied', { receiverId, error: 'Invalid sender' });
             return;
@@ -767,19 +1018,19 @@ app.prepare().then(() => {
           if (roomSet && roomSet.size > 0) {
             io.to(receiverId).timeout(3000).emit('receive_message', message, async (err, responses) => {
               if (err || !responses || Object.keys(responses).length === 0) {
-                console.log(`?좑툘 ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
+                console.log(`⏰ ACK Timeout/Error for ${receiverId}, saving to OfflineMessage DB`);
                 await saveOfflineMessage(receiverId, message);
-                
+
                 sendWebPush(receiverId, message).catch(console.error);
               } else {
-                console.log(`??ACK Received directly from ${receiverId}`);
+                console.log(`✅ ACK Received directly from ${receiverId}`);
               }
             });
           } else {
             saveOfflineMessage(receiverId, message).then(() => {
-              console.log(`?뱿 Paused message for offline destination ${receiverId} into DB`);
+              console.log(`📦 Paused message for offline destination ${receiverId} into DB`);
             });
-            
+
             sendWebPush(receiverId, message).catch(console.error);
           }
         }
@@ -795,13 +1046,12 @@ app.prepare().then(() => {
 
       try {
         const room = await getRoomWithMembers(roomId);
-        // 비밀방이거나 방 멤버가 아니면 동기화 안 함
         if (!room || room.isSecret || !isRoomMember(room, userId)) return;
 
         const messages = await prisma.message.findMany({
-          where: { 
-            roomId, 
-            createdAt: { gt: new Date(lastSyncTime || 0) } 
+          where: {
+            roomId,
+            createdAt: { gt: new Date(lastSyncTime || 0) }
           },
           orderBy: { createdAt: 'asc' }
         });
@@ -825,22 +1075,23 @@ app.prepare().then(() => {
     });
 
     socket.on('read_receipt', async (payload) => {
+      if (!checkSocketRateLimit(socket.userId, 'read_receipt', 10, 1000)) return;
       const { roomId, timestamp } = payload;
       const userId = socket.userId;
       try {
         const room = await getRoomWithMembers(roomId);
         if (!isRoomMember(room, socket.userId)) return;
-        
+
         if (room && room.members) {
-           room.members.forEach(member => {
-             const targetId = member.userId;
-             if (targetId === userId) return; // ???먯떊 ?쒖쇅
-             const roomSet = io.sockets.adapter.rooms.get(targetId);
-             if (roomSet && roomSet.size > 0) {
-               socket.to(targetId).emit('room_read_update', { roomId, userId, timestamp });
-               console.log(`?몓截?Relayed read_receipt to ${targetId} for room ${roomId}`);
-             }
-           });
+          room.members.forEach(member => {
+            const targetId = member.userId;
+            if (targetId === userId) return;
+            const roomSet = io.sockets.adapter.rooms.get(targetId);
+            if (roomSet && roomSet.size > 0) {
+              socket.to(targetId).emit('room_read_update', { roomId, userId, timestamp });
+              console.log(`📨 Relayed read_receipt to ${targetId} for room ${roomId}`);
+            }
+          });
         }
       } catch (err) {
         console.error('read_receipt error:', err);
@@ -848,7 +1099,7 @@ app.prepare().then(() => {
     });
 
     socket.on('disconnect', async (reason) => {
-      console.log('?뵶 User disconnected:', socket.id, socket.userId);
+      console.log('🔌 User disconnected:', socket.id, socket.userId);
       logSocketAudit({ socketId: socket.id, userId: socket.userId, event: 'DISCONNECT', details: reason || 'unknown' });
       if (socket.currentRoom && socket.userId && roomPresence.has(socket.currentRoom)) {
         const rId = socket.currentRoom;
@@ -858,21 +1109,18 @@ app.prepare().then(() => {
             const localSocket = io.sockets.sockets.get(s.id);
             return localSocket && localSocket.userId === socket.userId && localSocket.id !== socket.id;
           });
-          
+
           if (!stillInRoom) {
             roomPresence.get(rId).delete(socket.userId);
             const activeUsers = Array.from(roomPresence.get(rId));
             io.to(rId).emit('room_presence_update', { roomId: rId, activeUsers });
           }
-        } catch(e) {
+        } catch (e) {
           console.error('Presence update error on disconnect', e);
         }
       }
     });
 
-    // =============================================
-    // [AI 스튜디오 통합] Socket.io 실시간 이벤트 연동
-    // =============================================
     socket.on('join_studio_room', async (studioId) => {
       try {
         const studio = await prisma.studio.findUnique({
@@ -880,8 +1128,7 @@ app.prepare().then(() => {
           include: { owner: true }
         });
         if (!studio) return;
-        
-        // 권한 검증: 공용 스튜디오 방이거나, 본인 소유의 스튜디오 방인 경우만 진입 가능
+
         if (!studio.isSystem && studio.ownerId !== socket.userId) {
           socket.emit('studio_access_denied', { studioId, error: 'Forbidden' });
           return;
@@ -891,7 +1138,6 @@ app.prepare().then(() => {
         socket.currentStudioId = studioId;
         console.log(`[AI Studio Socket] User ${socket.userId} joined studio room ${studioId}`);
 
-        // 해당 스튜디오의 터미널 로그 목록 조회
         const logs = await prisma.studioLog.findMany({
           where: { studioId },
           orderBy: { createdAt: 'asc' }
@@ -925,10 +1171,8 @@ app.prepare().then(() => {
         const studio = await prisma.studio.findUnique({ where: { id: studioId } });
         if (!studio || studio.ownerId !== socket.userId) return;
 
-        // 해당 스튜디오의 로그 일괄 삭제
         await prisma.studioLog.deleteMany({ where: { studioId } });
 
-        // 프로젝트 컨텍스트 초기화
         await prisma.studio.update({
           where: { id: studioId },
           data: {
@@ -938,7 +1182,6 @@ app.prepare().then(() => {
           }
         });
 
-        // 첫 시작 알림 로그 생성
         const systemLog = await prisma.studioLog.create({
           data: {
             studioId,
@@ -968,7 +1211,6 @@ app.prepare().then(() => {
         const studio = await prisma.studio.findUnique({ where: { id: studioId } });
         if (!studio || studio.ownerId !== socket.userId || studio.isWorking) return;
 
-        // 오케스트레이션 비동기 백그라운드 호출
         runStudioOrchestration(studioId, socket.userId, task, isRevision, files);
       } catch (err) {
         console.error('[AI Studio Socket] start_studio_task start err:', err);
@@ -981,7 +1223,6 @@ app.prepare().then(() => {
         const studio = await prisma.studio.findUnique({ where: { id: studioId } });
         if (!studio || studio.ownerId !== socket.userId || studio.isWorking) return;
 
-        // 수동 QA 비동기 백그라운드 호출
         runStudioManualQA(studioId, socket.userId, url, label);
       } catch (err) {
         console.error('[AI Studio Socket] run_studio_manual_qa err:', err);
@@ -989,29 +1230,45 @@ app.prepare().then(() => {
     });
   });
 
-  // =============================================
-  // [AI 스튜디오 통합] 물리 서빙 디렉토리 및 에이전트 코어 로직
-  // =============================================
   const outputDir = path.join(__dirname, 'public', 'output');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
   expressApp.use('/output', (req, res, next) => {
-    // HTML 파일 요청에 대해 theme-manager.js 동적 인젝션 (한글 파일명 복호화 지원)
     try {
       const reqPath = decodeURIComponent(req.path);
       if (reqPath.endsWith('.html') || reqPath === '/' || !path.extname(reqPath)) {
         const fileName = (reqPath === '/' || reqPath === '') ? 'index.html' : (reqPath.endsWith('.html') ? reqPath : reqPath + '.html');
         const filePath = path.join(outputDir, fileName);
-        if (fs.existsSync(filePath)) {
-          let html = fs.readFileSync(filePath, 'utf8');
-          if (html.includes('</body>')) {
-            const injectScript = '\n<script src="/game-proxy/3000/shared/theme-manager.js"></script>\n';
-            html = html.replace('</body>', injectScript + '</body>');
-          }
-          res.setHeader('Content-Type', 'text/html; charset=UTF-8');
-          return res.send(html);
+
+        const resolvedPath = path.resolve(filePath);
+        if (!resolvedPath.startsWith(path.resolve(outputDir))) {
+          console.warn(`[Path Traversal Prevented]: Unauthorized access attempt to ${resolvedPath}`);
+          return res.status(403).send('Forbidden');
         }
+
+        fs.stat(resolvedPath, (err, stats) => {
+          if (err || !stats.isFile()) {
+            return next();
+          }
+
+          fs.readFile(resolvedPath, 'utf8', (readErr, html) => {
+            if (readErr) {
+              console.error('[Dynamic HTML Read Error]:', readErr);
+              return next();
+            }
+
+            let finalHtml = html;
+            if (finalHtml.includes('</body>')) {
+              const injectScript = '\n<script src="/game-proxy/3000/shared/theme-manager.js"></script>\n';
+              finalHtml = finalHtml.replace('</body>', injectScript + '</body>');
+            }
+            res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+            res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-downloads allow-forms allow-modals allow-popups;");
+            return res.send(finalHtml);
+          });
+        });
+        return;
       }
     } catch (e) {
       console.error('[Dynamic HTML Injection Error]:', e);
@@ -1020,30 +1277,39 @@ app.prepare().then(() => {
   });
   expressApp.use('/output', express.static(outputDir));
 
-  // AI 스튜디오 전용 Gemini API Key 결정 헬퍼 함수
   async function getStudioGeminiKey(userId) {
+    if (userId === 'SYSTEM_ADMIN') return process.env.GEMINI_API_KEY;
+
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-    
-    // 1순위: 활성화된 무료 AI 이벤트 확인
+
     try {
       const activeEvents = await prisma.event.findMany({
         where: { isActive: true, eventType: 'FREE_AI' }
       });
-      for (const event of activeEvents) {
-        if (event.eventApiKey) {
-          const usage = await prisma.userEventUsage.findUnique({
-            where: { userId_eventId_usageDate: { userId, eventId: event.id, usageDate: todayStr } }
-          });
-          const currentCount = usage ? usage.count : 0;
-          const limit = event.dailyLimit || 30;
-          if (currentCount < limit) {
-            await prisma.userEventUsage.upsert({
-              where: { userId_eventId_usageDate: { userId, eventId: event.id, usageDate: todayStr } },
-              create: { userId, eventId: event.id, usageDate: todayStr, count: 1 },
-              update: { count: { increment: 1 } }
-            });
-            console.log(`[AI Studio Key] 1순위 적용: 무료 AI 이벤트 (${currentCount + 1}/${limit}회)`);
-            return event.eventApiKey;
+      if (activeEvents.length > 0) {
+        const eventIds = activeEvents.map(e => e.id);
+        const usages = await prisma.userEventUsage.findMany({
+          where: {
+            userId,
+            eventId: { in: eventIds },
+            usageDate: todayStr
+          }
+        });
+        const usageMap = new Map(usages.map(u => [u.eventId, u.count]));
+
+        for (const event of activeEvents) {
+          if (event.eventApiKey) {
+            const currentCount = usageMap.get(event.id) || 0;
+            const limit = event.dailyLimit || 30;
+            if (currentCount < limit) {
+              await prisma.userEventUsage.upsert({
+                where: { userId_eventId_usageDate: { userId, eventId: event.id, usageDate: todayStr } },
+                create: { userId, eventId: event.id, usageDate: todayStr, count: 1 },
+                update: { count: { increment: 1 } }
+              });
+              console.log(`[AI Studio Key] 1순위 적용: 무료 AI 이벤트 (${currentCount + 1}/${limit}회)`);
+              return event.eventApiKey;
+            }
           }
         }
       }
@@ -1051,7 +1317,6 @@ app.prepare().then(() => {
       console.error('[AI Studio Key] 1순위 무료 이벤트 조회 실패:', e);
     }
 
-    // 2순위: 유저 개인 설정 API Key 확인
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -1062,25 +1327,37 @@ app.prepare().then(() => {
         return user.geminiKey;
       }
 
-      // 3순위: 시스템 글로벌 Fallback Key 및 코인 차감
       const systemGeminiKey = process.env.GEMINI_API_KEY;
       if (systemGeminiKey) {
         const COST = 10;
         if (user && user.walletBalance >= COST) {
-          await prisma.user.update({
-            where: { id: userId },
-            data: { walletBalance: { decrement: COST } }
-          });
-          await prisma.transaction.create({
-            data: {
-              senderId: userId,
-              receiverId: 'system',
-              amount: COST,
-              reason: 'AI 스튜디오 에이전트 구동 요금 차감'
+          try {
+            const success = await prisma.$transaction(async (tx) => {
+              const updateResult = await tx.user.updateMany({
+                where: { id: userId, walletBalance: { gte: COST } },
+                data: { walletBalance: { decrement: COST } }
+              });
+              if (updateResult.count === 0) {
+                throw new Error('Insufficient wallet balance or user not found');
+              }
+              await tx.transaction.create({
+                data: {
+                  senderId: userId,
+                  receiverId: 'system',
+                  amount: COST,
+                  reason: 'AI 스튜디오 에이전트 구동 요금 차감'
+                }
+              });
+              return true;
+            });
+
+            if (success) {
+              console.log(`[AI Studio Key] 3순위 적용: 시스템 글로벌 Key 사용 및 10코인 차감`);
+              return systemGeminiKey;
             }
-          });
-          console.log(`[AI Studio Key] 3순위 적용: 시스템 글로벌 Key 사용 및 10코인 차감`);
-          return systemGeminiKey;
+          } catch (txErr) {
+            console.error('[AI Studio Key] Transaction failed:', txErr.message);
+          }
         }
       }
     } catch (e) {
@@ -1090,10 +1367,9 @@ app.prepare().then(() => {
     return null;
   }
 
-  // AI 스튜디오 비동기 에이전트 협업 체인 구동 함수
   async function runStudioOrchestration(studioId, userId, task, isRevision, files = []) {
     const { GoogleGenAI } = require('@google/genai');
-    
+
     const broadcastStudioLog = async (logObj) => {
       try {
         const timestamp = new Date();
@@ -1121,7 +1397,6 @@ app.prepare().then(() => {
     };
 
     try {
-      // 1. API Key 검사 및 유효성 체킹
       const geminiKey = await getStudioGeminiKey(userId);
       if (!geminiKey) {
         await prisma.studio.update({ where: { id: studioId }, data: { isWorking: false } });
@@ -1134,7 +1409,6 @@ app.prepare().then(() => {
         return;
       }
 
-      // 2. 템플릿 정보 로딩
       const studio = await prisma.studio.findUnique({ where: { id: studioId } });
       if (!studio || !studio.isSystem) {
         console.log(`[AI Studio Bypass] 개인 스튜디오(ID: ${studioId})는 서버 오케스트레이션 미실행 (바이패스)`);
@@ -1142,15 +1416,10 @@ app.prepare().then(() => {
         io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
         return;
       }
-      const TEMPLATES_PATH = path.join(__dirname, 'config', 'studio_templates.json');
-      if (!fs.existsSync(TEMPLATES_PATH)) {
-        throw new Error('스튜디오 템플릿 설정 파일이 존재하지 않습니다.');
-      }
-      const templates = JSON.parse(fs.readFileSync(TEMPLATES_PATH, 'utf8'));
+      const templates = getStudioTemplates();
       const template = templates[studio.type];
       if (!template) throw new Error('올바르지 않은 스튜디오 타입입니다.');
 
-      // AI 스튜디오 작업 중 락 활성화 및 초기 로깅
       await prisma.studio.update({ where: { id: studioId }, data: { isWorking: true } });
       io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: true });
 
@@ -1168,21 +1437,16 @@ app.prepare().then(() => {
         await broadcastStudioLog({ agent: '대표님', msg: `[피드백 반영 지시] "${task}"${fileLogs}` });
       }
 
-      // 첨부파일 준비 (Gemini API 파트 바인딩)
       const fileParts = files.map(file => ({
         inlineData: { mimeType: file.mimeType, data: file.base64 }
       }));
-
-      // Google GenAI 인스턴스 동적 생성 (요금 소유권 분배)
       const ai = new GoogleGenAI({ apiKey: geminiKey });
 
-      // 프로젝트 임시 객체 로드
       const freshStudio = await prisma.studio.findUnique({ where: { id: studioId } });
       let currentProject = JSON.parse(freshStudio.currentProjectJson || '{}');
       let dbAgentState = JSON.parse(freshStudio.agentStateJson || '{}');
       let agentState = {};
-      
-      // DB에 이미 셋업된 에이전트 고유 설정(역할, 전문성)을 안전하게 보존하며 상태 초기화
+
       for (const [name, state] of Object.entries(dbAgentState)) {
         agentState[name] = {
           ...(state || {}),
@@ -1192,11 +1456,6 @@ app.prepare().then(() => {
       }
 
       if (studio.type === 'game') {
-        // ==========================================
-        // 🎮 [게임 분야] Alice -> Carol -> Bob -> Dave 체인
-        // ==========================================
-        
-        // [1] Alice (기획자) 동작
         emitAgentStatus('Alice', 'thinking');
         agentState['Alice'] = { ...(agentState['Alice'] || {}), status: 'thinking', room: 'DevRoom', log: '기획서 구성 중...' };
         await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
@@ -1254,14 +1513,13 @@ ${currentProject.specDoc}
         io.to(studioId).emit('syncStudioAgentState', agentState);
         await broadcastStudioLog({ agent: 'Alice', msg: `기획서 작성이 완료되었습니다. Carol 수석에게 전달합니다.\n[기획 요약]\n${specDoc.substring(0, 50)}...` });
 
-        // [Eve - 마케팅 요원 기용 시 기획서 바이럴 보강 보완 단계 삽입]
         if (agentState['Eve']) {
           emitAgentStatus('Eve', 'thinking');
           agentState['Eve'] = { ...(agentState['Eve'] || {}), status: 'thinking', room: 'DevRoom', log: '마케팅 기획 보완 중...' };
           await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
           io.to(studioId).emit('syncStudioAgentState', agentState);
           await broadcastStudioLog({ agent: 'Eve', msg: 'Alice의 기획서를 검토하여 마케팅 관점에서 흥행 및 홍보 요소를 추가 기획하고 있습니다...' });
-          
+
           const eveRole = agentState['Eve']?.role || '마케팅';
           const eveExpertise = agentState['Eve']?.expertise || '트렌디한 바이럴 카피라이팅 마케팅 스페셜리스트';
           const evePrompt = `[역할: ${eveRole} | 전문성 및 페르소나: ${eveExpertise}] 당신은 이 전문성과 역할을 바탕으로 이번 개발 업무 중 본인의 분야를 담당해 주어야 합니다.
@@ -1291,7 +1549,6 @@ ${currentProject.specDoc}
           await broadcastStudioLog({ agent: 'Eve', msg: '마케팅 타겟팅과 카피라이팅 기획안을 결합하여 스펙을 한층 더 업그레이드했습니다!' });
         }
 
-        // [2] Carol (디자이너) 동작
         emitAgentStatus('Carol', 'thinking');
         agentState['Carol'] = { ...(agentState['Carol'] || {}), status: 'thinking', room: 'DevRoom', log: '디자인 가이드 짜는 중...' };
         await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
@@ -1327,7 +1584,7 @@ ${currentProject.specDoc}
         });
         io.to(studioId).emit('syncStudioAgentState', agentState);
         await broadcastStudioLog({ agent: 'Carol', msg: `디자인 원형이 나왔습니다! Bob 수석에게 전달합니다.\n[디자인 요약]\n${designDoc.substring(0, 50)}...` });
-// [3] Bob (개발자) 동작
+
         emitAgentStatus('Bob', 'coding');
         agentState['Bob'] = { ...(agentState['Bob'] || {}), status: 'coding', room: 'DevRoom', log: '열혈 코딩 중...' };
         await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
@@ -1372,7 +1629,7 @@ ${currentProject.codeDoc}
           contents: [{ text: bobPrompt }],
         });
         const codeDoc = bobResponse.text;
-        
+
         let cleanHTML = codeDoc;
         const htmlMatch = codeDoc.match(/```(?:html)?\s*\n([\s\S]*?)\n```/i);
         if (htmlMatch) {
@@ -1383,7 +1640,6 @@ ${currentProject.codeDoc}
         let finalHTML = cleanHTML;
         currentProject.codeDoc = finalHTML;
 
-        // [4] Dave (QA 테스터) 자가 결함 테스트
         emitAgentStatus('Dave', 'thinking');
         agentState['Dave'] = { ...(agentState['Dave'] || {}), status: 'thinking', room: 'DevRoom', log: '정밀 QA 검수 중...' };
         await prisma.studio.update({
@@ -1398,7 +1654,7 @@ ${currentProject.codeDoc}
 
         const daveRole = agentState['Dave']?.role || 'QA';
         const daveExpertise = agentState['Dave']?.expertise || '칼 같은 엄격함을 가진 버그 헌터 QA 마스터';
-        
+
         const davePrompt = `[역할: ${daveRole} | 전문성 및 페르소나: ${daveExpertise}] 당신은 이 전문성과 역할을 바탕으로 동료 프로그래머 Bob이 작성한 아래 코드를 면밀히 검수해 주어야 합니다.
 당신은 'Dave'입니다. 프로그래머 Bob이 작성한 아래 HTML 코드를 바탕으로 HTML/CSS/JS 문법 오류, 누락된 스크립트, 게임 구동 시 뻑나는 치명적 결함을 분석하세요. 결과는 반드시 JSON 객체로 반환하세요.
 코드:
@@ -1427,7 +1683,7 @@ ${currentProject.codeDoc}
         }
 
         if (qaStatus === "FAIL") {
-          await broadcastStudioLog({ agent: 'Dave', msg: `[오류 발견] \${qaFeedback} Bob 수석, 치명적 결함입니다. 즉시 리팩토링하세요.` });
+          await broadcastStudioLog({ agent: 'Dave', msg: `[오류 발견] ${qaFeedback} Bob 수석, 치명적 결함입니다. 즉시 리팩토링하세요.` });
           emitAgentStatus('Bob', 'coding');
           agentState['Bob'] = { ...(agentState['Bob'] || {}), status: 'coding', room: 'DevRoom', log: 'V2 핫픽스 코딩 중...' };
           await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
@@ -1471,7 +1727,6 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
         });
         io.to(studioId).emit('syncStudioAgentState', agentState);
 
-        // [Frank - 보안 요원 기용 시 보안 검증 틱 프로세스 삽입]
         if (agentState['Frank']) {
           emitAgentStatus('Frank', 'thinking');
           agentState['Frank'] = { ...(agentState['Frank'] || {}), status: 'thinking', room: 'DevRoom', log: '보안 검수 중...' };
@@ -1481,7 +1736,7 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
 
           const frankRole = agentState['Frank']?.role || '보안';
           const frankExpertise = agentState['Frank']?.expertise || '서버 보안 및 철통 인프라 가드 아키텍트';
-          const frankPrompt = `[역할: \${frankRole} | 전문성 및 페르소나: \${frankExpertise}] 당신은 이 전문성과 역할을 바탕으로 이번 개발 업무 중 본인의 분야를 담당해 주어야 합니다.
+          const frankPrompt = `[역할: ${frankRole} | 전문성 및 페르소나: ${frankExpertise}] 당신은 이 전문성과 역할을 바탕으로 이번 개발 업무 중 본인의 분야를 담당해 주어야 합니다.
 당신은 보안 담당 요원 'Frank'입니다. Bob과 Dave를 통과한 최종 게임 소스코드 전문을 분석하여 크로스 사이트 스크립팅(XSS), 로컬 변수 오염, 메모리 누수 등의 관점에서 보안 우려 사항이 없는지 정밀 검수하세요.
 결과는 3줄 이내의 매끄럽고 든든한 한국어 문장으로 작성해 주세요.`;
 
@@ -1494,21 +1749,19 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
           agentState['Frank'] = { ...(agentState['Frank'] || {}), status: 'idle', room: 'DevRoom', log: '보안 검증 완료!' };
           await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
           io.to(studioId).emit('syncStudioAgentState', agentState);
-          await broadcastStudioLog({ agent: 'Frank', msg: `[보안 검증 결과] \${frankResponse.text.trim()}` });
+          await broadcastStudioLog({ agent: 'Frank', msg: `[보안 검증 결과] ${frankResponse.text.trim()}` });
         }
 
-        // 3.5초 후 사후 피드백 회의(미팅) 세션 기동
         setTimeout(async () => {
           await broadcastStudioLog({ agent: '대표님', msg: '전원 회의실로 집합! 산출물 피드백 회의를 시작합시다.' });
-          
-          // 기용된 모든 요원들을 회의실로 정렬시키기
+
           for (const name of Object.keys(agentState)) {
             emitAgentStatus(name, 'meeting');
-            agentState[name] = { 
-              ...(agentState[name] || {}), 
-              status: 'meeting', 
-              room: 'Conference', 
-              log: name === 'Alice' ? '게임성 검토 중...' : (name === 'Carol' ? 'UI 디자인 확인 중...' : (name === 'Bob' ? '피드백 수렴 중...' : '회의 참석 중...')) 
+            agentState[name] = {
+              ...(agentState[name] || {}),
+              status: 'meeting',
+              room: 'Conference',
+              log: name === 'Alice' ? '게임성 검토 중...' : (name === 'Carol' ? 'UI 디자인 확인 중...' : (name === 'Bob' ? '피드백 수렴 중...' : '회의 참석 중...'))
             };
           }
           await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
@@ -1517,7 +1770,7 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
           try {
             const qaPrompt = `당신은 까다롭지만 유쾌한 기획팀장 'Alice'입니다. 아래는 프로그래머 Bob이 방금 완성한 HTML 웹 게임 소스코드입니다.
 코드 전문:
-\${finalHTML}
+${finalHTML}
 
 위 결과물을 보고, 1) 게임성/재미, 2) Carol이 구성한 UI 배색이나 레이아웃이 잘 반영되었는지를 평가해주세요. 대표님과 팀원들(Carol, Bob) 앞에서 이야기하듯 대화체로, 3~4문장 이내의 신랄하고 재치있는 평가(QA 피드백)를 한국어로 남기세요.`;
 
@@ -1536,18 +1789,16 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
               await broadcastStudioLog({ agent: 'Carol', msg: dialogue.carol });
               await broadcastStudioLog({ agent: 'Bob', msg: dialogue.bob });
 
-              // Carol과 Bob의 실제 회의 다이얼로그 내용을 에이전트 상태의 말풍선 값으로 세팅 및 실시간 DB 저장 세이브 브로드캐스트
               agentState['Carol'].log = dialogue.carol;
               agentState['Bob'].log = dialogue.bob;
               await prisma.studio.update({ where: { id: studioId }, data: { agentStateJson: JSON.stringify(agentState) } });
               io.to(studioId).emit('syncStudioAgentState', agentState);
 
-              // [Grace - CS 요원이 기용된 경우 피드백 다이얼로그 추가]
               if (agentState['Grace']) {
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 const graceRole = agentState['Grace']?.role || 'CS';
                 const graceExpertise = agentState['Grace']?.expertise || '친절하고 활발한 유저 소통 CS 매니저';
-                const gracePrompt = `[역할: \${graceRole} | 전문성 및 페르소나: \${graceExpertise}] 당신은 이 전문성과 역할을 바탕으로 CS 매니저 입장의 멘트를 기재해 주어야 합니다.
+                const gracePrompt = `[역할: ${graceRole} | 전문성 및 페르소나: ${graceExpertise}] 당신은 이 전문성과 역할을 바탕으로 CS 매니저 입장의 멘트를 기재해 주어야 합니다.
 당신은 CS 담당 요원 'Grace'입니다. Bob이 코딩하고 Dave가 검수한 최종 게임의 UI/UX 완성본을 확인했습니다.
 유저 관점에서의 친근함, 플레이 가이드 유도, 유저 지원 등에 관한 귀여운 피드백을 밝고 쾌활한 성격의 대화체로 1~2문장 이내로 한국어로 작성하세요.`;
                 const graceResponse = await ai.models.generateContent({
@@ -1561,12 +1812,11 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
                 io.to(studioId).emit('syncStudioAgentState', agentState);
               }
 
-              // [Hank - 테스터 요원이 기용된 경우 피드백 다이얼로그 추가]
               if (agentState['Hank']) {
                 await new Promise(resolve => setTimeout(resolve, 3000));
                 const hankRole = agentState['Hank']?.role || '테스터';
                 const hankExpertise = agentState['Hank']?.expertise || '일반 유저 관점 예외처리 검증 베타 테스터';
-                const hankPrompt = `[역할: \${hankRole} | 전문성 및 페르소나: \${hankExpertise}] 당신은 이 전문성과 역할을 바탕으로 베타 테스터 입장의 멘트를 기재해 주어야 합니다.
+                const hankPrompt = `[역할: ${hankRole} | 전문성 및 페르소나: ${hankExpertise}] 당신은 이 전문성과 역할을 바탕으로 베타 테스터 입장의 멘트를 기재해 주어야 합니다.
 당신은 베타 테스터 요원 'Hank'입니다. 일반 플레이어 입장에서 이 게임을 직접 마우스나 터치로 테스트해보며 느낀 소감이나 아주 가벼운 버그성 우려사항을 재치 있고 유쾌하게 1~2문장 이내로 한국어로 작성하세요.`;
                 const hankResponse = await ai.models.generateContent({
                   model: 'gemini-3.1-pro-preview',
@@ -1580,19 +1830,18 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
               }
 
               setTimeout(async () => {
-                // 회의 종료 후 전원 제자리 복귀 및 idle 전환
                 for (const name of Object.keys(agentState)) {
                   emitAgentStatus(name, 'idle');
-                  agentState[name] = { 
-                    ...(agentState[name] || {}), 
-                    status: 'idle', 
-                    room: 'DevRoom', 
-                    log: '' 
+                  agentState[name] = {
+                    ...(agentState[name] || {}),
+                    status: 'idle',
+                    room: 'DevRoom',
+                    log: ''
                   };
                 }
-                
+
                 await broadcastStudioLog({ agent: '대표님', msg: '자, 이번 작업은 여기까지 다들 정말 고생 많았어요! 각자 자리에서 개인 정비 가집시다.' });
-                
+
                 await prisma.studio.update({
                   where: { id: studioId },
                   data: {
@@ -1603,7 +1852,7 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
                 io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
                 io.to(studioId).emit('syncStudioAgentState', agentState);
                 io.to(studioId).emit('studioTaskFinished', { studioId, success: true });
-              }, 4500); 
+              }, 4500);
             }, 3500);
 
           } catch (e) {
@@ -1615,10 +1864,7 @@ Dave의 피드백을 반영하여 완벽하게 디버깅된 새로운 HTML 소�
 
 
       } else {
-        // ==========================================
-        // ✍️ [문서 분야] (법률, 공연) 체인
-        // ==========================================
-        const pipeline = template.pipeline; // ['Solomon', 'Justice', 'Scribe'] 등
+        const pipeline = template.pipeline;
         const agents = template.agents;
 
         let accumulatedDoc = `[대표님의 지시사항]\n"${task}"\n\n`;
@@ -1648,7 +1894,7 @@ ${accumulatedDoc}
             model: 'gemini-3.1-pro-preview',
             contents: [{ text: prompt }, ...fileParts],
           });
-          
+
           const resultText = response.text;
           accumulatedDoc += `\n### [${agentName} - ${agentInfo.role}의 자문/기획]\n${resultText}\n`;
 
@@ -1659,11 +1905,9 @@ ${accumulatedDoc}
           await broadcastStudioLog({ agent: agentName, msg: `작업이 끝났습니다. 다음 에이전트에게 인계합니다.` });
         }
 
-        // 문서형 스튜디오 최종 마무리
         const versionNum = await prisma.studioArtifact.count({ where: { studioId } }) + 1;
         const docTitle = `${template.name} 보고서 V${versionNum}`;
 
-        // 마크다운 문서 DB에 텍스트 영구 보관 (fileUrl은 없고 content에 직접 텍스트 보관)
         await prisma.studioArtifact.create({
           data: {
             studioId,
@@ -1698,7 +1942,6 @@ ${accumulatedDoc}
     }
   }
 
-  // AI 스튜디오 수동 QA 디버깅 함수 (Bob 코딩 핫픽스)
   async function runStudioManualQA(studioId, userId, url, label) {
     const { GoogleGenAI } = require('@google/genai');
 
@@ -1744,7 +1987,7 @@ ${accumulatedDoc}
       const filePath = path.join(outputDir, filename);
       if (!fs.existsSync(filePath)) throw new Error('결과물 파일이 존재하지 않습니다.');
 
-      const currentHTML = fs.readFileSync(filePath, 'utf8');
+      const currentHTML = await fs.promises.readFile(filePath, 'utf8');
 
       await broadcastStudioLog({ agent: '대표님', msg: `[수동 품질 검수 지시] ${label} 게임의 문법/동작 정밀 검사를 수행해!` });
       const freshStudioQA = await prisma.studio.findUnique({ where: { id: studioId } });
@@ -1756,7 +1999,7 @@ ${accumulatedDoc}
       await broadcastStudioLog({ agent: 'Dave', msg: '호출에 의해 해당 게임 소스 코드를 한 줄씩 디버깅 분석 중입니다...' });
 
       const ai = new GoogleGenAI({ apiKey: geminiKey });
-      
+
       const davePrompt = `당신은 엄격한 수석 QA 봇 'Dave'입니다. 프로그래머 Bob이 작성한 아래 HTML 코드를 바탕으로 HTML/CSS/JS 문법 오류, 누락된 스크립트, 치명적 결함을 분석하세요. 결과는 반드시 JSON 객체로 반환하세요.
 코드:
 \`\`\`html
@@ -1821,15 +2064,15 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
       let agentStateQA2 = JSON.parse(freshStudioQA2.agentStateJson || '{}');
       agentStateQA2['Dave'] = { status: 'idle', room: 'DevRoom', log: '검수 PASS 완료!' };
       agentStateQA2['Bob'] = { status: 'idle', room: 'DevRoom', log: '패치 완료!' };
-      
-      await prisma.studio.update({ 
-        where: { id: studioId }, 
-        data: { 
-          isWorking: false, 
-          agentStateJson: JSON.stringify(agentStateQA2) 
-        } 
+
+      await prisma.studio.update({
+        where: { id: studioId },
+        data: {
+          isWorking: false,
+          agentStateJson: JSON.stringify(agentStateQA2)
+        }
       });
-      
+
       io.to(studioId).emit('studioWorkingStatus', { studioId, isWorking: false });
       io.to(studioId).emit('syncStudioAgentState', agentStateQA2);
       io.to(studioId).emit('studioTaskFinished', { studioId, success: true });
@@ -1844,13 +2087,9 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   }
 
-  // =============================================
-  // AI 스튜디오 Express REST API 라우터 정의
-  // =============================================
   const aistudioRouter = express.Router();
   aistudioRouter.use(express.json());
 
-  // 1. 상태 조회 API
   aistudioRouter.get('/status', (req, res) => {
     res.json({
       status: 'Alopop Integrated AI Studio Backend is running',
@@ -1858,12 +2097,10 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     });
   });
 
-  // 시스템 스튜디오 자동 생성 (시딩) 함수
   async function seedSystemStudios(userId) {
     try {
-      const studioTemplates = require('./config/studio_templates.json');
+      const studioTemplates = getStudioTemplates();
 
-      // 기존 '게임 개발 스튜디오' 명칭이 DB에 있다면 자동 보정 마이그레이션
       await prisma.studio.updateMany({
         where: { name: '게임 개발 스튜디오', isSystem: true },
         data: { name: '게임 개발 스튜디오' }
@@ -1914,8 +2151,7 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
 
       for (const studioData of systemStudios) {
         const { welcomeMsg, ...dbData } = studioData;
-        
-        // 템플릿 기반 에이전트 초기화 로직 추가
+
         const template = studioTemplates[dbData.type];
         if (template && template.agents) {
           let initialAgentState = {};
@@ -1931,7 +2167,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
           dbData.agentStateJson = JSON.stringify(initialAgentState);
         }
 
-        // 이미 해당 타입의 시스템 스튜디오가 존재하는지 검사 (유저 본인 소유 기준)
         const exist = await prisma.studio.findFirst({
           where: { type: dbData.type, ownerId: String(userId) }
         });
@@ -1942,7 +2177,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
             data: dbData
           });
 
-          // 환영 첫 로그 생성
           await prisma.studioLog.create({
             data: {
               studioId: newStudio.id,
@@ -1952,7 +2186,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
             }
           });
         } else if (exist.agentStateJson === '{}') {
-          // 기존에 비어있게 생성된 스튜디오가 있다면 템플릿 데이터로 자가 치유(마이그레이션)
           await prisma.studio.update({
             where: { id: exist.id },
             data: { agentStateJson: dbData.agentStateJson }
@@ -1965,7 +2198,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   }
 
-  // 1.5 런칭 게임 목록 조회 API (아케이드 AI LAB 연동용)
   aistudioRouter.get('/games_status', async (req, res) => {
     try {
       const deployedArtifacts = await prisma.studioArtifact.findMany({
@@ -1993,7 +2225,7 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
             gamePath = path.basename(artifact.fileUrl, '.html');
           }
         }
-        
+
         return {
           id: artifact.id,
           name: artifact.name.replace(/\(V\d+\)/g, '').trim(),
@@ -2011,13 +2243,11 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 2. 유저별 스튜디오 목록 조회 API (isSystem === true 인 시스템 공용 방 포함)
   aistudioRouter.get('/studios', async (req, res) => {
     try {
       const { userId } = req.query;
       if (!userId) return res.status(400).json({ error: 'Missing userId' });
 
-      // 목록 조회 진입 시점에 4대 시스템 스튜디오 자동 시딩 보장
       await seedSystemStudios(userId);
 
       const studios = await prisma.studio.findMany({
@@ -2032,7 +2262,87 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 3. 새 스튜디오 개설 API
+  aistudioRouter.get('/studios/:studioId/state', async (req, res) => {
+    try {
+      const { studioId } = req.params;
+      const studio = await prisma.studio.findUnique({ where: { id: studioId } });
+      if (!studio) return res.status(404).json({ error: 'Studio not found' });
+
+      let agentState = {};
+      try { agentState = JSON.parse(studio.agentStateJson || '{}'); } catch { /* ignore */ }
+
+      const logs = await prisma.studioLog.findMany({
+        where: { studioId },
+        orderBy: { createdAt: 'asc' },
+        take: 200
+      });
+
+      res.json({ agentState, logs });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  aistudioRouter.put('/studios/:studioId/state', async (req, res) => {
+    try {
+      const { studioId } = req.params;
+      const { agentState, logs } = req.body;
+
+      await prisma.studio.update({
+        where: { id: studioId },
+        data: {
+          agentStateJson: JSON.stringify(agentState || {})
+        }
+      });
+
+      if (Array.isArray(logs) && logs.length > 0) {
+        const existingCount = await prisma.studioLog.count({ where: { studioId } });
+        const newLogs = logs.slice(existingCount);
+        if (newLogs.length > 0) {
+          await prisma.studioLog.createMany({
+            data: newLogs.map(l => ({
+              studioId,
+              agent: l.agent || 'System',
+              msg: l.msg || '',
+              error: l.error || false,
+              createdAt: l.createdAt ? new Date(l.createdAt) : new Date()
+            }))
+          });
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  aistudioRouter.post('/studios/:studioId/artifacts', async (req, res) => {
+    try {
+      const { studioId } = req.params;
+      const { name, content, fileUrl, isDeployed } = req.body;
+
+      if (!name) return res.status(400).json({ error: 'Missing artifact name' });
+
+      const studio = await prisma.studio.findUnique({ where: { id: studioId } });
+      if (!studio) return res.status(404).json({ error: 'Studio not found' });
+
+      const artifact = await prisma.studioArtifact.create({
+        data: {
+          studioId,
+          name,
+          content: content || null,
+          fileUrl: fileUrl || null,
+          isDeployed: isDeployed || false
+        }
+      });
+
+      res.json(artifact);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   aistudioRouter.post('/create', async (req, res) => {
     console.log('[/api/aistudio/create] req.body:', req.body);
     try {
@@ -2042,7 +2352,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
         return res.status(400).json({ error: 'Missing parameters' });
       }
 
-      // ownerId(User.id)가 데이터베이스에 존재하는지 먼저 검증 (Prisma 외래키 제약조건 SQLite 에러 방어)
       const userExists = await prisma.user.findUnique({
         where: { id: String(userId) }
       });
@@ -2050,17 +2359,15 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
       let finalOwnerId = String(userId);
       if (!userExists) {
         console.warn(`[/api/aistudio/create] User ${userId} not found in DB. Falling back to admin or first user.`);
-        
-        // 1. 관리자(이명학 님) ID가 존재하는지 체크
+
         const adminUser = await prisma.user.findFirst({
           where: { isAdmin: true }
         });
-        
+
         if (adminUser) {
           finalOwnerId = adminUser.id;
           console.log(`[/api/aistudio/create] Fallback to admin: ${adminUser.username} (${adminUser.id})`);
         } else {
-          // 2. 존재하는 아무 유저로 폴백
           const fallbackUser = await prisma.user.findFirst();
           if (fallbackUser) {
             finalOwnerId = fallbackUser.id;
@@ -2083,7 +2390,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
         }
       });
 
-      // 개설 환영 첫 시스템 로그 생성
       await prisma.studioLog.create({
         data: {
           studioId: newStudio.id,
@@ -2101,12 +2407,11 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 4. 스튜디오 삭제 API (개인 소유만)
   aistudioRouter.delete('/delete/:studioId', async (req, res) => {
     try {
       const { studioId } = req.params;
       const { userId } = req.query;
-      
+
       const studio = await prisma.studio.findUnique({ where: { id: studioId } });
       if (!studio) return res.status(404).json({ error: '스튜디오를 찾을 수 없습니다.' });
       if (studio.isSystem || studio.ownerId !== String(userId)) {
@@ -2120,7 +2425,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 5. 스튜디오별 산출물 이력 조회 API
   aistudioRouter.get('/history/:studioId', async (req, res) => {
     try {
       const { studioId } = req.params;
@@ -2134,14 +2438,12 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 6. 산출물 단건 삭제 API
   aistudioRouter.delete('/history/delete/:artifactId', async (req, res) => {
     try {
       const { artifactId } = req.params;
       const artifact = await prisma.studioArtifact.findUnique({ where: { id: artifactId } });
       if (!artifact) return res.status(404).json({ error: '산출물을 찾을 수 없습니다.' });
 
-      // HTML 게임 물리 파일인 경우 삭제 시도
       if (artifact.fileUrl && artifact.fileUrl.startsWith('/output/')) {
         const filename = path.basename(artifact.fileUrl);
         const filePath = path.join(outputDir, filename);
@@ -2157,7 +2459,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 7. 문서 텍스트 조회 API
   aistudioRouter.get('/history/content/:artifactId', async (req, res) => {
     try {
       const { artifactId } = req.params;
@@ -2167,11 +2468,12 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
       if (artifact.content) {
         res.send(artifact.content);
       } else if (artifact.fileUrl) {
-        // HTML 파일 조회 폴백
         const filename = path.basename(artifact.fileUrl);
         const filePath = path.join(outputDir, filename);
         if (fs.existsSync(filePath)) {
-          res.send(fs.readFileSync(filePath, 'utf8'));
+          const fileContent = await fs.promises.readFile(filePath, 'utf8');
+          res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-downloads allow-forms allow-modals allow-popups;");
+          res.send(fileContent);
         } else {
           res.status(404).send('HTML File not found on disk');
         }
@@ -2183,24 +2485,21 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 8. 텍스트 소스코드 직접 덮어쓰기 API (에디터/문서보정용)
   aistudioRouter.post('/history/content/:artifactId', express.text({ type: '*/*', limit: '10mb' }), async (req, res) => {
     try {
       const { artifactId } = req.params;
       const newText = req.body;
-      
+
       const artifact = await prisma.studioArtifact.findUnique({ where: { id: artifactId } });
       if (!artifact) return res.status(404).json({ error: '산출물을 찾을 수 없습니다.' });
 
       if (artifact.content !== null) {
-        // 마크다운 문서 텍스트 DB 업데이트
         await prisma.studioArtifact.update({
           where: { id: artifactId },
           data: { content: newText }
         });
         res.json({ success: true });
       } else if (artifact.fileUrl) {
-        // HTML 게임 소스 덮어쓰기
         const filename = path.basename(artifact.fileUrl);
         const filePath = path.join(outputDir, filename);
         fs.writeFileSync(filePath, newText, 'utf8');
@@ -2213,7 +2512,6 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
     }
   });
 
-  // 9. 포트제로 정식 게임 배포 API (PM2 연동)
   aistudioRouter.post('/deploy/:artifactId', async (req, res) => {
     try {
       const { artifactId } = req.params;
@@ -2227,51 +2525,52 @@ Dave의 피드백을 반영하여 디버깅된 새로운 HTML 소스코드 전�
       const sourceHtmlPath = path.join(outputDir, fileName);
       if (!fs.existsSync(sourceHtmlPath)) return res.status(404).json({ error: '물리 게임 파일이 서버 디스크에 존재하지 않습니다.' });
 
-      const htmlContent = fs.readFileSync(sourceHtmlPath, 'utf8');
+      const htmlContent = await fs.promises.readFile(sourceHtmlPath, 'utf8');
 
-      // 윈도우 PM2 ecosystem.config.js 분석 및 포트 3070~3089 자동 검출
-      const ecoPath = 'c:/seoha/ecosystem.config.js';
-      if (!fs.existsSync(ecoPath)) throw new Error('c:/seoha/ecosystem.config.js 경로를 찾을 수 없습니다.');
-      
-      let ecoContent = fs.readFileSync(ecoPath, 'utf8');
-      const nameRegex = /name:\s*["'](\d{2})-/g;
-      let match;
-      const usedIds = new Set();
-      while ((match = nameRegex.exec(ecoContent)) !== null) {
-        usedIds.add(parseInt(match[1]));
-      }
+      let port, appName, targetDir;
+      await safeModifyEcosystemConfig(async () => {
+        const ecoPath = 'c:/seoha/ecosystem.config.js';
+        if (!fs.existsSync(ecoPath)) throw new Error('c:/seoha/ecosystem.config.js 경로를 찾을 수 없습니다.');
 
-      let nextId = -1;
-      for (let i = 70; i <= 89; i++) {
-        if (!usedIds.has(i)) {
-          nextId = i;
-          break;
+        let ecoContent = await fs.promises.readFile(ecoPath, 'utf8');
+        const nameRegex = /name:\s*["'](\d{2})-/g;
+        let match;
+        const usedIds = new Set();
+        while ((match = nameRegex.exec(ecoContent)) !== null) {
+          usedIds.add(parseInt(match[1]));
         }
-      }
-      if (nextId === -1) {
-        throw new Error('게임 배포 포트(3070~3089)가 모두 가득 찼습니다.');
-      }
 
-      const port = 3000 + nextId;
-      const appName = `${nextId}-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}`;
+        let nextId = -1;
+        for (let i = 70; i <= 89; i++) {
+          if (!usedIds.has(i)) {
+            nextId = i;
+            break;
+          }
+        }
+        if (nextId === -1) {
+          throw new Error('게임 배포 포트(3070~3089)가 모두 가득 찼습니다.');
+        }
 
-      const targetDir = `c:/seoha/${appName}`;
-      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+        port = 3000 + nextId;
+        appName = `${nextId}-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}`;
 
-      const publicDir = path.join(targetDir, 'public');
-      if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+        targetDir = `c:/seoha/${appName}`;
+        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
-      fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent, 'utf8');
+        const publicDir = path.join(targetDir, 'public');
+        if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
 
-      const packageJson = {
-        name: appName,
-        version: '1.0.0',
-        scripts: { start: 'node server.js' },
-        dependencies: { express: '^4.18.2' }
-      };
-      fs.writeFileSync(path.join(targetDir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf8');
+        fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent, 'utf8');
 
-      const serverJsContent = `const express = require('express');
+        const packageJson = {
+          name: appName,
+          version: '1.0.0',
+          scripts: { start: 'node server.js' },
+          dependencies: { express: '^4.18.2' }
+        };
+        fs.writeFileSync(path.join(targetDir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf8');
+
+        const serverJsContent = `const express = require('express');
 const app = express();
 const path = require('path');
 const PORT = process.env.PORT || ${port};
@@ -2282,28 +2581,25 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 app.listen(PORT, () => {
   console.log('Game server listening on port ' + PORT);
 });`;
-      fs.writeFileSync(path.join(targetDir, 'server.js'), serverJsContent, 'utf8');
+        fs.writeFileSync(path.join(targetDir, 'server.js'), serverJsContent, 'utf8');
 
-      // ecosystem.config.js 자동 추가 기입
-      const newAppString = `    { name: "${appName}", script: "server.js", cwd: "c:/seoha/${appName}", env: { PORT: ${port} } },\n`;
-      ecoContent = ecoContent.replace('{ name: "90-ai-studio"', newAppString + '    { name: "90-ai-studio"');
-      fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+        const newAppString = `    { name: "${appName}", script: "server.js", cwd: "c:/seoha/${appName}", env: { PORT: ${port} } },\n`;
+        ecoContent = ecoContent.replace('{ name: "90-ai-studio"', newAppString + '    { name: "90-ai-studio"');
+        fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+      });
 
-      // 라이브 윈도우 환경 쉘 기동 (windowsHide: true 적용하여 도스창 방지)
-      execSync('npm install', { cwd: targetDir, stdio: 'ignore', windowsHide: true });
-      
+      await spawnAsync('npm.cmd', ['install'], { cwd: targetDir, stdio: 'ignore' });
+
       const cleanEnv = Object.assign({}, process.env);
       delete cleanEnv.PORT;
-      execSync(`pm2 start ecosystem.config.js --only "${appName}"`, { cwd: 'c:/seoha', env: cleanEnv, stdio: 'ignore', windowsHide: true });
-      execSync('pm2 save', { stdio: 'ignore', windowsHide: true });
+      await spawnAsync('pm2.cmd', ['start', 'ecosystem.config.js', '--only', appName], { cwd: 'c:/seoha', env: cleanEnv, stdio: 'ignore' });
+      await spawnAsync('pm2.cmd', ['save'], { stdio: 'ignore' });
 
-      // DB 상태 업데이트
       await prisma.studioArtifact.update({
         where: { id: artifactId },
         data: { isDeployed: true }
       });
 
-      // 소켓 알림
       io.to(artifact.studioId).emit('logStudio', {
         agent: 'Bob',
         msg: `🚀 배포가 끝났습니다! 접속 주소: http://www.alonics.com:${port}`,
@@ -2318,7 +2614,6 @@ app.listen(PORT, () => {
     }
   });
 
-  // 10. 배포 해제 API
   aistudioRouter.post('/undeploy/:artifactId', async (req, res) => {
     try {
       const { artifactId } = req.params;
@@ -2330,23 +2625,25 @@ app.listen(PORT, () => {
 
       const ecoPath = 'c:/seoha/ecosystem.config.js';
       if (fs.existsSync(ecoPath)) {
-        let ecoContent = fs.readFileSync(ecoPath, 'utf8');
-        
-        // 정규식으로 ecosystem.config.js에서 해당 app 제거
-        const appRegex = new RegExp(`\\s*\\{\\s*name:\\s*["'](\\d{2})-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}["'][\\s\\S]*?\\},`, 'i');
-        const match = ecoContent.match(appRegex);
-        if (match) {
-          const matchedBlock = match[0];
-          const appName = matchedBlock.match(/name:\s*["']([^"']+)["']/)[1];
-          
-          ecoContent = ecoContent.replace(matchedBlock, '');
-          fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+        let appName = null;
+        await safeModifyEcosystemConfig(async () => {
+          let ecoContent = await fs.promises.readFile(ecoPath, 'utf8');
 
-          // PM2 제거 쉘 가동 (windowsHide: true 적용하여 도스창 방지)
-          execSync(`pm2 delete "${appName}"`, { cwd: 'c:/seoha', stdio: 'ignore', windowsHide: true });
-          execSync('pm2 save', { stdio: 'ignore', windowsHide: true });
+          const appRegex = new RegExp(`\\s*\\{\\s*name:\\s*["'](\\d{2})-${gameTitle.replace(/[^a-zA-Z0-9-]/g, '')}["'][\\s\\S]*?\\},`, 'i');
+          const match = ecoContent.match(appRegex);
+          if (match) {
+            const matchedBlock = match[0];
+            appName = matchedBlock.match(/name:\s*["']([^"']+)["']/)[1];
 
-          // 로컬 node 디렉토리 제거
+            ecoContent = ecoContent.replace(matchedBlock, '');
+            fs.writeFileSync(ecoPath, ecoContent, 'utf8');
+          }
+        });
+
+        if (appName) {
+          await spawnAsync('pm2.cmd', ['delete', appName], { cwd: 'c:/seoha', stdio: 'ignore' });
+          await spawnAsync('pm2.cmd', ['save'], { stdio: 'ignore' });
+
           const targetDir = `c:/seoha/${appName}`;
           if (fs.existsSync(targetDir)) {
             fs.rmSync(targetDir, { recursive: true, force: true });
@@ -2373,14 +2670,11 @@ app.listen(PORT, () => {
     }
   });
 
-  // 로컬 독립 스튜디오 초기화용 리소스 및 템플릿 서빙 API
   aistudioRouter.get('/templates-resources', (req, res) => {
     try {
-      const TEMPLATES_PATH = path.join(__dirname, 'config', 'studio_templates.json');
-      const templates = JSON.parse(fs.readFileSync(TEMPLATES_PATH, 'utf8'));
+      const templates = getStudioTemplates();
       const officeTemplate = templates['office'] || {};
-      
-      // 기본 8인 사무직 에이전트 정적 웰컴 멘트 매핑
+
       const defaultWelcomeMessages = {
         '최인사': '안녕하세요 대표님! 최인사입니다. 인재를 발굴하고 조직 역량을 끌어올리는 데 최선을 다하겠습니다!',
         '정기획': '반갑습니다 대표님! 정기획입니다. 사업 전략과 기획 분야에서 핵심 성과를 만들어 드리겠습니다.',
@@ -2392,7 +2686,6 @@ app.listen(PORT, () => {
         '강지원': '총무 강지원입니다 대표님! 사무 환경과 복리후생 관리에 만전을 기하겠습니다.'
       };
 
-      // K-사무직 8인 캐릭터 SVG 인덱스 매핑 (프론트엔드에서 idx % 8로 사용)
       const characterAssets = [
         { idx: 0, label: '남성A', color: '#4A90D9' },
         { idx: 1, label: '여성A', color: '#E57373' },
@@ -2420,7 +2713,6 @@ app.listen(PORT, () => {
     }
   });
 
-  // Anthropic API 브라우저 CORS 회피용 로컬 프록시 엔드포인트
   aistudioRouter.post('/proxy-anthropic', express.json(), async (req, res) => {
     try {
       const { apiKey, model, messages, prompt } = req.body;
@@ -2455,11 +2747,8 @@ app.listen(PORT, () => {
     }
   });
 
-  // REST API 라우터 expressApp에 연동
   expressApp.use('/api/aistudio', aistudioRouter);
 
-  // ---- 寃뚯엫 ?먯닔 API ?꾨줉??(game-portal:3000 ?쇰줈 ?ъ썙?? ----
-  // next.config.ts??rewrite??鍮뚮뱶 ?꾩뿉留??곸슜?섎?濡? Express ?덈꺼?먯꽌 吏곸젒 泥섎━
   expressApp.use('/api/highscore', express.json(), (req, res) => {
     const http = require('http');
     const qs = req.query && Object.keys(req.query).length > 0
@@ -2485,7 +2774,6 @@ app.listen(PORT, () => {
     proxyReq.end();
   });
 
-  // ---- Pet365Care ?대? ?뚯폆 由대젅??濡쒖쭅 ----
   expressApp.use('/api/internal/pet365-relay', express.json(), async (req, res) => {
     const internalHeader = req.headers['x-alopop-internal'];
     if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
@@ -2496,16 +2784,15 @@ app.listen(PORT, () => {
     const roomSet = io.sockets.adapter.rooms.get(targetUserId);
 
     if (roomSet && roomSet.size > 0) {
-      // ?좎?媛 ?⑤씪?????뚯폆?쇰줈 吏곸젒 ?꾩넚 (ACK ?湲?
       try {
         io.to(targetUserId).timeout(3000).emit('receive_message', message, async (err, responses) => {
           if (err || !responses || Object.keys(responses).length === 0) {
-            console.log(`[Pet365-Relay] ?좑툘 ACK timeout for ${targetUserId}, treating as offline`);
+            console.log(`[Pet365-Relay] ⏰ ACK timeout for ${targetUserId}, treating as offline`);
             await saveOfflineMessage(targetUserId, message);
             sendWebPush(targetUserId, message).catch(console.error);
             return res.json({ delivered: false });
           }
-          console.log(`[Pet365-Relay] ??Delivered to ${targetUserId} via socket`);
+          console.log(`[Pet365-Relay] ✅ Delivered to ${targetUserId} via socket`);
           return res.json({ delivered: true });
         });
       } catch (e) {
@@ -2513,41 +2800,36 @@ app.listen(PORT, () => {
         return res.json({ delivered: false });
       }
     } else {
-      // ?좎?媛 ?ㅽ봽?쇱씤 ??OfflineMessage DB?????+ ?몄떆 ?뚮┝
-      console.log(`[Pet365-Relay] ?뱿 User ${targetUserId} is offline`);
+      console.log(`[Pet365-Relay] 📦 User ${targetUserId} is offline`);
       await saveOfflineMessage(targetUserId, message);
       sendWebPush(targetUserId, message).catch(console.error);
       return res.json({ delivered: false });
     }
   });
 
-  // ---- OpenClaw ?대? API 由대젅??濡쒖쭅 ----
   expressApp.use('/api/internal/claw-message', express.json(), async (req, res) => {
     const internalHeader = req.headers['x-alopop-internal'];
     if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
 
     const { aiUserId, message, roomId, aiUserName } = req.body;
     if (!aiUserId || !message) return res.status(400).json({ error: 'Missing parameters' });
-    
-    // Find the socket connected by this agent
+
     let targetSocket = null;
-    for (const [id, socket] of io.sockets.sockets.entries()) {
+    for (const [, socket] of io.sockets.sockets.entries()) {
       if (socket.isAgent && socket.userId === aiUserId) {
         targetSocket = socket;
         break;
       }
     }
-    
+
     if (!targetSocket) {
       return res.status(404).json({ error: 'OpenClaw Agent is not currently connected' });
     }
-    
+
     try {
-      // Emit the message to the bridge
       console.log(`[DEBUG] Emitting agent_task to socket ${targetSocket.id} for AI ${aiUserId}`);
       targetSocket.emit('agent_task', { message, roomId });
-      
-      // Tell everyone in the room that the AI is typing!
+
       if (roomId && aiUserId) {
         io.to(roomId).emit('typing_start', { roomId, userId: aiUserId, userName: aiUserName || 'AI' });
       }
@@ -2567,7 +2849,7 @@ app.listen(PORT, () => {
     if (!aiUserId || !tool) return res.status(400).json({ error: 'Missing parameters' });
 
     let targetSocket = null;
-    for (const [id, socket] of io.sockets.sockets.entries()) {
+    for (const [, socket] of io.sockets.sockets.entries()) {
       if (socket.isAgent && socket.userId === aiUserId) {
         targetSocket = socket;
         break;
@@ -2584,31 +2866,28 @@ app.listen(PORT, () => {
     });
   });
 
-  // ---- OpenClaw AI ?먯씠?꾪듃 ?뚮┝ 諛?硫붿떆吏 釉뚮줈?쒖틦?ㅽ듃 濡쒖쭅 ----
   expressApp.use('/api/internal/vibe-notify', express.json(), async (req, res) => {
     const internalHeader = req.headers['x-alopop-internal'];
     if (internalHeader !== internalApiSecret) return res.status(403).json({ error: 'Forbidden' });
 
     const { action, roomId, aiUserId, aiUserName, message } = req.body;
     if (!action || !roomId || !aiUserId) return res.status(400).json({ error: 'Missing parameters' });
-    
+
     try {
       if (action === 'start') {
         io.to(roomId).emit('vibe_coding_start', { roomId, aiId: aiUserId, aiName: aiUserName || 'OpenAlo' });
       } else if (action === 'message') {
         io.to(roomId).emit('vibe_coding_end', { roomId, aiId: aiUserId });
-        
-        // Construct standard message object
+
         if (message) {
           const room = await getRoomWithMembers(roomId);
           if (room && room.members) {
             room.members.forEach((member) => {
               const targetId = member.userId;
-              if (targetId === message.senderId) return; // Skip sending to the AI itself (not that it has a local DB)
+              if (targetId === message.senderId) return;
 
               const roomSet = io.sockets.adapter.rooms.get(targetId);
               if (roomSet && roomSet.size > 0) {
-                // Online
                 io.to(targetId).timeout(3000).emit('receive_message', message, async (err, responses) => {
                   if (err || !responses || Object.keys(responses).length === 0) {
                     await saveOfflineMessage(targetId, message);
@@ -2616,7 +2895,6 @@ app.listen(PORT, () => {
                   }
                 });
               } else {
-                // Offline
                 saveOfflineMessage(targetId, message);
                 sendWebPush(targetId, message).catch(console.error);
               }
@@ -2631,17 +2909,117 @@ app.listen(PORT, () => {
     }
   });
 
-  // Next.js 濡쒖슦?덈꺼 ?쇱슦??泥섎━ (Express v5 ?댁긽 ?명솚)
   expressApp.use((req, res) => {
     return handle(req, res);
   });
 
   httpServer.listen(port, (err) => {
     if (err) throw err;
-    console.log(`> ?? Ready on http://${hostname}:${port}`);
+    console.log(`> ✅ Ready on http://${hostname}:${port}`);
     console.log('> 🚀 Custom Express Server with Socket.io running (Encrypted 7-Day Storage Mode)');
-    
-    // ?붾젅洹몃옩 遊?珥덇린??
+
+    prisma.studio.updateMany({
+      where: { isWorking: true },
+      data: { isWorking: false }
+    })
+      .then(res => console.log(`[Startup] Cleaned up ${res.count} stale studio working locks.`))
+      .catch(err => console.error('[Startup] Failed to clean up stale studio locks:', err));
+
+    deleteExpiredOfflineMessages()
+      .then(() => console.log('[Startup] Completed initial expired messages and media files cleanup.'))
+      .catch(err => console.error('[Startup] Failed to clean up expired messages on startup:', err));
+
+    cron.schedule('0 3 * * *', () => {
+      try {
+        const { createBackup, rotateBackups } = require('./scripts/backup-db.js');
+        const result = createBackup();
+        const deleted = rotateBackups(7);
+        console.log(`[DB Backup Cron] Backup created: ${result.filename} (${result.size} bytes), rotated: ${deleted} old backups`);
+      } catch (err) {
+        console.error('[DB Backup Cron] Failed:', err);
+      }
+    });
+    console.log('[Startup] DB backup cron job scheduled (daily 03:00)');
 
   });
+
+  let isShuttingDown = false;
+  async function gracefulShutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[Graceful Shutdown] Received ${signal}. Starting shutdown sequence...`);
+
+    if (global.readReceiptBuffer && global.readReceiptBuffer.size > 0) {
+      const items = Array.from(global.readReceiptBuffer.values());
+      global.readReceiptBuffer.clear();
+      console.log(`[Graceful Shutdown] Flushing ${items.length} read receipts...`);
+      try {
+        await prisma.$transaction(
+          items.map(item =>
+            prisma.roomMember.upsert({
+              where: {
+                userId_roomId: {
+                  userId: item.userId,
+                  roomId: item.roomId,
+                }
+              },
+              update: { lastReadAt: item.lastReadAt },
+              create: { userId: item.userId, roomId: item.roomId, lastReadAt: item.lastReadAt }
+            })
+          )
+        );
+        console.log(`[Graceful Shutdown] Read receipts flushed successfully.`);
+      } catch (err) {
+        console.error(`[Graceful Shutdown] Error flushing read receipts:`, err);
+      }
+    }
+
+    if (global.studioLogBuffer && global.studioLogBuffer.length > 0) {
+      console.log(`[Graceful Shutdown] Flushing ${global.studioLogBuffer.length} studio logs...`);
+      try {
+        await prisma.studioLog.createMany({
+          data: global.studioLogBuffer
+        });
+        global.studioLogBuffer = [];
+        console.log(`[Graceful Shutdown] Studio logs flushed successfully.`);
+      } catch (err) {
+        console.error(`[Graceful Shutdown] Error flushing studio logs:`, err);
+      }
+    }
+
+    try {
+      console.log(`[Graceful Shutdown] Resetting working studios...`);
+      const resetResult = await prisma.studio.updateMany({
+        where: { isWorking: true },
+        data: { isWorking: false }
+      });
+      console.log(`[Graceful Shutdown] Reset ${resetResult.count} working studios.`);
+    } catch (err) {
+      console.error(`[Graceful Shutdown] Error resetting working studios:`, err);
+    }
+
+    try {
+      await prisma.$disconnect();
+      console.log('[Graceful Shutdown] Prisma disconnected.');
+    } catch (err) {
+      console.error('[Graceful Shutdown] Error disconnecting Prisma:', err);
+    }
+
+    httpServer.close((err) => {
+      if (err) {
+        console.error('[Graceful Shutdown] Error closing server:', err);
+        process.exit(1);
+      }
+      console.log('[Graceful Shutdown] HTTP Server closed successfully.');
+      process.exit(0);
+    });
+
+    setTimeout(() => {
+      console.error('[Graceful Shutdown] Shutdown timed out. Forcing exit.');
+      process.exit(1);
+    }, 10000);
+  }
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 });

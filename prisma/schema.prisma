@@ -64,6 +64,10 @@ model Transaction {
 
   receiverId String
   receiver   User   @relation("ReceivedTransactions", fields: [receiverId], references: [id])
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
 }
 
 model Room {
@@ -114,6 +118,7 @@ model Friendship {
   friend   User   @relation("UserAddedBy", fields: [friendId], references: [id], onDelete: Cascade)
 
   @@unique([userId, friendId]) // 한 방향의 관계는 유일해야 함
+  @@index([friendId])
 }
 
 // 웹 푸시 알림 구독 정보 모델
@@ -331,6 +336,7 @@ model PetPost {
   commentCount Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  expiresAt    DateTime?
 
   comments     PetComment[]
   likes        PetLike[]
@@ -341,6 +347,8 @@ model PetPost {
   @@index([meetupType])
   @@index([verifiedRegionName])
   @@index([mateStartTime])
+  @@index([category, createdAt])
+  @@index([expiresAt])
 }
 
 model PetComment {
@@ -349,10 +357,12 @@ model PetComment {
   authorId  String
   content   String
   createdAt DateTime @default(now())
+  expiresAt DateTime?
 
   post      PetPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
+  @@index([expiresAt])
 }
 
 model PetLike {
@@ -398,12 +408,14 @@ model StudioLog {
   msg        String   // 로그 본문
   error      Boolean  @default(false)
   createdAt  DateTime @default(now())
+  expiresAt  DateTime?
 
   studioId   String
   studio     Studio   @relation("StudioLogs", fields: [studioId], references: [id], onDelete: Cascade)
 
   @@index([studioId])
   @@index([createdAt])
+  @@index([expiresAt])
 }
 
 model StudioArtifact {
@@ -413,12 +425,14 @@ model StudioArtifact {
   content    String?  // 법률/공연 등의 마크다운 문서 내용 (텍스트)
   isDeployed Boolean  @default(false) // PM2 정식 포트 배포 여부 (게임 한정)
   createdAt  DateTime @default(now())
+  expiresAt  DateTime?
 
   studioId   String
   studio     Studio   @relation("StudioArtifacts", fields: [studioId], references: [id], onDelete: Cascade)
 
   @@index([studioId])
   @@index([createdAt])
+  @@index([expiresAt])
 }
 
 model SocketAuditLog {
@@ -428,11 +442,13 @@ model SocketAuditLog {
   event     String   // "CONNECT", "REGISTER", "DISCONNECT", "JOIN_ROOM", "LEAVE_ROOM"
   details   String?  // disconnect reason, roomId 등
   createdAt DateTime @default(now())
+  expiresAt DateTime?
 
   @@index([userId])
   @@index([socketId])
   @@index([event])
   @@index([createdAt])
+  @@index([expiresAt])
 }
 
 model UserActivityLog {
@@ -443,9 +459,11 @@ model UserActivityLog {
   status       String   // "SUCCESS", "FAILED", "PENDING"
   metadata     String?  // 비식별 상세 정보 JSON (예: {"roomId": "...", "amount": 1000})
   createdAt    DateTime @default(now())
+  expiresAt    DateTime?
 
   @@index([userId])
   @@index([targetUserId])
   @@index([activityType])
   @@index([createdAt])
+  @@index([expiresAt])
 }

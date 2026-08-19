@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/.vibe-diagnosis/
+/.diag.js
 
 # next.js
 /.next/
@@ -52,6 +54,8 @@ config/*secret*.json
 .db-backups/
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 
@@ -66,6 +70,7 @@ type.ps1
 
 # Antigravity CLI and backup files
 .antigravitycli/
+/_backups_temp/
 *.bak
 .sync-hospitals-result.json
 chaos_log.txt
@@ -73,3 +78,40 @@ chaos_log.txt
 /public/repoart/
 /scratch/
 .worktrees/
+/_backups_temp/
+/scripts/check-active-user.cjs
+/scripts/check-test01.cjs
+/scripts/find-room.cjs
+/scripts/find-rooms-all.cjs
+/scripts/query-offline.cjs
+/scripts/query-rooms.cjs
+/scripts/query-users.cjs
+/scripts/send-msg-final.mjs
+/scripts/send-msg-final2.mjs
+/scripts/send-msg-final3.mjs
+/scripts/send-msg.mjs
+/scripts/send-msg2.mjs
+/scripts/test-update.cjs
+/scripts/admin-users-api-check.mjs
+/scripts/admin-wallet-adjust-check.mjs
+/scripts/ai-friend-hard-test.mjs
+/scripts/ai-friend-policy-check.mjs
+/scripts/apply-admin-audit-schema.mjs
+/scripts/apply-offline-notification-schema.mjs
+/scripts/chat-badge-layout-check.mjs
+/scripts/check-private-night-design.mjs
+/scripts/inspect-pet365-backup.mjs
+/scripts/inspect-pet365-browser-store.mjs
+/scripts/notification-hard-test.mjs
+/scripts/notification-system-check.mjs
+/scripts/offline-notification-db-check.mjs
+/scripts/pet365-map-mobile-check.mjs
+/scripts/pet365-mobile-qa.mjs
+/scripts/sponsor-hard-test.mjs
+/scripts/sponsor-system-check.mjs
+/scripts/vibeCoder.mjs
+
+
+# reports
+/public/repoart/
+.vibe-diagnosis/config.json

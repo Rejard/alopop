@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
+import sharp from 'sharp';
 import { requireCurrentUser } from '@/lib/auth';
 import { logUserActivity } from '@/lib/auditLogger';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = new Map([
@@ -17,12 +20,42 @@ const ALLOWED_UPLOAD_TYPES = new Map([
   ['text/html', '.html'],
 ]);
 
+function isValidMagicNumber(buffer: Buffer, mimeType: string): boolean {
+  // Validate raw bytes of binary formats to prevent MIME spoofing.
+  if (mimeType === 'image/png') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x89504E47;
+  }
+  if (mimeType === 'image/jpeg') {
+    return buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+  }
+  if (mimeType === 'image/webp') {
+    return buffer.length >= 12 && buffer.readUInt32BE(0) === 0x52494646 && buffer.readUInt32BE(8) === 0x57454250;
+  }
+  if (mimeType === 'image/gif') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x47494638;
+  }
+  if (mimeType === 'application/pdf') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x25504446;
+  }
+  if (mimeType === 'video/mp4') {
+    return buffer.length >= 8 && buffer.readUInt32BE(4) === 0x66747970;
+  }
+  if (mimeType === 'video/webm') {
+    return buffer.length >= 4 && buffer.readUInt32BE(0) === 0x1A45DFA3;
+  }
+  return true;
+}
+
 export async function POST(request: Request) {
   let currentUsr: any = null;
   try {
     const { user: currentUser, response } = await requireCurrentUser(request);
     if (!currentUser) return response;
     currentUsr = currentUser;
+
+    if (!checkRateLimit(`upload:${currentUser.id}`, 10, 60000)) {
+      return NextResponse.json({ error: 'Too many uploads. Please try again later.' }, { status: 429 });
+    }
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -35,13 +68,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'File is too large' }, { status: 400 });
     }
 
-    const safeExt = ALLOWED_UPLOAD_TYPES.get(file.type);
+    let safeExt = ALLOWED_UPLOAD_TYPES.get(file.type);
     if (!safeExt) {
       return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const uniqueFilename = `chat_${currentUser.id}_${Date.now()}_${Math.random().toString(36).slice(2)}${safeExt}`;
+    let buffer = Buffer.from(await file.arrayBuffer());
+    if (!isValidMagicNumber(buffer, file.type)) {
+      return NextResponse.json({ error: 'Invalid or corrupted file content' }, { status: 400 });
+    }
+
+    // Apply sharp resizing & WebP compression for standard images (excluding gif)
+    const isStandardImage = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp';
+    if (isStandardImage) {
+      try {
+        const compressed = await sharp(buffer)
+          .resize({
+            width: 1080,
+            withoutEnlargement: true,
+            fit: 'inside',
+          })
+          .webp({ quality: 80 })
+          .toBuffer();
+        buffer = Buffer.from(compressed);
+        safeExt = '.webp';
+      } catch (err) {
+        console.error('Image compression failed, using original buffer:', err);
+      }
+    }
+
+    const uniqueFilename = `chat_${crypto.randomUUID()}${safeExt}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
 
     await fs.mkdir(uploadDir, { recursive: true });
@@ -58,7 +114,7 @@ export async function POST(request: Request) {
       userId: currentUser.id,
       activityType: 'FILE_UPLOAD',
       status: 'SUCCESS',
-      metadata: { size: file.size, type },
+      metadata: { size: buffer.length, type },
     });
 
     return NextResponse.json({

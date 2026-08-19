@@ -53,7 +53,7 @@ function parseStoredUser(userStr: string | null): StoredUser | null {
 
 export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: SettingsRoom | null }) {
   const confirmModal = useConfirm();
-  const { isOpen, setIsOpen, forceGlobal, selectedProvider, apiKeys, setSelectedProvider, setApiKey, loadSettings } = useSettingsStore();
+  const { isOpen, setIsOpen, forceGlobal, apiKeys, setSelectedProvider, setApiKey, loadSettings } = useSettingsStore();
   
   // [신규] forceGlobal이 true라면, 방 안에 있어도 전역 설정 모드를 강제합니다.
   const currentRoom = forceGlobal ? null : propCurrentRoom;
@@ -267,40 +267,19 @@ export function SettingsModal({ currentRoom: propCurrentRoom }: { currentRoom?: 
       setSelectedProvider(activeTab);
       setApiKey(activeTab, inputValue.trim());
 
-      // [신규] 로비에서 저장하는 경우 서버 DB에 API 키 동기화 (오프라인 상시 연동)
-      if (!currentRoom && parsedUser) {
-        try {
-          const keyResponse = await fetch('/api/users/keys', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: parsedUser.id,
-              provider: activeTab,
-              apiKey: inputValue.trim()
-            })
-          });
-
-          if (keyResponse.ok) {
-            const isDeleted = inputValue.trim() === '';
-            setToastMessage({
-              text: isDeleted 
-                ? 'API 키 연동이 해제되어 마스터 DB에서 영구 삭제되었습니다.' 
-                : '안전하게 특수 암호화(AES-256) 처리되어 마스터 DB에 저장되었습니다!\n앱이 꺼져도 게스트들이 알아서 코인을 보내며 AI를 사용하게 됩니다.',
-              type: 'success'
-            });
-            setTimeout(() => {
-              setToastMessage(null);
-              setIsOpen(false);
-            }, 3000);
-            return; // 3초 대기하며 모달 닫기를 스킵
-          } else {
-            setToastMessage({ text: '키값 저장 중 서버 오류가 발생했습니다. 다시 시도해주세요.', type: 'error' });
-            setTimeout(() => setToastMessage(null), 3000);
-            return;
-          }
-        } catch (err) {
-          console.warn('Failed to sync API key to server', err);
-        }
+      if (!currentRoom && parsedUser && activeTab !== 'gemini-free') {
+        const isDeleted = inputValue.trim() === '';
+        setToastMessage({
+          text: isDeleted
+            ? 'API 키 연동이 해제되어 마스터 DB에서 영구 삭제되었습니다.'
+            : '안전하게 특수 암호화(AES-256) 처리되어 마스터 DB에 저장되었습니다!\n앱이 꺼져도 게스트들이 알아서 코인을 보내며 AI를 사용하게 됩니다.',
+          type: 'success'
+        });
+        setTimeout(() => {
+          setToastMessage(null);
+          setIsOpen(false);
+        }, 3000);
+        return;
       }
     }
 

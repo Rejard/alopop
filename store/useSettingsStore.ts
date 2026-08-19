@@ -25,27 +25,67 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   },
   setIsOpen: (isOpen, forceGlobal = false) => set({ isOpen, forceGlobal }),
   setSelectedProvider: (provider) => {
-    localStorage.setItem('alo_ai_provider', provider);
+    try {
+      localStorage.setItem('alo_ai_provider', provider);
+    } catch (e) {
+      console.warn('[Settings] localStorage write failed:', e);
+    }
     set({ selectedProvider: provider });
   },
   setApiKey: (provider, key) => {
     set((state) => {
       const newKeys = { ...state.apiKeys, [provider]: key };
-      localStorage.setItem('alo_api_keys', JSON.stringify(newKeys));
+      try {
+        localStorage.setItem('alo_api_keys', JSON.stringify(newKeys));
+      } catch (e) {
+        console.warn('[Settings] localStorage write failed:', e);
+      }
       return { apiKeys: newKeys };
+    });
+
+    if (provider === 'gemini-free') return;
+    fetch('/api/users/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, apiKey: key || null }),
+    }).catch((err) => {
+      console.warn('[Settings] server key save failed, localStorage fallback kept:', err);
     });
   },
   loadSettings: () => {
-    const provider = localStorage.getItem('alo_ai_provider') as AIProvider;
-    const keysStr = localStorage.getItem('alo_api_keys');
-    if (provider) set({ selectedProvider: provider });
-    if (keysStr) {
-      try {
-        set({ apiKeys: JSON.parse(keysStr) });
-      } catch (e) {
-        console.error('Failed to parse API keys', e);
-      }
+    try {
+      const provider = localStorage.getItem('alo_ai_provider') as AIProvider;
+      if (provider) set({ selectedProvider: provider });
+    } catch (e) {
+      console.warn('[Settings] localStorage read failed:', e);
     }
-  }
+
+    fetch('/api/users/keys')
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: { keys: { openai: string; gemini: string; anthropic: string } }) => {
+        set((state) => ({
+          apiKeys: {
+            ...state.apiKeys,
+            openai: data.keys.openai || '',
+            gemini: data.keys.gemini || '',
+            anthropic: data.keys.anthropic || '',
+          },
+        }));
+      })
+      .catch((err) => {
+        console.warn('[Settings] server key fetch failed, falling back to localStorage:', err);
+        try {
+          const keysStr = localStorage.getItem('alo_api_keys');
+          if (keysStr) {
+            set({ apiKeys: JSON.parse(keysStr) });
+          }
+        } catch (e) {
+          console.error('Failed to parse API keys from localStorage', e);
+        }
+      });
+  },
 }));
 

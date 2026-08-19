@@ -1,14 +1,15 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { MessageSquare, Users, Wallet, Gamepad2, Building2, PawPrint, Crown, Bot, HelpCircle, Home as HomeIcon, ShieldPlus, Sprout, User as UserIcon } from "lucide-react";
 
 export const PET365CARE_LNB_ITEMS = [
-  { name: "홈", path: "/pet365care?view=home", icon: HomeIcon },
-  { name: "소셜", path: "/pet365care/social", icon: Users },
-  { name: "건강", path: "/pet365care/health", icon: ShieldPlus },
-  { name: "케어", path: "/pet365care/care", icon: Sprout },
-  { name: "프로필", path: "/pet365care/profile", icon: UserIcon },
+  { name: "홈", path: "/pet365?view=home", icon: HomeIcon },
+  { name: "소셜", path: "/pet365/social", icon: Users },
+  { name: "건강", path: "/pet365/health", icon: ShieldPlus },
+  { name: "케어", path: "/pet365/care", icon: Sprout },
+  { name: "프로필", path: "/pet365/profile", icon: UserIcon },
 ];
 
 interface LnbSidebarProps {
@@ -16,7 +17,6 @@ interface LnbSidebarProps {
   setCurrentTab: (tab: 'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care') => void;
   unreadCounts: Record<string, number>;
   fetchGames: () => void;
-  setActiveGameUrl: (url: string | null) => void;
   pet365Path: string;
   setPet365Path: (path: string) => void;
   myProfile: any;
@@ -31,7 +31,7 @@ interface LnbSidebarProps {
 }
 
 export function LnbSidebar({
-  currentTab, setCurrentTab, unreadCounts, fetchGames, setActiveGameUrl,
+  currentTab, setCurrentTab, unreadCounts, fetchGames,
   pet365Path, setPet365Path, myProfile, router, totalAiUsageCount,
   setIsDrawerOpen, setCurrentRoom, setIsGuideOpen, currentTime, user, setIsProfileModalOpen
 }: LnbSidebarProps) {
@@ -100,7 +100,7 @@ export function LnbSidebar({
         <button
           onClick={() => {
             setCurrentTab('pet365care');
-            setPet365Path('/pet365care?view=home');
+            setPet365Path('/pet365?view=home');
           }}
           className={`relative p-3 rounded-xl transition-all duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${currentTab === 'pet365care' ? 'text-primary bg-surface-variant shadow-inner' : 'text-on-surface-variant hover:text-white hover:bg-surface-container-low'}`}
           title="Pet365Care"
@@ -177,12 +177,12 @@ export function LnbSidebar({
         </div>
 
         <div
-          className="w-10 h-10 rounded-lg bg-surface-container-high shadow-ambient border border-outline-variant/30 flex items-center justify-center text-primary font-bold cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
+          className="relative w-10 h-10 rounded-lg bg-surface-container-high shadow-ambient border border-outline-variant/30 flex items-center justify-center text-primary font-bold cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all overflow-hidden"
           title={user?.username || ''}
           onClick={() => { setCurrentTab('friends'); setIsProfileModalOpen(true); }}
         >
           {myProfile?.avatar_url ? (
-            <img src={myProfile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+            <Image src={myProfile.avatar_url} alt="Profile" fill className="object-cover" />
           ) : (
             (myProfile?.username?.charAt(0).toUpperCase() || user?.username?.charAt(0).toUpperCase()) || '?'
           )}

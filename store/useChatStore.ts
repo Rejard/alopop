@@ -1,11 +1,16 @@
 import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
-import { db, ChatMessage } from '@/lib/db';
+import { ChatMessage } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
 
 interface ChatStore {
   socket: Socket | null;
   isConnected: boolean;
+  roomMessages: Record<string, ChatMessage[]>;
+  fetchRoomMessages: (roomId: string) => Promise<void>;
+  addLocalMessage: (roomId: string, msg: ChatMessage) => void;
+  updateMessageAnalysis: (messageId: string, aiAnalysis: any) => void;
+  clearRoomMessages: (roomId: string) => void;
   connectSocket: (userId: string) => void;
   disconnectSocket: () => void;
   sendMessage: (receiverId: string, content: string, senderId: string, senderName: string, messageType?: 'TEXT' | 'SYSTEM' | 'IMAGE' | 'FILE' | 'VIDEO', aiAnalysis?: any) => Promise<void>;
@@ -15,9 +20,66 @@ interface ChatStore {
 export const useChatStore = create<ChatStore>((set, get) => ({
   socket: null,
   isConnected: false,
+  roomMessages: {},
+
+  fetchRoomMessages: async (roomId) => {
+    try {
+      const res = await fetch(`/api/messages?roomId=${roomId}&limit=100`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const serverMsgs: ChatMessage[] = data.messages || [];
+
+      set(state => {
+        const existing = state.roomMessages[roomId] || [];
+        const existingIds = new Set(existing.map(m => m.messageId));
+        const newFromServer = serverMsgs.filter(m => !existingIds.has(m.messageId));
+        const merged = [...existing, ...newFromServer].sort(
+          (a, b) => (a.createdAt || 0) - (b.createdAt || 0)
+        );
+        return { roomMessages: { ...state.roomMessages, [roomId]: merged } };
+      });
+    } catch (err) {
+      console.warn('[Chat] Failed to fetch messages:', err);
+    }
+  },
+
+  addLocalMessage: (roomId, msg) => {
+    set(state => {
+      const existing = state.roomMessages[roomId] || [];
+      if (existing.some(m => m.messageId === msg.messageId)) return state;
+      return { roomMessages: { ...state.roomMessages, [roomId]: [...existing, msg] } };
+    });
+  },
+
+  updateMessageAnalysis: (messageId, aiAnalysis) => {
+    set(state => {
+      const updated = { ...state.roomMessages };
+      for (const roomId of Object.keys(updated)) {
+        updated[roomId] = updated[roomId].map(m =>
+          m.messageId === messageId ? { ...m, aiAnalysis } : m
+        );
+      }
+      return { roomMessages: updated };
+    });
+  },
+
+  clearRoomMessages: (roomId) => {
+    set(state => {
+      const updated = { ...state.roomMessages };
+      delete updated[roomId];
+      return { roomMessages: updated };
+    });
+  },
 
   connectSocket: (userId: string) => {
-    if (get().socket) return; // 이미 연결되어 있으면 무시
+    const existingSocket = get().socket;
+    if (existingSocket) {
+      if (existingSocket.disconnected) {
+        console.log('[DEBUG] Socket instance exists but disconnected, connecting...');
+        existingSocket.connect();
+      }
+      return;
+    }
 
     // 서버와 같은 Origin으로 소켓 연결 (현재 window.location)
     const socket = io(undefined, {
@@ -70,20 +132,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       
       try {
         const msgToSave = { ...message } as any;
-        delete msgToSave.id; // 매우 중요! 로컬 DB PK 충돌 방지
-        
-        const exists = await db.messages.where('messageId').equals(msgToSave.messageId).first();
-        if (exists) {
-          console.log('[DEBUG] ⚠️ Message already exists, skipping duplicate:', msgToSave.messageId);
-          return;
-        }
+        delete msgToSave.id; // PK 충돌 방지
 
-        await db.messages.add(msgToSave);
-        console.log('[DEBUG] 🟢 IndexedDB message stored successfully');
+        const roomId = msgToSave.receiverId || 'global';
+        get().addLocalMessage(roomId, msgToSave);
+        console.log('[DEBUG] 🟢 Message stored in Zustand state');
         
         window.dispatchEvent(new CustomEvent('new_chat_message', { detail: msgToSave }));
       } catch (err) {
-        console.error('[DEBUG] 🔴 IndexedDB save error:', err);
+        console.error('[DEBUG] 🔴 Message save error:', err);
       }
     });
 
@@ -103,8 +160,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     socket.on('message_updated', async (payload) => {
       const { messageId, aiAnalysis } = payload;
       try {
-        // [중대 버그 수정] Dexie update()는 PK(++id)를 인자로 받으므로 messageId(UUID)를 넣으면 실패함! where.modify()를 써야함!
-        await db.messages.where('messageId').equals(messageId).modify({ aiAnalysis });
+        get().updateMessageAnalysis(messageId, aiAnalysis);
         window.dispatchEvent(new CustomEvent('message_updated', { detail: payload }));
       } catch (e) {
         console.error('[DEBUG] Failed to sync message update:', e);
@@ -153,26 +209,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           messageId: msg.messageId,
           senderId: msg.senderId,
           senderName: 'Unknown', // UI에서 ID 기반으로 매핑
-          receiverId: msg.roomId, // 로컬 DB에서 receiverId는 방 ID 역할
+          receiverId: msg.roomId, // receiverId는 방 ID 역할
           content: msg.content,
           messageType: msg.messageType,
           createdAt: msg.createdAt,
         }));
 
-        const messageIds = msgsToSave.map(m => m.messageId);
-        const existingMessages = await db.messages.where('messageId').anyOf(messageIds).toArray();
-        const existingMessageIds = new Set(existingMessages.map(m => m.messageId));
-        
-        const newMsgs = msgsToSave.filter(m => !existingMessageIds.has(m.messageId));
+        const existing = get().roomMessages[roomId] || [];
+        const existingIds = new Set(existing.map(m => m.messageId));
+        const newMsgs = msgsToSave.filter(m => !existingIds.has(m.messageId));
 
         if (newMsgs.length > 0) {
-          await db.messages.bulkAdd(newMsgs);
-          console.log(`[DEBUG] 🟢 IndexedDB synced TTL messages (${newMsgs.length}) for room ${roomId}`);
+          set(state => ({
+            roomMessages: {
+              ...state.roomMessages,
+              [roomId]: [...(state.roomMessages[roomId] || []), ...newMsgs].sort((a, b) => a.createdAt - b.createdAt)
+            }
+          }));
+          console.log(`[DEBUG] 🟢 Synced TTL messages (${newMsgs.length}) for room ${roomId}`);
           // 기존 오프라인 복구 이벤트를 재활용하여 UI 업데이트 트리거
           window.dispatchEvent(new CustomEvent('offline_messages_restored', { detail: newMsgs }));
         }
       } catch (err) {
-        console.error('[DEBUG] 🔴 IndexedDB sync save error:', err);
+        console.error('[DEBUG] 🔴 Sync save error:', err);
       }
     });
 
@@ -191,22 +250,39 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           delete newMsg.id;
           return newMsg;
         });
-        
-        const messageIds = msgsToSave.map(m => m.messageId);
-        const existingMessages = await db.messages.where('messageId').anyOf(messageIds).toArray();
-        const existingMessageIds = new Set(existingMessages.map(m => m.messageId));
-        
-        const newMsgs = msgsToSave.filter(m => !existingMessageIds.has(m.messageId));
 
-        if (newMsgs.length > 0) {
-          await db.messages.bulkAdd(newMsgs);
-          console.log(`[DEBUG] 🟢 IndexedDB bulk offline messages stored successfully (${newMsgs.length})`);
-          window.dispatchEvent(new CustomEvent('offline_messages_restored', { detail: newMsgs }));
+        const roomGroups: Record<string, ChatMessage[]> = {};
+        msgsToSave.forEach(m => {
+          const rid = m.receiverId || 'global';
+          if (!roomGroups[rid]) roomGroups[rid] = [];
+          roomGroups[rid].push(m);
+        });
+
+        let totalNew = 0;
+        const allNewMsgs: ChatMessage[] = [];
+        set(state => {
+          const updated = { ...state.roomMessages };
+          for (const [rid, msgs] of Object.entries(roomGroups)) {
+            const existing = updated[rid] || [];
+            const existingIds = new Set(existing.map(m => m.messageId));
+            const newOnes = msgs.filter(m => !existingIds.has(m.messageId));
+            if (newOnes.length > 0) {
+              updated[rid] = [...existing, ...newOnes].sort((a, b) => a.createdAt - b.createdAt);
+              totalNew += newOnes.length;
+              allNewMsgs.push(...newOnes);
+            }
+          }
+          return { roomMessages: updated };
+        });
+
+        if (totalNew > 0) {
+          console.log(`[DEBUG] 🟢 Bulk offline messages stored successfully (${totalNew})`);
+          window.dispatchEvent(new CustomEvent('offline_messages_restored', { detail: allNewMsgs }));
         } else {
-          console.log('[DEBUG] ⚠️ Offline messages already exist in DB, skipping');
+          console.log('[DEBUG] ⚠️ Offline messages already exist, skipping');
         }
       } catch (err) {
-        console.error('[DEBUG] 🔴 IndexedDB bulk save error:', err);
+        console.error('[DEBUG] 🔴 Bulk save error:', err);
       }
     });
 
@@ -236,10 +312,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ...(aiAnalysis && { aiAnalysis })
     };
 
-    // 1. 내가 보낸 메시지: 내 로컬 IndexedDB에 즉시 저장 (Optimistic UI)
-    await db.messages.add(newMessage);
+    // Optimistic UI: Zustand 상태에 즉시 추가
+    get().addLocalMessage(receiverId, newMessage);
 
-    // 2. 서버로 릴레이 요청 (No-Log 방식)
+    // 서버로 릴레이 요청 (No-Log 방식)
     // receiverId가 "global"일 경우, 커스텀 서버 로직 확장을 통해 브로드캐스트 가능성을 열어둠
     socket.emit('send_message', {
       receiverId,
@@ -251,15 +327,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { socket } = get();
     if (socket) {
       socket.emit('join_room', roomId);
-      
-      // 방 접속 시 서버에 7일 보관된 최신 메시지 동기화 요청
-      try {
-        const msgs = await db.messages.where('receiverId').equals(roomId).toArray();
-        const lastSyncTime = msgs.length > 0 ? Math.max(...msgs.map(m => m.createdAt)) : 0;
-        socket.emit('sync_messages', { roomId, lastSyncTime });
-      } catch (e) {
-        socket.emit('sync_messages', { roomId, lastSyncTime: 0 });
-      }
+
+      // 방 접속 시 서버 API에서 메시지 히스토리 fetch
+      await get().fetchRoomMessages(roomId);
+
+      // 서버에 7일 보관된 최신 메시지 동기화 요청
+      const msgs = get().roomMessages[roomId] || [];
+      const lastSyncTime = msgs.length > 0 ? Math.max(...msgs.map(m => m.createdAt)) : 0;
+      socket.emit('sync_messages', { roomId, lastSyncTime });
     }
   }
 }));

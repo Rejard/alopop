@@ -2,14 +2,20 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, User, Copy, QrCode, MoreVertical, Link as LinkIcon, Paperclip, File, Image as ImageIcon, Loader2, ChevronDown, Calendar, HelpCircle, Bot, Terminal, Zap, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2, PawPrint, Home as HomeIcon, ShieldPlus, Sprout } from 'lucide-react';
+import { Settings, Send, Menu, Users, Crown, UserMinus, Coins, Wallet, Edit2, Check, X, UserPlus, MessageSquare, Copy, MoreVertical, Link as LinkIcon, Paperclip, File, Loader2, ChevronDown, Calendar, Bot, Terminal, ShieldAlert, Sparkles, Key, ChevronRight, CheckCircle2, BarChart2, Gamepad2, Building2, Home as HomeIcon, ShieldPlus, Sprout } from 'lucide-react';
 import QRCode from 'react-qr-code';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db, ChatMessage } from '@/lib/db';
+import { ChatMessage } from '@/lib/db';
 import { useChatStore } from '@/store/useChatStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { SettingsModal } from '@/components/SettingsModal';
-import { AiStudioPanel } from '@/components/AiStudioPanel';
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
+
+const SettingsModal = dynamic(() => import('@/components/SettingsModal').then(mod => mod.SettingsModal), { ssr: false });
+const AiStudioPanel = dynamic(() => import('@/components/AiStudioPanel').then(mod => mod.AiStudioPanel), { ssr: false });
+
+import { AnnouncementTicker } from '@/components/layout/AnnouncementTicker';
+import { EventTicker } from '@/components/layout/EventTicker';
+
 import { AiModelSelector } from '@/components/AiModelSelector';
 import { v4 as uuidv4 } from 'uuid';
 import { reportApiFailure, reportCaughtError, reportDiagnostic } from '@/lib/client-diagnostics';
@@ -117,7 +123,7 @@ export default function Home() {
   const [editRoomNameValue, setEditRoomNameValue] = useState('');
   const [currentTab, setCurrentTab] = useState<'chats' | 'friends' | 'stats' | 'wallet' | 'games' | 'aistudio' | 'pet365care'>('chats'); // 좌측 LNB 탭 상태
   const [activeGameUrl, setActiveGameUrl] = useState<string | null>(null); // 게임 풀스크린 url 상태
-  const [pet365Path, setPet365Path] = useState("/pet365care?view=home");
+  const [pet365Path, setPet365Path] = useState("/pet365?view=home");
   // Pet365Care: 내부 라우트 /pet365care (iframe 임베딩)
 
   // 게임이 닫힐 때(activeGameUrl → null) 서버 최고 점수 자동 갱신
@@ -132,39 +138,15 @@ export default function Home() {
 
   // 글로벌 서버 공지사항 상태 및 롤링 인덱스
   const [serverAnnouncements, setServerAnnouncements] = useState<any[]>([]);
-  const [currentAnnounceIndex, setCurrentAnnounceIndex] = useState(0);
 
   // 공지사항 상세 모달 상태 및 스와이프 제어
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<any>(null);
-  const announceTouchStartXRef = useRef(0);
-  const announceTouchEndXRef = useRef(0);
   const [globalAnnounceDurationMs, setGlobalAnnounceDurationMs] = useState(4000);
-
-  // 공지사항 자동 롤링 (글로벌 설정된 시간 주기)
-  useEffect(() => {
-    if (serverAnnouncements.length <= 1) return;
-
-    const timeout = setTimeout(() => {
-      setCurrentAnnounceIndex(prev => (prev + 1) % serverAnnouncements.length);
-    }, globalAnnounceDurationMs);
-
-    return () => clearTimeout(timeout);
-  }, [serverAnnouncements, currentAnnounceIndex]);
 
   // 글로벌 서버 이벤트 상태 및 롤링 인덱스
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
   const [exhaustedFreeEvents, setExhaustedFreeEvents] = useState<Record<string, boolean>>({});
-  const [currentEventIndex, setCurrentEventIndex] = useState(0);
-
-  // 이벤트 롤링
-  useEffect(() => {
-    if (activeEvents.length <= 1) return;
-    const timeout = setTimeout(() => {
-      setCurrentEventIndex(prev => (prev + 1) % activeEvents.length);
-    }, globalAnnounceDurationMs);
-    return () => clearTimeout(timeout);
-  }, [activeEvents, currentEventIndex, globalAnnounceDurationMs]);
 
   // 친구 추가 모달 관련 상태
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
@@ -191,12 +173,10 @@ export default function Home() {
     // 디바이스간 시간(Clock)이 안 맞는 경우(상대방 시간이 내 폰 시간보다 미래일 때)
     // 현재 읽고 있는 시점의 시간이 메시지 발송 시간보다 작아져서 읽음 표시가 안 지워지는 버그(1 안사라짐) 방어
     let maxMsgTime = 0;
-    try {
-      const msgs = await db.messages.where('receiverId').equals(roomId).toArray();
-      if (msgs.length > 0) {
-        maxMsgTime = Math.max(...msgs.map(m => m.createdAt || 0));
-      }
-    } catch (err) { }
+    const msgs = useChatStore.getState().roomMessages[roomId] || [];
+    if (msgs.length > 0) {
+      maxMsgTime = Math.max(...msgs.map(m => m.createdAt || 0));
+    }
 
     const now = Math.max(Date.now(), maxMsgTime + 100); // 확보한 최신 메시지 시간보다 무조건 약간 미래로 마크
 
@@ -802,6 +782,37 @@ export default function Home() {
       });
     };
 
+    const handleVisibilityOrFocusChange = async () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[DEBUG] 🔄 Page visible/focused. Syncing chat state...');
+        
+        // 1. 소켓 연결 상태 점검 및 재연결
+        const { socket, connectSocket } = useChatStore.getState();
+        if (!socket) {
+          console.log('[DEBUG] 🔌 Socket is null. Re-connecting...');
+          connectSocket(parsedUser.id);
+        } else if (socket.disconnected) {
+          console.log('[DEBUG] 🔌 Socket disconnected. Re-connecting...');
+          socket.connect();
+        } else {
+          console.log('[DEBUG] 🔌 Socket is connected. Registering anyway...');
+          socket.emit('register', parsedUser.id);
+        }
+
+        // 2. 방 목록 및 기본 데이터 강제 리로드 (알림 숫자 갱신용)
+        await loadData(parsedUser.id);
+
+        // 3. 현재 보고 있는 방이 있다면 재조인 및 메시지 강제 동기화 트리거
+        const currentRoom = currentRoomRef.current;
+        if (currentRoom) {
+          console.log('[DEBUG] 🔄 Syncing current room:', currentRoom.id);
+          useChatStore.getState().joinRoom(currentRoom.id);
+        }
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrFocusChange);
+    window.addEventListener('focus', handleVisibilityOrFocusChange);
     window.addEventListener('new_chat_message', handleNewMessage);
     window.addEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
     window.addEventListener('room_read_update', handleReadUpdateEvent);
@@ -817,6 +828,8 @@ export default function Home() {
     // Pet365Care: 내부 라우트 — postMessage 브릿지 불필요 (제거됨)
 
     return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocusChange);
+      window.removeEventListener('focus', handleVisibilityOrFocusChange);
       window.removeEventListener('new_chat_message', handleNewMessage);
       window.removeEventListener('offline_activity_summary', handleOfflineActivitySummary as EventListener);
       window.removeEventListener('room_read_update', handleReadUpdateEvent);
@@ -837,26 +850,28 @@ export default function Home() {
     };
   }, [router]);
 
+  const { roomMessages } = useChatStore();
+
   useEffect(() => {
     const fetchLatestData = async () => {
       if (rooms.length === 0 || !user) return;
       const times: Record<string, number> = {};
       const unreads: Record<string, number> = {};
 
-      await Promise.all(rooms.map(async (r) => {
-        const msgs = await db.messages.where('receiverId').equals(r.id).toArray();
+      rooms.forEach((r) => {
+        const msgs = roomMessages[r.id] || [];
         if (msgs.length > 0) {
           times[r.id] = Math.max(...msgs.map(m => m.createdAt));
 
           const myReadTime = roomMemberReadTimes[r.id]?.[user.id] || 0;
           unreads[r.id] = msgs.filter(m => m.senderId !== user.id && m.createdAt > myReadTime).length;
         }
-      }));
+      });
       setLatestMessageTimes(prev => ({ ...prev, ...times }));
       setUnreadCounts(prev => ({ ...prev, ...unreads }));
     };
     fetchLatestData();
-  }, [rooms, roomMemberReadTimes, user?.id]);
+  }, [rooms, roomMessages, roomMemberReadTimes, user?.id]);
 
   const sortedRooms = [...rooms].sort((a, b) => {
     const aTime = latestMessageTimes[a.id] || new Date(a.createdAt || 0).getTime();
@@ -864,14 +879,16 @@ export default function Home() {
     return bTime - aTime;
   });
 
-  // IndexedDB 메시지 실시간 쿼리 (현재 선택된 방 기준)
-  const messages = useLiveQuery(
-    () => db.messages.where('receiverId').equals(currentRoom?.id || 'none').sortBy('createdAt'),
-    [currentRoom?.id]
-  );
+  const messages = roomMessages[currentRoom?.id || ''] || [];
 
-  // AI 통계 실시간 쿼리 및 월별 그룹화 (Stats Tab)
-  const aiStatsData = useLiveQuery(() => db.aiStats ? db.aiStats.toArray() : [], []) || [];
+  // AI 통계: 서버 API에서 fetch
+  const [aiStatsData, setAiStatsData] = useState<{date: string, count: number}[]>([]);
+  useEffect(() => {
+    fetch('/api/users/ai-usage')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setAiStatsData(data.usage.map((u: any) => ({ date: u.lastUsedDate, count: u.usedToday }))); })
+      .catch(() => {});
+  }, []);
 
   const monthlyStats = useMemo(() => {
     if (!aiStatsData || !aiStatsData.length) return {};
@@ -1133,10 +1150,8 @@ export default function Home() {
 
             // 최신 문맥을 다시 추출 (딜레이 동안 쌓인 메시지 반영)
             let currentContext = "";
-            db.messages
-              .where('receiverId').equals(currentRoom.id)
-              .sortBy('createdAt')
-              .then((allMsgs: any[]) => {
+            (() => {
+                const allMsgs = useChatStore.getState().roomMessages[currentRoom.id] || [];
                 currentContext = allMsgs.slice(-5).map((m: any) => `[${m.senderName}]: ${m.content}`).join('\n');
 
                 const realProvider = localStorage.getItem('alo_ai_provider') || 'openai';
@@ -1150,19 +1165,17 @@ export default function Home() {
                 localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, date: todayStr, used: newUsed }));
                 setTotalAiUsageCount(newUsed);
 
-                // Dexie 로컬 영구 DB에도 오늘 날짜로 기록 동기화
-                db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error("aiStats put 에러", e));
+                fetch('/api/users/ai-usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: 'ai_chat' }) }).catch(e => console.error("aiStats sync error", e));
 
                 // [신규] 스폰서 방이고, 현재 이 AI 모델이 실제 진짜 방장의 소유가 아니라 (게스트 소유)라면 과금 처리!
                 // (대리 연산자가 연산하더라도 수익은 무조건 원래 방장에게 귀속)
                 const hostSponsorPrice = currentRoom.sponsorPrice || 0;
 
-                return Promise.resolve().then(() => {
-                  const friendProvider = realProvider;
-                  const friendAiModel = localStorage.getItem('alo_ai_model') || '';
-                  const friendUseFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === friendProvider && e.aiModel === friendAiModel && !exhaustedFreeEvents[e.id]);
+                const friendProvider = realProvider;
+                const friendAiModel = localStorage.getItem('alo_ai_model') || '';
+                const friendUseFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === friendProvider && e.aiModel === friendAiModel && !exhaustedFreeEvents[e.id]);
 
-                  return fetch('/api/chat/friend', {
+                return fetch('/api/chat/friend', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     signal: controller.signal,
@@ -1180,9 +1193,8 @@ export default function Home() {
                       useFreeEvent: friendUseFreeEvent,
                       content: currentContext
                     })
-                  });
                 });
-              })
+              })()
               .then((aiResponse: any) => {
 
                 if (!aiResponse.ok) {
@@ -1277,20 +1289,21 @@ export default function Home() {
 
         const timeoutId = setTimeout(() => {
           // 침묵 시간 후, 여전히 마지막 메시지가 방금 검사했던 lastMsg인지 확인 (누구도 말하지 않음)
-          db.messages.where('receiverId').equals(currentRoom.id).sortBy('createdAt').then((allMsgs: any[]) => {
-            if (allMsgs.length === 0) return;
+          const allMsgs = useChatStore.getState().roomMessages[currentRoom.id] || [];
+            if (allMsgs.length > 0) {
             const absoluteLastMsg = allMsgs[allMsgs.length - 1];
 
             // 침묵이 깨졌거나 현재 누군가 치고 있다면 개입 포기 (정적이 아님)
             const hasLocalText = inputTextRef.current.trim().length > 0;
             const otherTypers = humanTypingRef.current[currentRoom.id] || [];
-            if (hasLocalText || otherTypers.length > 0) return;
+            if (!(hasLocalText || otherTypers.length > 0)) {
 
             if (absoluteLastMsg.messageId === lastMsg.messageId) {
               // 아무도 말 안했으므로 침묵 깨기 발동 (타이핑은 1~2초만 짧게 주고 바로 입력)
               executeAiReply(Math.floor(Math.random() * 1000) + 1000);
             }
-          });
+            }
+          }
         }, silenceDelayMs);
 
         aiTimeoutsRef.current[aiUser.id + "_silence"] = timeoutId;
@@ -1370,7 +1383,7 @@ export default function Home() {
         };
 
         // 낙관적 UI: 로컬 DB 즉시 추가 및 소켓 전송
-        await db.messages.add(newMessage);
+        useChatStore.getState().addLocalMessage(currentRoom.id, newMessage);
         setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
         const emitMessage = { ...newMessage } as any;
         delete emitMessage.id;
@@ -1417,7 +1430,7 @@ export default function Home() {
                 aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 서버 에러 (크레딧 부족 또는 용량 초과)' };
               }
 
-              await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+              useChatStore.getState().updateMessageAnalysis(msgId, aiAnalysisResult);
               if (socket) {
                 socket.emit('update_message', {
                   roomId: currentRoom?.id || 'global',
@@ -1438,7 +1451,7 @@ export default function Home() {
               });
               console.warn('AI Vision Analysis failed (skipped):', err);
               const aiAnalysisResult = { category: 'ERROR', confidence: 0, reason: 'AI 연결 실패' };
-              await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+              useChatStore.getState().updateMessageAnalysis(msgId, aiAnalysisResult);
               if (socket) socket.emit('update_message', { roomId: currentRoom?.id || 'global', messageId: msgId, aiAnalysis: aiAnalysisResult });
             }
           })();
@@ -1515,15 +1528,7 @@ export default function Home() {
         setMyProfile(prev => prev ? { ...prev, walletBalance: data.balance } : null);
 
         // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
-        await db.walletTx?.add({
-          type: 'SPEND',
-          category: 'P2P_TRANSFER',
-          amount,
-          counterpartyId: receiverId,
-          counterpartyName: targetName,
-          createdAt: Date.now(),
-          description: reason || `${targetName}님에게 금액 송금`
-        }).catch(err => console.error("로컬 장부 기록 실패:", err));
+
 
         const msgStr = `💸 [송금 알림] ${user.username}님이 ${targetName}님에게 ${amount} 원을 송금했습니다.`;
         await chatStore.sendMessage(currentRoom?.id || 'global', msgStr, user.id, user.username);
@@ -1553,7 +1558,7 @@ export default function Home() {
     };
 
     // 1️⃣ 로컬 스토어에 **즉시** 추가 (딜레이 0초)
-    await db.messages.add(newMessage);
+    useChatStore.getState().addLocalMessage(currentRoom?.id || 'global', newMessage);
     setLatestMessageTimes(prev => ({ ...prev, [newMessage.receiverId]: newMessage.createdAt }));
 
     // 2️⃣ 소켓 릴레이 즉시 호출
@@ -1579,7 +1584,7 @@ export default function Home() {
           const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
           localStorage.setItem('alo_total_ai_usage', JSON.stringify({ ...savedUsage, date: todayStr, used: newUsed }));
           setTotalAiUsageCount(newUsed);
-          db.aiStats?.put({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }), count: newUsed }).catch(e => console.error(e));
+          fetch('/api/users/ai-usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventId: 'fact_check' }) }).catch(e => console.error(e));
 
           const useFreeEvent = !!activeEvents.find(e => e.eventType === 'FREE_AI' && e.aiProvider === selectedProvider && e.aiModel === selectedAiModel && !exhaustedFreeEvents[e.id]);
           const aiRes = await fetch('/api/chat', {
@@ -1599,7 +1604,7 @@ export default function Home() {
             const aiAnalysisResult = await aiRes.json();
 
             // 로컬 DB 사후 업데이트 (PK id 이슈 방지를 위해 messageId 기준 검색)
-            await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: aiAnalysisResult });
+            useChatStore.getState().updateMessageAnalysis(msgId, aiAnalysisResult);
 
             // 다른 참여자들에게도 AI 분석 결과 전파
             if (socket) {
@@ -1617,7 +1622,7 @@ export default function Home() {
               reasonText = '서버 무료 AI 미설정 (관리자 키가 없습니다. 설정에서 개인 키를 등록하세요)';
             }
             const fallbackResult = { category: 'ERROR', confidence: 0, reason: reasonText };
-            await db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: fallbackResult });
+            useChatStore.getState().updateMessageAnalysis(msgId, fallbackResult);
             if (socket) {
               socket.emit('update_message', {
                 roomId: currentRoom?.id || 'global',
@@ -1629,7 +1634,7 @@ export default function Home() {
         } catch (err) {
           console.warn('AI 분석 처리 중 예외 발생:', err);
           const errorCat = { category: 'ERROR', confidence: 0, reason: 'AI 엔진 접속 오류' };
-          db.messages.where('messageId').equals(msgId).modify({ aiAnalysis: errorCat }).catch(console.error);
+          useChatStore.getState().updateMessageAnalysis(msgId, errorCat);
         }
       })();
     }
@@ -1700,7 +1705,7 @@ export default function Home() {
           messageType: 'SYSTEM',
           createdAt: Date.now()
         };
-        await db.messages.add(newMessage);
+        useChatStore.getState().addLocalMessage(currentRoom.id, newMessage);
 
         const { socket } = chatStore;
         if (socket) {
@@ -1821,7 +1826,7 @@ export default function Home() {
       });
       if (res.ok) {
         // 로컬 IndexedDB 메시지 모두 삭제
-        await db.messages.where('receiverId').equals(roomId).delete();
+        useChatStore.getState().clearRoomMessages(roomId);
 
         // 상태 업데이트
         setRooms(prev => prev.filter(r => r.id !== roomId));
@@ -1873,7 +1878,7 @@ export default function Home() {
             messageId: uuidv4(), senderId: 'system', senderName: 'System', receiverId: newRoom.id,
             content: `${user.username}님이 ${invitedName}님을 초대하여 그룹 채팅을 시작했습니다.`, messageType: 'SYSTEM', createdAt: Date.now()
           };
-          await db.messages.add(sysMsg);
+          useChatStore.getState().addLocalMessage(newRoom.id, sysMsg);
           chatStore.socket?.emit('send_message', { receiverId: newRoom.id, message: sysMsg });
         } else {
           const err = await res.json();
@@ -1912,7 +1917,7 @@ export default function Home() {
           messageId: uuidv4(), senderId: 'system', senderName: 'System', receiverId: currentRoom.id,
           content: `${user.username}님이 ${invitedName}님을 초대했습니다.`, messageType: 'SYSTEM', createdAt: Date.now()
         };
-        await db.messages.add(sysMsg);
+        useChatStore.getState().addLocalMessage(currentRoom.id, sysMsg);
         chatStore.socket?.emit('send_message', { receiverId: currentRoom.id, message: sysMsg });
       } else {
         const err = await res.json();
@@ -1981,7 +1986,7 @@ export default function Home() {
       if (res.ok && data.success && data.avatarUrl) {
         if (data.avatarUrl.startsWith('http')) {
           // 브라우저 캐시에 Preload 될 때까지 대기
-          const img = new Image();
+          const img = new window.Image();
           img.src = data.avatarUrl;
           img.onload = () => {
             setAiAvatarUrl(data.avatarUrl);
@@ -2176,7 +2181,8 @@ export default function Home() {
     }
   };
 
-  // 신규: AI 친구 영구 삭제
+  // 신규: AI 친구 영구 삭제 (현재 미사용으로 주석 처리)
+  /*
   const handleDeleteAiFriend = async (friend: any) => {
     if (!user?.id) return;
     if (friend.aiOwnerId !== user.id) {
@@ -2202,6 +2208,7 @@ export default function Home() {
       alert('오류가 발생했습니다.');
     }
   };
+  */
 
   // AI 친구 성격/이름/사진 수정 모달 열기
   const handleEditAiFriend = (friend: any) => {
@@ -2324,15 +2331,7 @@ export default function Home() {
             alert(`성공적으로 ${amount} 원을 ${receiverName}님에게 송금했습니다. 잔액: ${data.balance} 원`);
 
             // [신규] Dexie 로컬 장부에 P2P 송금 내역 기록
-            await db.walletTx?.add({
-              type: 'SPEND',
-              category: 'P2P_TRANSFER',
-              amount,
-              counterpartyId: receiverId,
-              counterpartyName: receiverName,
-              createdAt: Date.now(),
-              description: `${receiverName}님에게 통장 송금`
-            }).catch(err => console.error("로컬 장부 기록 실패:", err));
+
 
             // 송금 완료 후 채팅방(현재 룸)에 시스템 메시지 전송
             const msgStr = `💸 [송금 알림] ${user.username}님이 ${receiverName}님에게 ${amount} 원을 송금했습니다.`;
@@ -2818,25 +2817,7 @@ export default function Home() {
           </div>
 
           {/* 활성 이벤트 인디케이터 (중앙 여백 flex-1 활용) */}
-          {activeEvents.length > 0 && !currentRoom && (
-            <div className="flex-1 mx-2 sm:mx-4 flex items-center h-full pointer-events-auto min-w-[100px]">
-              <div className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 flex items-center gap-1.5 sm:gap-2 overflow-hidden shadow-sm hover:bg-surface-container-high transition-colors max-w-md w-full border-dashed border-emerald-500/30">
-                <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold shrink-0 whitespace-nowrap">
-                  🎁 이벤트
-                </span>
-                <div className="flex-1 flex flex-col justify-center animate-in fade-in slide-in-from-bottom-2 duration-500 overflow-hidden" key={`event-${currentEventIndex}`}>
-                  <div className="text-[10px] sm:text-xs font-bold text-zinc-300 truncate cursor-help" title={activeEvents[currentEventIndex]?.description}>
-                    {activeEvents[currentEventIndex]?.title}
-                  </div>
-                  <div className="text-[8px] sm:text-[9px] text-emerald-500/70 truncate font-semibold">
-                    {activeEvents[currentEventIndex]?.startDate ? `${new Date(activeEvents[currentEventIndex].startDate).getMonth() + 1}/${new Date(activeEvents[currentEventIndex].startDate).getDate()}` : '상시'}
-                    {' ~ '}
-                    {activeEvents[currentEventIndex]?.endDate ? `${new Date(activeEvents[currentEventIndex].endDate).getMonth() + 1}/${new Date(activeEvents[currentEventIndex].endDate).getDate()}` : '종료 시까지'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <EventTicker activeEvents={activeEvents} globalAnnounceDurationMs={globalAnnounceDurationMs} />
 
           <div className="flex items-center gap-3">
             {currentRoom && (
@@ -2940,67 +2921,18 @@ export default function Home() {
           // 홈 화면 (LNB 탭 메뉴 방식으로 변경됨)
           <div className="flex-1 flex overflow-hidden">
             {/* 좌측 사이드바 LNB (컴포넌트로 분리됨) */}
-            <LnbSidebar currentTab={currentTab} setCurrentTab={setCurrentTab} unreadCounts={unreadCounts} fetchGames={fetchGames} setActiveGameUrl={setActiveGameUrl} pet365Path={pet365Path} setPet365Path={setPet365Path} myProfile={myProfile} router={router} totalAiUsageCount={totalAiUsageCount} setIsDrawerOpen={setIsDrawerOpen} setCurrentRoom={setCurrentRoom} setIsGuideOpen={setIsGuideOpen} currentTime={currentTime} user={user} setIsProfileModalOpen={setIsProfileModalOpen} />
+            <LnbSidebar currentTab={currentTab} setCurrentTab={setCurrentTab} unreadCounts={unreadCounts} fetchGames={fetchGames} pet365Path={pet365Path} setPet365Path={setPet365Path} myProfile={myProfile} router={router} totalAiUsageCount={totalAiUsageCount} setIsDrawerOpen={setIsDrawerOpen} setCurrentRoom={setCurrentRoom} setIsGuideOpen={setIsGuideOpen} currentTime={currentTime} user={user} setIsProfileModalOpen={setIsProfileModalOpen} />
 
             {/* 오른쪽 주 컨텐츠 영역 */}
             <div className={`alo-content-panel ${currentTab === 'pet365care' || currentTab === 'aistudio' ? 'alo-content-panel-plain' : ''} flex-1 flex flex-col bg-surface-container overflow-y-auto`} style={{ scrollbarWidth: 'none' }}>
 
               {/* 글로벌 서버 점검 및 공지사항 배너 (항상 렌더링, 롤링) */}
-              {serverAnnouncements.length > 0 && (
-                <div className="flex flex-col border-b border-primary/20 shrink-0 overflow-hidden relative" style={{ minHeight: '48px' }}>
-                  {(() => {
-                    const ann = serverAnnouncements[currentAnnounceIndex];
-                    if (!ann) return null;
-                    return (
-                      <div
-                        key={ann.id}
-                        className="absolute inset-0 bg-gradient-to-r from-primary/10 via-surface-container-high to-secondary/10 pt-2 pb-3 px-4 flex items-center gap-3 animate-in fade-in zoom-in-95 duration-500 cursor-pointer hover:bg-surface-variant/30 transition-colors"
-                        onTouchStart={(e) => {
-                          announceTouchStartXRef.current = e.touches[0].clientX;
-                        }}
-                        onTouchEnd={(e) => {
-                          announceTouchEndXRef.current = e.changedTouches[0].clientX;
-                          const diff = announceTouchStartXRef.current - announceTouchEndXRef.current;
-                          if (diff > 50) {
-                            setCurrentAnnounceIndex(prev => (prev + 1) % serverAnnouncements.length);
-                          } else if (diff < -50) {
-                            setCurrentAnnounceIndex(prev => (prev - 1 + serverAnnouncements.length) % serverAnnouncements.length);
-                          }
-                        }}
-                        onClick={() => {
-                          if (Math.abs(announceTouchStartXRef.current - announceTouchEndXRef.current) < 10) {
-                            setSelectedAnnouncement(ann);
-                            setIsAnnouncementModalOpen(true);
-                          }
-                        }}
-                      >
-                        <span className="bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded shadow-sm text-[10px] font-bold shrink-0">공지</span>
-                        <div className="text-sm font-semibold text-zinc-100 flex-1 truncate flex items-center gap-2">
-                          <span className="text-secondary/90 tracking-tight truncate">{ann.title}</span>
-                          {ann.content && (
-                            <span className="text-xs text-on-surface-variant font-normal whitespace-pre-wrap truncate hidden sm:block pointer-events-none">- {ann.content}</span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-zinc-500 bg-surface-variant/30 px-1.5 py-0.5 rounded-full shrink-0 relative z-10">
-                          {currentAnnounceIndex + 1} / {serverAnnouncements.length}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* 하단 페이지네이션 닷 (Dots) */}
-                  {serverAnnouncements.length > 1 && (
-                    <div className="absolute bottom-1 left-0 right-0 flex justify-center items-center gap-1.5 pointer-events-none">
-                      {serverAnnouncements.map((_, idx) => (
-                        <div
-                          key={idx}
-                          className={`h-1.5 rounded-full shadow-sm transition-all duration-300 ${idx === currentAnnounceIndex ? 'w-4 bg-primary' : 'w-1.5 bg-zinc-600/60'}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <AnnouncementTicker
+                serverAnnouncements={serverAnnouncements}
+                globalAnnounceDurationMs={globalAnnounceDurationMs}
+                setSelectedAnnouncement={setSelectedAnnouncement}
+                setIsAnnouncementModalOpen={setIsAnnouncementModalOpen}
+              />
 
               {currentTab === 'chats' && (
                 <div className="p-4 space-y-5">
@@ -3040,10 +2972,10 @@ export default function Home() {
                               const firstChar = [...roomDisplayName][0] || '?';
                               return (
                             <div data-chat-room-avatar-wrap className="relative w-12 h-12 shrink-0">
-                              <div data-chat-room-avatar-clip className="w-full h-full rounded-lg bg-surface-container-high flex items-center justify-center text-primary shadow-inner overflow-hidden">
+                              <div data-chat-room-avatar-clip className="relative w-full h-full rounded-lg bg-surface-container-high flex items-center justify-center text-primary shadow-inner overflow-hidden">
                                 {memberAvatar ? (
                                   <>
-                                    <img src={memberAvatar} alt="" className="w-full h-full object-cover" onError={(e) => { const el = e.target as HTMLImageElement; el.style.display = 'none'; el.parentElement!.querySelector('[data-fallback]')!.classList.remove('hidden'); }} />
+                                    <Image src={memberAvatar} alt="" fill className="object-cover" onError={(e) => { const el = e.currentTarget; el.style.opacity = '0'; const parent = el.parentElement; if (parent) { const fb = parent.querySelector('[data-fallback]'); if (fb) fb.classList.remove('hidden'); } }} />
                                     <span data-fallback="" className="text-xl hidden">{firstChar}</span>
                                   </>
                                 ) : (
@@ -3180,9 +3112,9 @@ export default function Home() {
                     onClick={() => setIsProfileModalOpen(true)}
                     className="p-4 bg-surface-container-lowest border border-outline-variant/15 hover:border-outline-variant/30 rounded-[16px] shadow-inner cursor-pointer flex items-center gap-4 group transition-colors"
                   >
-                    <div className="w-14 h-14 rounded-xl bg-surface-container border border-outline-variant/30 group-hover:border-primary/50 flex items-center justify-center text-primary font-bold overflow-hidden shadow-ambient text-xl shrink-0 transition-colors">
+                    <div className="relative w-14 h-14 rounded-xl bg-surface-container border border-outline-variant/30 group-hover:border-primary/50 flex items-center justify-center text-primary font-bold overflow-hidden shadow-ambient text-xl shrink-0 transition-colors">
                       {myProfile?.avatar_url ? (
-                        <img src={myProfile.avatar_url} alt="My Profile" className="w-full h-full object-cover" />
+                        <Image src={myProfile.avatar_url} alt="My Profile" fill className="object-cover" />
                       ) : (
                         myProfile?.username?.charAt(0).toUpperCase() || user.username.charAt(0).toUpperCase()
                       )}
@@ -3238,7 +3170,7 @@ export default function Home() {
                               }}
                             >
                               {friend.avatar_url ? (
-                                <img src={friend.avatar_url} alt={friend.username} className="w-full h-full object-cover rounded-xl border-[1.5px] border-purple-900/60" />
+                                <Image src={friend.avatar_url} alt={friend.username} fill className="object-cover rounded-xl border-[1.5px] border-purple-900/60" />
                               ) : (
                                 <div className="w-full h-full rounded-xl bg-surface-container border-[1.5px] border-purple-900/60 flex items-center justify-center text-secondary">
                                   {friend.username.charAt(0).toUpperCase()}
@@ -3463,7 +3395,9 @@ export default function Home() {
                     </span>
                     <button onClick={() => setClawCanvasData(null)} className="text-zinc-500 hover:text-white text-xs">✕</button>
                   </div>
-                  <img src={clawCanvasData} alt="OpenClaw Real-time Screen" className="w-full h-auto rounded border border-zinc-700 bg-black" />
+                  <div className="relative w-full aspect-video rounded border border-zinc-700 bg-black overflow-hidden">
+                    <Image src={clawCanvasData} alt="OpenClaw Real-time Screen" fill className="object-contain" />
+                  </div>
                 </div>
               )}
               <div className="flex justify-center mb-6 mt-2">
@@ -3586,7 +3520,7 @@ export default function Home() {
                           className="relative rounded-xl overflow-hidden shadow-sm border border-black/10 bg-black/5 flex justify-center cursor-pointer hover:opacity-90 transition-opacity"
                           onClick={() => setSelectedMedia({ url: msg.fileUrl!, type: 'IMAGE' })}
                         >
-                          <img src={msg.fileUrl} alt="attachment" className="max-w-full max-h-60 object-contain rounded-xl" />
+                          <Image src={msg.fileUrl} alt="attachment" width={500} height={300} className="w-auto h-auto max-h-60 object-contain rounded-xl" />
                         </div>
                       ) : msg.messageType === 'VIDEO' ? (
                         <div
@@ -3683,9 +3617,9 @@ export default function Home() {
                             const fallbackName = currentRoom?.name || msg.senderName || '?';
                             const firstChar = [...fallbackName][0] || '?';
                             return (
-                              <div className="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-sm font-bold shrink-0 shadow-inner border border-outline-variant/15 text-secondary overflow-hidden">
+                              <div className="relative w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-sm font-bold shrink-0 shadow-inner border border-outline-variant/15 text-secondary overflow-hidden">
                                 {avatarUrl ? (
-                                  <img src={avatarUrl} alt="profile" className="w-full h-full object-cover" />
+                                  <Image src={avatarUrl} alt="profile" fill className="object-cover" />
                                 ) : (
                                   <span className="text-lg">{firstChar}</span>
                                 )}
@@ -3773,7 +3707,7 @@ export default function Home() {
                 </div>
               )}
               <form onSubmit={handleSendMessage} className="flex items-end gap-2">
-                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,.pdf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.html" />
+                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/html" />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -3881,7 +3815,7 @@ export default function Home() {
                           >
                             <div className="flex items-center gap-2">
                               {member.user.avatar_url ? (
-                                <img src={member.user.avatar_url} alt={member.user.username} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                                <Image src={member.user.avatar_url} alt={member.user.username} width={32} height={32} className="rounded-full object-cover shrink-0" />
                               ) : (
                                 <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-semibold text-zinc-200 shrink-0">
                                   {member.user.username.charAt(0).toUpperCase()}
@@ -3988,9 +3922,9 @@ export default function Home() {
 
               <div className="flex flex-col items-center text-center mt-4">
                 <div className="relative group w-24 h-24 mb-4">
-                  <div className="w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
+                  <div className="relative w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
                     {myProfile?.avatar_url ? (
-                      <img src={myProfile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                      <Image src={myProfile.avatar_url} alt="Avatar" fill className="object-cover" />
                     ) : (
                       myProfile?.username?.charAt(0).toUpperCase() || user?.username.charAt(0).toUpperCase()
                     )}
@@ -4051,9 +3985,9 @@ export default function Home() {
 
               <div className="flex flex-col items-center text-center mt-4">
                 <div className="relative w-24 h-24 mb-4">
-                  <div className="w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
+                  <div className="relative w-full h-full rounded-full bg-indigo-500/20 text-indigo-400 text-3xl font-bold flex items-center justify-center border-2 border-indigo-500/30 overflow-hidden shadow-inner cursor-default">
                     {selectedFriendProfile.avatar_url ? (
-                      <img src={selectedFriendProfile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                      <Image src={selectedFriendProfile.avatar_url} alt="Avatar" fill className="object-cover" />
                     ) : (
                       selectedFriendProfile.username.charAt(0).toUpperCase()
                     )}
@@ -4229,9 +4163,9 @@ export default function Home() {
                   </div>
 
                   <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg mt-2 flex items-center justify-between gap-4">
-                    <div className="w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
+                    <div className="relative w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
                       {aiAvatarUrl ? (
-                        <img src={aiAvatarUrl} alt="Preview Avatar" className="w-full h-full object-cover" />
+                        <Image src={aiAvatarUrl} alt="Preview Avatar" fill className="object-cover" />
                       ) : (
                         <Bot className="text-zinc-500" size={24} />
                       )}
@@ -4424,9 +4358,9 @@ export default function Home() {
                       )}
 
                       <div className="bg-zinc-900 border border-zinc-700 p-4 rounded-lg mt-4 flex items-center justify-between gap-4 mb-4">
-                        <div className="w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
+                        <div className="relative w-16 h-16 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner cursor-pointer" onClick={() => aiAvatarUrl && setSelectedMedia({ url: aiAvatarUrl, type: 'IMAGE' })}>
                           {aiAvatarUrl ? (
-                            <img src={aiAvatarUrl} alt="Preview Avatar" className="w-full h-full object-cover" />
+                            <Image src={aiAvatarUrl} alt="Preview Avatar" fill className="object-cover" />
                           ) : (
                             <Bot className="text-zinc-500" size={24} />
                           )}
@@ -4493,9 +4427,9 @@ export default function Home() {
             >
               <X size={28} />
             </button>
-            <div className="w-full h-full max-w-5xl max-h-screen flex items-center justify-center p-2 sm:p-8" onClick={(e) => e.stopPropagation()}>
+            <div className="relative w-full h-full max-w-5xl max-h-screen flex items-center justify-center p-2 sm:p-8" onClick={(e) => e.stopPropagation()}>
               {selectedMedia.type === 'IMAGE' ? (
-                <img src={selectedMedia.url} alt="Full screen media" className="max-w-full max-h-full object-contain rounded-sm select-none" />
+                <Image src={selectedMedia.url} alt="Full screen media" fill className="object-contain rounded-sm select-none" />
               ) : (
                 <video src={selectedMedia.url} controls autoPlay playsInline className="max-w-full max-h-full object-contain rounded-sm outline-none shadow-2xl" />
               )}
